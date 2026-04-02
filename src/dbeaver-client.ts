@@ -340,10 +340,17 @@ export class DBeaverClient {
     const password = connection.properties?.password || process.env.PGPASSWORD;
 
     // SSL handling
+    // DBeaver's JSON config format stores driver properties under a nested `properties` key,
+    // and SSL handler config under `handlers.postgre_ssl`. Check all locations.
+    const nestedProps = (connection.properties?.['properties'] as unknown as Record<string, unknown>) || {};
+    const sslHandler = (connection.properties?.['handlers'] as unknown as Record<string, unknown> | undefined)?.['postgre_ssl'] as Record<string, unknown> | undefined;
     const sslModeRaw =
       connection.properties?.['ssl.mode'] ||
       connection.properties?.['sslmode'] ||
-      connection.properties?.['ssl'];
+      connection.properties?.['ssl'] ||
+      nestedProps['sslmode'] ||
+      nestedProps['ssl'] ||
+      (sslHandler?.enabled ? ((sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require') : undefined);
     const sslMode = String(sslModeRaw ?? '').toLowerCase();
     const sslRootCert =
       connection.properties?.['sslrootcert'] ||

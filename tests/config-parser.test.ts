@@ -6,7 +6,7 @@ import os from 'os';
 vi.mock('fs');
 vi.mock('os');
 
-describe('DBeaverConfigParser', () => {
+describe('WorkspaceConfigParser', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(os.platform).mockReturnValue('darwin');
@@ -19,8 +19,8 @@ describe('DBeaverConfigParser', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
       // Dynamic import to get fresh instance
-      const { DBeaverConfigParser } = await import('../src/config-parser.js');
-      const parser = new DBeaverConfigParser({});
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
 
       expect(parser.getWorkspacePath()).toContain('Library/DBeaverData');
     });
@@ -30,8 +30,8 @@ describe('DBeaverConfigParser', () => {
     it('should return empty array when no config exists', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { DBeaverConfigParser } = await import('../src/config-parser.js');
-      const parser = new DBeaverConfigParser({});
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
 
       const connections = await parser.parseConnections();
       expect(connections).toEqual([]);

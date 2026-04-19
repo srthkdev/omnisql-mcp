@@ -20,7 +20,7 @@ function HomepageHeader() {
           <Link
             className="button button--secondary button--lg"
             to="/docs">
-            Get Started with DBeaver MCP Server
+            Get Started with OmniSQL MCP
           </Link>
         </div>
       </div>
@@ -33,7 +33,7 @@ export default function Home() {
   return (
     <Layout
       title={`Hello from ${siteConfig.title}`}
-      description="Documentation for DBeaver MCP Server">
+      description="Documentation for OmniSQL MCP">
       <HomepageHeader />
       <main>
         <HomepageFeatures />

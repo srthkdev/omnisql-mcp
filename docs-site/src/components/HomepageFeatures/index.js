@@ -8,7 +8,7 @@ const FeatureList = [
     Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
     description: (
       <>
-        Works with all 200+ database types supported by DBeaver, providing unparalleled access to your data.
+        Native drivers for PostgreSQL, MySQL, SQLite, and SQL Server, plus CLI fallback for additional drivers.
       </>
     ),
   },

@@ -8,7 +8,7 @@ import { Client } from 'pg';
 import sql from 'mssql';
 import mysql from 'mysql2/promise';
 import {
-  DBeaverConnection,
+  DatabaseConnection,
   QueryResult,
   SchemaInfo,
   ExportOptions,
@@ -16,14 +16,14 @@ import {
   DatabaseStats,
 } from './types.js';
 import {
-  findDBeaverExecutable,
+  findCliExecutable,
   getTestQuery,
   parseVersionFromResult,
   buildSchemaQuery,
   buildListTablesQuery,
 } from './utils.js';
 
-export class DBeaverClient {
+export class WorkspaceClient {
   private executablePath: string;
   private timeout: number;
   private debug: boolean;
@@ -35,17 +35,17 @@ export class DBeaverClient {
     debug: boolean = false,
     workspacePath?: string
   ) {
-    this.executablePath = executablePath || findDBeaverExecutable();
+    this.executablePath = executablePath || findCliExecutable();
     this.timeout = timeout;
     this.debug = debug;
     this.workspacePath = workspacePath;
   }
 
-  async executeQuery(connection: DBeaverConnection, query: string): Promise<QueryResult> {
+  async executeQuery(connection: DatabaseConnection, query: string): Promise<QueryResult> {
     const startTime = Date.now();
 
     try {
-      // Use native database tools instead of DBeaver command line
+      // Use native database drivers; fall back to the CLI for unsupported drivers
       const result = await this.executeWithNativeTool(connection, query);
       result.executionTime = Date.now() - startTime;
       return result;
@@ -76,7 +76,7 @@ export class DBeaverClient {
     }
   }
 
-  async testConnection(connection: DBeaverConnection): Promise<ConnectionTest> {
+  async testConnection(connection: DatabaseConnection): Promise<ConnectionTest> {
     const startTime = Date.now();
 
     try {
@@ -100,7 +100,7 @@ export class DBeaverClient {
     }
   }
 
-  async getTableSchema(connection: DBeaverConnection, tableName: string): Promise<SchemaInfo> {
+  async getTableSchema(connection: DatabaseConnection, tableName: string): Promise<SchemaInfo> {
     const schemaQuery = this.buildSchemaQuery(connection.driver, tableName);
     const result = await this.executeQuery(connection, schemaQuery);
 
@@ -108,7 +108,7 @@ export class DBeaverClient {
   }
 
   async exportData(
-    connection: DBeaverConnection,
+    connection: DatabaseConnection,
     query: string,
     options: ExportOptions
   ): Promise<string> {
@@ -121,7 +121,7 @@ export class DBeaverClient {
       // Write query to temporary file
       fs.writeFileSync(sqlFile, query, 'utf-8');
 
-      // Build DBeaver command arguments
+      // Build CLI command arguments
       const args = [
         '-nosplash',
         '-reuseWorkspace',
@@ -137,7 +137,7 @@ export class DBeaverClient {
         '-quit',
       ];
 
-      await this.executeDBeaver(args);
+      await this.executeCli(args);
 
       // Optionally, you could check if the file exists and return the path
       if (!fs.existsSync(outputFile)) {
@@ -175,7 +175,7 @@ export class DBeaverClient {
   }
 
   private async executeWithNativeTool(
-    connection: DBeaverConnection,
+    connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
     const driver = connection.driver.toLowerCase();
@@ -193,10 +193,10 @@ export class DBeaverClient {
     } else if (driver.includes('mysql') || driver.includes('mariadb')) {
       return this.executeMySQLQuery(connection, query);
     } else {
-      // Unsupported driver – try DBeaver CLI as a best-effort fallback, but
+      // Unsupported driver – try the CLI as a best-effort fallback, but
       // wrap with a clear error message listing the natively supported drivers.
       try {
-        return await this.executeDBeaverQuery(connection, query);
+        return await this.executeViaCli(connection, query);
       } catch (cliError) {
         const driverName = connection.driver;
         const nativeDrivers =
@@ -205,23 +205,20 @@ export class DBeaverClient {
         throw new Error(
           `Database driver "${driverName}" is not natively supported. ` +
             `Natively supported drivers: ${nativeDrivers}. ` +
-            `DBeaver CLI fallback also failed: ${cliMsg}. ` +
+            `CLI fallback also failed: ${cliMsg}. ` +
             `To use "${driverName}", consider connecting through a supported driver ` +
-            `(e.g. via an ODBC/JDBC bridge) or ensure DBeaver CLI is installed and ` +
-            `the connection is configured in your DBeaver workspace.`
+            `(e.g. via an ODBC/JDBC bridge) or ensure a compatible DB client CLI is installed and ` +
+            `the connection is configured in your workspace.`
         );
       }
     }
   }
 
-  private async executeDBeaverQuery(
-    connection: DBeaverConnection,
-    query: string
-  ): Promise<QueryResult> {
-    // Verify DBeaver executable exists before attempting
-    if (!this.isDBeaverAvailable()) {
+  private async executeViaCli(connection: DatabaseConnection, query: string): Promise<QueryResult> {
+    // Verify the CLI executable exists before attempting
+    if (!this.isCliAvailable()) {
       throw new Error(
-        'DBeaver executable not found. Install DBeaver or set DBEAVER_PATH environment variable.'
+        'DB client CLI executable not found. Install a compatible CLI or set OMNISQL_CLI_PATH environment variable.'
       );
     }
 
@@ -251,7 +248,7 @@ export class DBeaverClient {
         '-quit',
       ];
 
-      await this.executeDBeaver(args);
+      await this.executeCli(args);
 
       if (!fs.existsSync(outputFile)) {
         // Some non-SELECT statements may not produce a resultset/export file.
@@ -264,14 +261,14 @@ export class DBeaverClient {
     }
   }
 
-  private isDBeaverAvailable(): boolean {
+  private isCliAvailable(): boolean {
     try {
       // Check if the executable path exists (skip for bare command names that rely on PATH)
       if (this.executablePath.includes('/') || this.executablePath.includes('\\')) {
         return fs.existsSync(this.executablePath);
       }
-      // For bare command names (e.g., 'dbeaver'), we can't easily check PATH,
-      // so assume it might be available and let executeDBeaver handle the error
+      // For bare command names on PATH, we cannot easily verify presence here,
+      // so assume it might be available and let executeCli surface any error
       return true;
     } catch {
       return false;
@@ -279,7 +276,7 @@ export class DBeaverClient {
   }
 
   private async executeSQLiteQuery(
-    connection: DBeaverConnection,
+    connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
     return new Promise((resolve, reject) => {
@@ -328,7 +325,7 @@ export class DBeaverClient {
   }
 
   private async executePostgreSQLQuery(
-    connection: DBeaverConnection,
+    connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
     const host = connection.host || connection.properties?.host || 'localhost';
@@ -340,17 +337,22 @@ export class DBeaverClient {
     const password = connection.properties?.password || process.env.PGPASSWORD;
 
     // SSL handling
-    // DBeaver's JSON config format stores driver properties under a nested `properties` key,
+    // The workspace JSON config format stores driver properties under a nested `properties` key,
     // and SSL handler config under `handlers.postgre_ssl`. Check all locations.
-    const nestedProps = (connection.properties?.['properties'] as unknown as Record<string, unknown>) || {};
-    const sslHandler = (connection.properties?.['handlers'] as unknown as Record<string, unknown> | undefined)?.['postgre_ssl'] as Record<string, unknown> | undefined;
+    const nestedProps =
+      (connection.properties?.['properties'] as unknown as Record<string, unknown>) || {};
+    const sslHandler = (
+      connection.properties?.['handlers'] as unknown as Record<string, unknown> | undefined
+    )?.['postgre_ssl'] as Record<string, unknown> | undefined;
     const sslModeRaw =
       connection.properties?.['ssl.mode'] ||
       connection.properties?.['sslmode'] ||
       connection.properties?.['ssl'] ||
       nestedProps['sslmode'] ||
       nestedProps['ssl'] ||
-      (sslHandler?.enabled ? ((sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require') : undefined);
+      (sslHandler?.enabled
+        ? (sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require'
+        : undefined);
     const sslMode = String(sslModeRaw ?? '').toLowerCase();
     const sslRootCert =
       connection.properties?.['sslrootcert'] ||
@@ -426,7 +428,7 @@ export class DBeaverClient {
   }
 
   private async executeSQLServerQuery(
-    connection: DBeaverConnection,
+    connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
     const host = connection.host || connection.properties?.host || 'localhost';
@@ -490,7 +492,7 @@ export class DBeaverClient {
   }
 
   private async executeMySQLQuery(
-    connection: DBeaverConnection,
+    connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
     const host = connection.host || connection.properties?.host || 'localhost';
@@ -502,7 +504,7 @@ export class DBeaverClient {
     const password =
       connection.properties?.password || process.env.MYSQL_PWD || process.env.MYSQL_PASSWORD;
 
-    // SSL handling (best-effort; varies across DBeaver driver configs)
+    // SSL handling (best-effort; varies across workspace driver configs)
     const sslModeRaw =
       connection.properties?.['ssl.mode'] ||
       connection.properties?.['sslMode'] ||
@@ -616,14 +618,14 @@ export class DBeaverClient {
     }
   }
 
-  private async executeDBeaver(args: string[]): Promise<void> {
+  private async executeCli(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.executablePath, args, { stdio: this.debug ? 'inherit' : 'ignore' });
 
       // Set up timeout
       const timeoutId = setTimeout(() => {
         proc.kill('SIGTERM');
-        reject(new Error(`DBeaver execution timed out after ${this.timeout}ms`));
+        reject(new Error(`CLI execution timed out after ${this.timeout}ms`));
       }, this.timeout);
 
       proc.on('error', (error) => {
@@ -636,7 +638,7 @@ export class DBeaverClient {
         if (code === 0) {
           resolve();
         } else {
-          reject(new Error(`DBeaver exited with code ${code}`));
+          reject(new Error(`CLI process exited with code ${code}`));
         }
       });
     });
@@ -778,7 +780,7 @@ export class DBeaverClient {
     };
   }
 
-  async getDatabaseStats(connection: DBeaverConnection): Promise<DatabaseStats> {
+  async getDatabaseStats(connection: DatabaseConnection): Promise<DatabaseStats> {
     const startTime = Date.now();
 
     try {
@@ -810,7 +812,7 @@ export class DBeaverClient {
   }
 
   async listTables(
-    connection: DBeaverConnection,
+    connection: DatabaseConnection,
     schema?: string,
     includeViews: boolean = false
   ): Promise<any[]> {

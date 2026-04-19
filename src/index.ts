@@ -9,9 +9,9 @@ import {
   ReadResourceRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { DBeaverConfigParser } from './config-parser.js';
-import { DBeaverClient } from './dbeaver-client.js';
-import { BusinessInsight, DBeaverConnection, SchemaDiff } from './types.js';
+import { WorkspaceConfigParser } from './config-parser.js';
+import { WorkspaceClient } from './workspace-client.js';
+import { BusinessInsight, DatabaseConnection, SchemaDiff } from './types.js';
 import {
   validateQuery,
   enforceReadOnly,
@@ -58,10 +58,10 @@ const MAX_EXPORT_ROWS = 1000000;
 const DEFAULT_QUERY_ROWS = 1000;
 const DEFAULT_EXPORT_ROWS = 10000;
 
-class DBeaverMCPServer {
+class OmniSQLMCPServer {
   private server: Server;
-  private configParser: DBeaverConfigParser;
-  private dbeaverClient: DBeaverClient;
+  private configParser: WorkspaceConfigParser;
+  private workspaceClient: WorkspaceClient;
   private poolManager: ConnectionPoolManager;
   private transactionManager: TransactionManager;
   private debug: boolean;
@@ -73,26 +73,26 @@ class DBeaverMCPServer {
   private staleCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    this.debug = process.env.DBEAVER_DEBUG === 'true';
-    this.readOnly = process.env.DBEAVER_READ_ONLY === 'true';
-    this.disabledTools = (process.env.DBEAVER_DISABLED_TOOLS || '')
+    this.debug = process.env.OMNISQL_DEBUG === 'true';
+    this.readOnly = process.env.OMNISQL_READ_ONLY === 'true';
+    this.disabledTools = (process.env.OMNISQL_DISABLED_TOOLS || '')
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
 
     // Parse allowed connections whitelist
-    const allowedRaw = process.env.DBEAVER_ALLOWED_CONNECTIONS || '';
+    const allowedRaw = process.env.OMNISQL_ALLOWED_CONNECTIONS || '';
     const allowedList = allowedRaw
       .split(',')
       .map((c) => c.trim())
       .filter(Boolean);
     this.allowedConnections = allowedList.length > 0 ? new Set(allowedList) : null;
 
-    this.insightsFile = path.join(os.tmpdir(), 'dbeaver-mcp-insights.json');
+    this.insightsFile = path.join(os.tmpdir(), 'omnisql-mcp-insights.json');
 
     this.server = new Server(
       {
-        name: 'dbeaver-mcp-server',
+        name: 'omnisql-mcp',
         version: VERSION,
       },
       {
@@ -103,27 +103,27 @@ class DBeaverMCPServer {
       }
     );
 
-    this.configParser = new DBeaverConfigParser({
+    this.configParser = new WorkspaceConfigParser({
       debug: this.debug,
-      timeout: parseInt(process.env.DBEAVER_TIMEOUT || '30000'),
-      executablePath: process.env.DBEAVER_PATH,
-      workspacePath: process.env.DBEAVER_WORKSPACE,
+      timeout: parseInt(process.env.OMNISQL_TIMEOUT || '30000'),
+      executablePath: process.env.OMNISQL_CLI_PATH,
+      workspacePath: process.env.OMNISQL_WORKSPACE,
     });
 
-    this.dbeaverClient = new DBeaverClient(
-      process.env.DBEAVER_PATH,
-      parseInt(process.env.DBEAVER_TIMEOUT || '30000'),
+    this.workspaceClient = new WorkspaceClient(
+      process.env.OMNISQL_CLI_PATH,
+      parseInt(process.env.OMNISQL_TIMEOUT || '30000'),
       this.debug,
-      process.env.DBEAVER_WORKSPACE || this.configParser.getWorkspacePath()
+      process.env.OMNISQL_WORKSPACE || this.configParser.getWorkspacePath()
     );
 
     // Initialize connection pool and transaction manager
     this.poolManager = new ConnectionPoolManager(
       {
-        min: parseInt(process.env.DBEAVER_POOL_MIN || '2'),
-        max: parseInt(process.env.DBEAVER_POOL_MAX || '10'),
-        idleTimeoutMs: parseInt(process.env.DBEAVER_POOL_IDLE_TIMEOUT || '30000'),
-        acquireTimeoutMs: parseInt(process.env.DBEAVER_POOL_ACQUIRE_TIMEOUT || '10000'),
+        min: parseInt(process.env.OMNISQL_POOL_MIN || '2'),
+        max: parseInt(process.env.OMNISQL_POOL_MAX || '10'),
+        idleTimeoutMs: parseInt(process.env.OMNISQL_POOL_IDLE_TIMEOUT || '30000'),
+        acquireTimeoutMs: parseInt(process.env.OMNISQL_POOL_ACQUIRE_TIMEOUT || '10000'),
       },
       this.debug
     );
@@ -184,7 +184,7 @@ class DBeaverMCPServer {
   /**
    * Get all connections, filtered by the whitelist.
    */
-  private async getFilteredConnections(): Promise<DBeaverConnection[]> {
+  private async getFilteredConnections(): Promise<DatabaseConnection[]> {
     const connections = await this.configParser.parseConnections();
     if (!this.allowedConnections) return connections;
     return connections.filter((conn) => this.isConnectionAllowed(conn));
@@ -193,7 +193,7 @@ class DBeaverMCPServer {
   /**
    * Get a single connection by ID/name, respecting the whitelist.
    */
-  private async getConnection(connectionId: string): Promise<DBeaverConnection | null> {
+  private async getConnection(connectionId: string): Promise<DatabaseConnection | null> {
     const connection = await this.configParser.getConnection(connectionId);
     if (!connection) return null;
     if (!this.isConnectionAllowed(connection)) return null;
@@ -250,13 +250,13 @@ class DBeaverMCPServer {
 
         for (const connection of connections) {
           try {
-            const tables = await this.dbeaverClient.listTables(connection, undefined, false);
+            const tables = await this.workspaceClient.listTables(connection, undefined, false);
 
             for (const table of tables) {
               const tableName = typeof table === 'string' ? table : table.name || table.table_name;
               if (tableName) {
                 resources.push({
-                  uri: `dbeaver://${connection.id}/${tableName}/schema`,
+                  uri: `omnisql://${connection.id}/${tableName}/schema`,
                   mimeType: 'application/json',
                   name: `"${tableName}" schema (${connection.name})`,
                   description: `Schema information for table ${tableName} in ${connection.name}`,
@@ -293,7 +293,7 @@ class DBeaverMCPServer {
           throw new Error(`Connection not found: ${connectionId}`);
         }
 
-        const schema = await this.dbeaverClient.getTableSchema(connection, tableName);
+        const schema = await this.workspaceClient.getTableSchema(connection, tableName);
 
         return {
           contents: [
@@ -318,7 +318,7 @@ class DBeaverMCPServer {
       const tools: Tool[] = [
         {
           name: 'list_connections',
-          description: 'List all available DBeaver database connections',
+          description: 'List all available database connections',
           inputSchema: {
             type: 'object',
             properties: {
@@ -332,13 +332,13 @@ class DBeaverMCPServer {
         },
         {
           name: 'get_connection_info',
-          description: 'Get detailed information about a specific DBeaver connection',
+          description: 'Get detailed information about a specific database connection',
           inputSchema: {
             type: 'object',
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
             },
             required: ['connectionId'],
@@ -346,13 +346,13 @@ class DBeaverMCPServer {
         },
         {
           name: 'execute_query',
-          description: 'Execute a SQL query on a specific DBeaver connection (read-only queries)',
+          description: 'Execute a SQL query on a specific database connection (read-only queries)',
           inputSchema: {
             type: 'object',
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection to use',
+                description: 'The ID or name of the database connection to use',
               },
               query: {
                 type: 'string',
@@ -369,13 +369,14 @@ class DBeaverMCPServer {
         },
         {
           name: 'write_query',
-          description: 'Execute INSERT, UPDATE, or DELETE queries on a specific DBeaver connection',
+          description:
+            'Execute INSERT, UPDATE, or DELETE queries on a specific database connection',
           inputSchema: {
             type: 'object',
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection to use',
+                description: 'The ID or name of the database connection to use',
               },
               query: {
                 type: 'string',
@@ -393,7 +394,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
               query: {
                 type: 'string',
@@ -411,7 +412,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
               query: {
                 type: 'string',
@@ -429,7 +430,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
               tableName: {
                 type: 'string',
@@ -451,7 +452,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
               tableName: {
                 type: 'string',
@@ -474,7 +475,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
               query: {
                 type: 'string',
@@ -502,13 +503,13 @@ class DBeaverMCPServer {
         },
         {
           name: 'test_connection',
-          description: 'Test connectivity to a DBeaver connection',
+          description: 'Test connectivity to a database connection',
           inputSchema: {
             type: 'object',
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection to test',
+                description: 'The ID or name of the database connection to test',
               },
             },
             required: ['connectionId'],
@@ -522,7 +523,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
             },
             required: ['connectionId'],
@@ -536,7 +537,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
               schema: {
                 type: 'string',
@@ -601,7 +602,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
             },
             required: ['connectionId'],
@@ -662,7 +663,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
               query: {
                 type: 'string',
@@ -716,7 +717,7 @@ class DBeaverMCPServer {
             properties: {
               connectionId: {
                 type: 'string',
-                description: 'The ID or name of the DBeaver connection',
+                description: 'The ID or name of the database connection',
               },
             },
             required: ['connectionId'],
@@ -747,7 +748,7 @@ class DBeaverMCPServer {
       if (this.readOnly && WRITE_TOOLS.includes(name)) {
         throw new McpError(
           ErrorCode.InvalidRequest,
-          `Tool '${name}' is disabled in read-only mode. Set DBEAVER_READ_ONLY=false to enable write operations.`
+          `Tool '${name}' is disabled in read-only mode. Set OMNISQL_READ_ONLY=false to enable write operations.`
         );
       }
 
@@ -755,7 +756,7 @@ class DBeaverMCPServer {
       if (this.disabledTools.includes(name)) {
         throw new McpError(
           ErrorCode.InvalidRequest,
-          `Tool '${name}' is disabled via DBEAVER_DISABLED_TOOLS configuration.`
+          `Tool '${name}' is disabled via OMNISQL_DISABLED_TOOLS configuration.`
         );
       }
 
@@ -1031,7 +1032,7 @@ class DBeaverMCPServer {
       }
     }
 
-    const result = await this.dbeaverClient.executeQuery(connection, finalQuery);
+    const result = await this.workspaceClient.executeQuery(connection, finalQuery);
 
     const response = {
       query: finalQuery,
@@ -1087,7 +1088,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const result = await this.dbeaverClient.executeQuery(connection, query);
+    const result = await this.workspaceClient.executeQuery(connection, query);
 
     const response = {
       query: query,
@@ -1120,7 +1121,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const result = await this.dbeaverClient.executeQuery(connection, query);
+    const result = await this.workspaceClient.executeQuery(connection, query);
 
     return {
       content: [
@@ -1153,7 +1154,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const result = await this.dbeaverClient.executeQuery(connection, query);
+    const result = await this.workspaceClient.executeQuery(connection, query);
 
     return {
       content: [
@@ -1211,7 +1212,7 @@ class DBeaverMCPServer {
 
     // Check if table exists first
     try {
-      await this.dbeaverClient.getTableSchema(connection, tableName);
+      await this.workspaceClient.getTableSchema(connection, tableName);
     } catch {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -1220,7 +1221,7 @@ class DBeaverMCPServer {
     }
 
     const dropQuery = `DROP TABLE "${tableName}"`;
-    const result = await this.dbeaverClient.executeQuery(connection, dropQuery);
+    const result = await this.workspaceClient.executeQuery(connection, dropQuery);
 
     return {
       content: [
@@ -1252,7 +1253,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const schema = await this.dbeaverClient.getTableSchema(connection, args.tableName);
+    const schema = await this.workspaceClient.getTableSchema(connection, args.tableName);
 
     if (!args.includeIndexes) {
       (schema as any).indexes = undefined;
@@ -1298,7 +1299,7 @@ class DBeaverMCPServer {
       finalQuery = `${query} LIMIT ${maxRows}`;
     }
 
-    const result = await this.dbeaverClient.executeQuery(connection, finalQuery);
+    const result = await this.workspaceClient.executeQuery(connection, finalQuery);
 
     if (format === 'csv') {
       const csvData = convertToCSV(result.columns, result.rows);
@@ -1343,7 +1344,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const testResult = await this.dbeaverClient.testConnection(connection);
+    const testResult = await this.workspaceClient.testConnection(connection);
 
     return {
       content: [
@@ -1363,7 +1364,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const stats = await this.dbeaverClient.getDatabaseStats(connection);
+    const stats = await this.workspaceClient.getDatabaseStats(connection);
 
     return {
       content: [
@@ -1387,7 +1388,7 @@ class DBeaverMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const tables = await this.dbeaverClient.listTables(
+    const tables = await this.workspaceClient.listTables(
       connection,
       args.schema,
       args.includeViews || false
@@ -1556,7 +1557,7 @@ class DBeaverMCPServer {
       format
     );
 
-    const result = await this.dbeaverClient.executeQuery(connection, explainQuery);
+    const result = await this.workspaceClient.executeQuery(connection, explainQuery);
     const explainResult = parseExplainOutput(connection.driver, result.rows, args.query, format);
 
     return {
@@ -1589,13 +1590,13 @@ class DBeaverMCPServer {
     }
 
     // Get tables from both connections
-    const sourceTables = await this.dbeaverClient.listTables(sourceConn);
-    const targetTables = await this.dbeaverClient.listTables(targetConn);
+    const sourceTables = await this.workspaceClient.listTables(sourceConn);
+    const targetTables = await this.workspaceClient.listTables(targetConn);
 
     // Get schema for each table and convert to comparable format
     const sourceSchemas = await Promise.all(
       sourceTables.map(async (table) => {
-        const schema = await this.dbeaverClient.getTableSchema(sourceConn, table.name);
+        const schema = await this.workspaceClient.getTableSchema(sourceConn, table.name);
         // Convert SchemaInfo columns to the format expected by parseTableSchema
         const rows = schema.columns.map((col) => [
           col.name,
@@ -1610,7 +1611,7 @@ class DBeaverMCPServer {
 
     const targetSchemas = await Promise.all(
       targetTables.map(async (table) => {
-        const schema = await this.dbeaverClient.getTableSchema(targetConn, table.name);
+        const schema = await this.workspaceClient.getTableSchema(targetConn, table.name);
         const rows = schema.columns.map((col) => [
           col.name,
           col.type,
@@ -1679,10 +1680,10 @@ class DBeaverMCPServer {
 
   async run() {
     try {
-      // Validate DBeaver workspace
+      // Validate DB client workspace
       if (!this.configParser.isWorkspaceValid()) {
         this.log(
-          'DBeaver workspace not found. Please run DBeaver at least once to create the workspace.',
+          'Workspace not found. Please run your DB client at least once to create the workspace.',
           'error'
         );
         this.log(
@@ -1694,7 +1695,7 @@ class DBeaverMCPServer {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
 
-      this.log('DBeaver MCP server started successfully');
+      this.log('OmniSQL MCP server started successfully');
 
       // Periodic cleanup of stale transactions (leaked transactions older than 1 hour)
       this.staleCleanupInterval = setInterval(async () => {
@@ -1730,9 +1731,9 @@ class DBeaverMCPServer {
 // Handle CLI arguments
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.error(`
-DBeaver MCP Server v${VERSION}
+OmniSQL MCP Server v${VERSION}
 
-Usage: dbeaver-mcp-server [options]
+Usage: omnisql-mcp [options]
 
 Options:
   -h, --help     Show this help message
@@ -1740,22 +1741,23 @@ Options:
   --debug        Enable debug logging
 
 Environment Variables:
-  DBEAVER_PATH                 Path to DBeaver executable
-  DBEAVER_TIMEOUT              Query timeout in milliseconds (default: 30000)
-  DBEAVER_DEBUG                Enable debug logging (true/false)
-  DBEAVER_READ_ONLY            Disable all write operations (true/false)
-  DBEAVER_ALLOWED_CONNECTIONS  Comma-separated whitelist of connection IDs or names
-  DBEAVER_DISABLED_TOOLS       Comma-separated list of tools to disable
+  OMNISQL_CLI_PATH             Path to local DB client CLI executable (for unsupported-driver fallback)
+  OMNISQL_WORKSPACE            Path to local DB client workspace directory
+  OMNISQL_TIMEOUT              Query timeout in milliseconds (default: 30000)
+  OMNISQL_DEBUG                Enable debug logging (true/false)
+  OMNISQL_READ_ONLY            Disable all write operations (true/false)
+  OMNISQL_ALLOWED_CONNECTIONS  Comma-separated whitelist of connection IDs or names
+  OMNISQL_DISABLED_TOOLS       Comma-separated list of tools to disable
 
 Features:
-  - Universal database support via DBeaver connections
+  - Universal database support via your local DB client's saved connections
   - Read and write operations with safety checks
   - Schema introspection and table management
   - Data export in multiple formats
   - Business insights tracking
   - Resource-based schema browsing
 
-For more information, visit: https://github.com/srthkdev/dbeaver-mcp-server
+For more information, visit: https://github.com/srthkdev/omnisql-mcp
 `);
   process.exit(0);
 }
@@ -1766,7 +1768,7 @@ if (process.argv.includes('--version')) {
 }
 
 // Start the server
-const server = new DBeaverMCPServer();
+const server = new OmniSQLMCPServer();
 server.run().catch((error) => {
   console.error('Server startup failed:', error);
   process.exit(1);

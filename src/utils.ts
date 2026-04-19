@@ -1,59 +1,12 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-
 /**
- * Find DBeaver executable path across different platforms
+ * Resolve the DB client CLI executable path.
+ *
+ * The CLI fallback is only used for drivers without a native implementation.
+ * Configure the path explicitly via the OMNISQL_CLI_PATH environment variable.
+ * Returns an empty string when not configured; callers must handle this case.
  */
-export function findDBeaverExecutable(): string {
-  const platform = os.platform();
-  const possiblePaths: string[] = [];
-
-  if (platform === 'win32') {
-    possiblePaths.push(
-      'C:\\Program Files\\DBeaver\\dbeaver.exe',
-      'C:\\Program Files (x86)\\DBeaver\\dbeaver.exe',
-      path.join(os.homedir(), 'AppData', 'Local', 'DBeaver', 'dbeaver.exe'),
-      path.join(os.homedir(), 'scoop', 'apps', 'dbeaver', 'current', 'dbeaver.exe'),
-      'dbeaver.exe' // fallback to PATH
-    );
-  } else if (platform === 'darwin') {
-    possiblePaths.push(
-      '/Applications/DBeaver.app/Contents/MacOS/dbeaver',
-      path.join(os.homedir(), 'Applications', 'DBeaver.app', 'Contents', 'MacOS', 'dbeaver'),
-      '/usr/local/bin/dbeaver',
-      'dbeaver' // fallback to PATH
-    );
-  } else {
-    // Linux and other Unix-like systems
-    possiblePaths.push(
-      '/usr/bin/dbeaver',
-      '/usr/local/bin/dbeaver',
-      '/opt/dbeaver/dbeaver',
-      '/snap/bin/dbeaver',
-      path.join(os.homedir(), '.local', 'bin', 'dbeaver'),
-      path.join(os.homedir(), 'bin', 'dbeaver'),
-      'dbeaver' // fallback to PATH
-    );
-  }
-
-  // Find first existing executable
-  for (const dbPath of possiblePaths) {
-    if (fs.existsSync(dbPath)) {
-      try {
-        fs.accessSync(dbPath, fs.constants.X_OK);
-        return dbPath;
-      } catch {
-        // Not executable, continue searching
-        continue;
-      }
-    }
-  }
-
-  // Return fallback (will rely on system PATH)
-  const fallback = platform === 'win32' ? 'dbeaver.exe' : 'dbeaver';
-  console.warn(`DBeaver executable not found in standard locations. Using fallback: ${fallback}`);
-  return fallback;
+export function findCliExecutable(): string {
+  return process.env.OMNISQL_CLI_PATH ?? '';
 }
 
 /**

@@ -2,29 +2,29 @@
 
 ## Installation Issues
 
-### "dbeaver-mcp-server command not found"
+### "omnisql-mcp command not found"
 ```bash
 # Solution 1: Reinstall the package
-npm uninstall -g dbeaver-mcp-server
-npm install -g dbeaver-mcp-server@latest
+npm uninstall -g omnisql-mcp
+npm install -g omnisql-mcp@latest
 
 # Solution 2: Check npm global path
 npm config get prefix
 # Add the bin directory to your PATH
 
 # Solution 3: Use npx
-npx dbeaver-mcp-server --help
+npx omnisql-mcp --help
 ```
 
 ### Permission Errors
 ```bash
 # Linux/macOS permission fix
 sudo chown -R $(whoami) ~/.npm
-npm install -g dbeaver-mcp-server
+npm install -g omnisql-mcp
 
 # Windows: Run as Administrator
 # Open PowerShell as Administrator and run:
-npm install -g dbeaver-mcp-server
+npm install -g omnisql-mcp
 ```
 
 ### Node.js Version Issues
@@ -35,51 +35,39 @@ node --version  # Should be >= 18.0.0
 # Update Node.js using nvm
 nvm install 18
 nvm use 18
-npm install -g dbeaver-mcp-server
+npm install -g omnisql-mcp
 ```
 
 ## Connection Issues
 
-### DBeaver Not Found
-```bash
-# Check if DBeaver is installed
-which dbeaver
-dbeaver --version
-
-# Set custom path
-export DBEAVER_PATH="/path/to/dbeaver"
-dbeaver-mcp-server
-```
-
-### DBeaver Configuration Issues
-- Ensure DBeaver is installed and has been run at least once
-- Verify connections work in DBeaver GUI
-- Check file permissions on DBeaver config directory
-- Restart DBeaver after making configuration changes
+### Workspace Configuration Issues
+- Ensure your DB client has been run at least once so the workspace config exists
+- Verify connections work in the DB client GUI
+- Check file permissions on the workspace config directory
+- Restart your DB client after making configuration changes
 
 ### Connection Authentication
 
 #### Password Authentication Issues
-If you're experiencing authentication failures even though connections work in DBeaver, this is now fixed in version 1.1.8+. The server properly loads and decrypts credentials from DBeaver's credential store.
 
 **How it works:**
-- DBeaver stores passwords encrypted in `credentials-config.json`
+- The DB client (DBeaver-compatible) stores passwords encrypted in `credentials-config.json`
 - The MCP server automatically decrypts and uses these credentials
 - Passwords are loaded from: `~/.local/share/DBeaverData/workspace6/General/.dbeaver/credentials-config.json` (Linux) or equivalent path on other platforms
 
 **Troubleshooting:**
-1. Ensure your connections are saved with passwords in DBeaver
-2. Test connections in DBeaver GUI first to verify they work
+1. Ensure your connections are saved with passwords in the DB client
+2. Test connections in the DB client GUI first to verify they work
 3. The MCP server will automatically detect and use stored credentials
 4. Enable debug mode to see credential loading logs:
    ```bash
-   DBEAVER_DEBUG=true dbeaver-mcp-server
+   OMNISQL_DEBUG=true omnisql-mcp
    ```
 
 **Common Issues:**
-- **Empty password field**: Make sure you saved the password in DBeaver (check "Save password" when creating connection)
-- **SSL/TLS requirements**: The server now properly handles SSL settings from DBeaver
-- **Connection properties**: All connection properties including host, port, database name are loaded from DBeaver
+- **Empty password field**: Make sure you saved the password in the DB client (check "Save password" when creating the connection)
+- **SSL/TLS requirements**: The server handles SSL settings from the workspace config
+- **Connection properties**: Host, port, and database name are loaded from the workspace config
 
 **Manual credential check:**
 ```bash
@@ -92,29 +80,29 @@ openssl aes-128-cbc -d \
 ```
 
 - Verify connection credentials haven't expired
-- Check if database server is accessible
+- Check if the database server is accessible
 - Ensure firewall settings allow database connections
 
 ## Query Execution Issues
 
 ### Query Syntax Errors
-- Test queries directly in DBeaver first
+- Test queries directly in your DB client first
 - Verify query syntax for your specific database type
 - Check for database-specific SQL dialects
 
 ### Timeout Issues
 ```bash
 # Increase timeout
-export DBEAVER_TIMEOUT=120000
-dbeaver-mcp-server
+export OMNISQL_TIMEOUT=120000
+omnisql-mcp
 
 # Or in Claude Desktop config
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_TIMEOUT": "120000"
+        "OMNISQL_TIMEOUT": "120000"
       }
     }
   }
@@ -129,22 +117,19 @@ dbeaver-mcp-server
 ## Platform-Specific Issues
 
 ### Windows
-- Ensure DBeaver is in PATH or set DBEAVER_PATH
 - Use PowerShell as Administrator for global installation
 - Check Windows Defender firewall settings
-- Verify DBeaver executable path: `C:\Program Files\DBeaver\dbeaver.exe`
+- To use the CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
 
 ### macOS
-- May need to grant terminal permissions to access DBeaver
 - Check System Preferences > Security & Privacy > Privacy > Full Disk Access
-- DBeaver path: `/Applications/DBeaver.app/Contents/MacOS/dbeaver`
 - Use Homebrew for Node.js: `brew install node`
+- To use the CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
 
 ### Linux
-- Check AppImage vs package installation paths
-- Ensure execute permissions: `chmod +x dbeaver-mcp-server`
+- Ensure execute permissions: `chmod +x omnisql-mcp`
 - Install via package manager: `sudo apt install nodejs npm` (Ubuntu/Debian)
-- DBeaver AppImage path: `~/Downloads/DBeaver.AppImage`
+- To use the CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
 
 ## MCP Client Issues
 
@@ -164,15 +149,15 @@ dbeaver-mcp-server
 ### Enable Debug Mode
 ```bash
 # Command line
-DBEAVER_DEBUG=true dbeaver-mcp-server
+OMNISQL_DEBUG=true omnisql-mcp
 
 # Claude Desktop config
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_DEBUG": "true"
+        "OMNISQL_DEBUG": "true"
       }
     }
   }
@@ -188,10 +173,10 @@ DBEAVER_DEBUG=true dbeaver-mcp-server
 ### Test MCP Server
 ```bash
 # Test basic functionality
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' | dbeaver-mcp-server
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' | omnisql-mcp
 
 # Test tools list
-echo '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | dbeaver-mcp-server
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | omnisql-mcp
 ```
 
 ## Performance Issues
@@ -212,20 +197,19 @@ echo '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | dbeaver-mcp-
 ### Before Asking for Help
 1. Check this troubleshooting guide
 2. Enable debug mode and check logs
-3. Test with a simple query in DBeaver
-4. Verify your Node.js and DBeaver versions
+3. Test with a simple query in your DB client
+4. Verify your Node.js version
 
 ### Resources
 - [Installation Guide](getting-started/installation.md)
 - [Configuration Guide](getting-started/configuration.md)
-- [GitHub Issues](https://github.com/srthkdev/dbeaver-mcp-server/issues)
-- [NPM Package](https://www.npmjs.com/package/dbeaver-mcp-server)
+- [GitHub Issues](https://github.com/srthkdev/omnisql-mcp/issues)
+- [NPM Package](https://www.npmjs.com/package/omnisql-mcp)
 
 ### Reporting Issues
 When reporting issues, please include:
 - Operating system and version
 - Node.js version (`node --version`)
-- DBeaver version (`dbeaver --version`)
 - Error messages and logs
 - Steps to reproduce the issue
 - Expected vs actual behavior

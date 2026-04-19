@@ -7,7 +7,7 @@ sidebar_position: 2
 ## Connection Management
 
 ### `list_connections`
-List all DBeaver database connections.
+List all database connections discovered in the workspace.
 
 Parameters:
 - `includeDetails` (optional): Include detailed connection info

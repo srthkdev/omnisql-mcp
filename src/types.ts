@@ -1,4 +1,4 @@
-export interface DBeaverConnection {
+export interface DatabaseConnection {
   id: string;
   name: string;
   driver: string;
@@ -64,7 +64,7 @@ export interface ExportOptions {
   maxRows?: number;
 }
 
-export interface DBeaverConfig {
+export interface WorkspaceConfig {
   workspacePath?: string;
   executablePath?: string;
   timeout?: number;

@@ -5,8 +5,8 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: 'DBeaver MCP Server',
-  tagline: 'Universal Database Access for AI Assistants - 200+ Database Types Supported',
+  title: 'OmniSQL MCP',
+  tagline: 'Universal Database Access for AI Assistants',
   favicon: 'img/favicon.ico',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
@@ -18,12 +18,12 @@ const config: Config = {
   url: 'https://srthkdev.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/dbeaver-mcp-server/',
+  baseUrl: '/omnisql-mcp/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'srthkdev', // Usually your GitHub org/user name.
-  projectName: 'dbeaver-mcp-server', // Usually your repo name.
+  projectName: 'omnisql-mcp', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -45,7 +45,7 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/srthkdev/dbeaver-mcp-server/tree/main/docs-site/',
+            'https://github.com/srthkdev/omnisql-mcp/tree/main/docs-site/',
         },
         blog: false, // Disable blog
         theme: {
@@ -59,9 +59,9 @@ const config: Config = {
     // Replace with your project's social card
     image: 'img/docusaurus-social-card.jpg',
     navbar: {
-      title: 'DBeaver MCP Server',
+      title: 'OmniSQL MCP',
       logo: {
-        alt: 'DBeaver MCP Server Logo',
+        alt: 'OmniSQL MCP Logo',
         src: 'img/logo.svg',
       },
       items: [
@@ -72,12 +72,12 @@ const config: Config = {
           label: 'Documentation',
         },
         {
-          href: 'https://www.npmjs.com/package/dbeaver-mcp-server',
+          href: 'https://www.npmjs.com/package/omnisql-mcp',
           label: 'NPM Package',
           position: 'right',
         },
         {
-          href: 'https://github.com/srthkdev/dbeaver-mcp-server',
+          href: 'https://github.com/srthkdev/omnisql-mcp',
           label: 'GitHub',
           position: 'right',
         },
@@ -112,15 +112,15 @@ const config: Config = {
           items: [
             {
               label: 'NPM Package',
-              href: 'https://www.npmjs.com/package/dbeaver-mcp-server',
+              href: 'https://www.npmjs.com/package/omnisql-mcp',
             },
             {
               label: 'GitHub Repository',
-              href: 'https://github.com/srthkdev/dbeaver-mcp-server',
+              href: 'https://github.com/srthkdev/omnisql-mcp',
             },
             {
               label: 'Report Issue',
-              href: 'https://github.com/srthkdev/dbeaver-mcp-server/issues',
+              href: 'https://github.com/srthkdev/omnisql-mcp/issues',
             },
             {
               label: 'Troubleshooting',
@@ -133,16 +133,16 @@ const config: Config = {
           items: [
             {
               label: 'Contributing',
-              href: 'https://github.com/srthkdev/dbeaver-mcp-server/blob/main/README.md#contributing',
+              href: 'https://github.com/srthkdev/omnisql-mcp/blob/main/README.md#contributing',
             },
             {
               label: 'License',
-              href: 'https://github.com/srthkdev/dbeaver-mcp-server/blob/main/LICENSE',
+              href: 'https://github.com/srthkdev/omnisql-mcp/blob/main/LICENSE',
             },
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} DBeaver MCP Server. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} OmniSQL MCP. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,

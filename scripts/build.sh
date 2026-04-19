@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# DBeaver MCP Server Build Script
+# OmniSQL MCP Build Script
 # Enhanced version with production features
 
 set -e
 
-echo "🔨 Building DBeaver MCP Server v1.1.0..."
+echo "🔨 Building OmniSQL MCP v1.1.0..."
 
 # Clean previous build
 echo "📁 Cleaning previous build..."

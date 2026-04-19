@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# DBeaver MCP Server Publish Script
+# OmniSQL MCP Publish Script
 # This script helps with publishing new versions to npm
 
 set -e
 
-echo "🚀 DBeaver MCP Server - Publishing to npm"
+echo "🚀 OmniSQL MCP - Publishing to npm"
 echo "=========================================="
 
 # Check if we're in the right directory
@@ -58,9 +58,9 @@ else
 fi
 
 echo ""
-echo "🎉 Successfully published dbeaver-mcp-server!"
+echo "🎉 Successfully published omnisql-mcp!"
 echo "📋 Package info:"
-npm info dbeaver-mcp-server version
+npm info omnisql-mcp version
 echo ""
-echo "🔗 Install with: npm install -g dbeaver-mcp-server@latest"
-echo "🌐 View on npm: https://www.npmjs.com/package/dbeaver-mcp-server"
+echo "🔗 Install with: npm install -g omnisql-mcp@latest"
+echo "🌐 View on npm: https://www.npmjs.com/package/omnisql-mcp"

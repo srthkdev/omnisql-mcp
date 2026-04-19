@@ -3,19 +3,13 @@
 ## System Requirements
 
 - **Node.js**: Version 18.0.0 or higher
-- **DBeaver**: Latest version recommended
+- **A local DB client** (DBeaver-compatible) with at least one saved connection
 - **Operating System**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 18.04+)
 
 ## Pre-Installation Steps
 
-### 1. Verify DBeaver Installation
-```bash
-# Check if DBeaver is accessible
-dbeaver --version
-```
-
-### 2. Configure DBeaver Connections
-- Open DBeaver
+### 1. Configure Workspace Connections
+- Open your local DB client
 - Create and test at least one database connection
 - Ensure connections are saved with credentials
 
@@ -24,16 +18,16 @@ dbeaver --version
 ### Method 1: Global npm Installation (Recommended)
 ```bash
 # Install from npm registry
-npm install -g dbeaver-mcp-server
+npm install -g omnisql-mcp
 
 # Verify installation
-dbeaver-mcp-server --help
+omnisql-mcp --help
 ```
 
 ### Method 2: Local Development Installation
 ```bash
-git clone https://github.com/srthkdev/dbeaver-mcp-server.git
-cd dbeaver-mcp-server
+git clone https://github.com/srthkdev/omnisql-mcp.git
+cd omnisql-mcp
 npm install
 npm run build
 npm link  # Makes the command available globally
@@ -58,27 +52,27 @@ Add MCP Server Configuration:
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_DEBUG": "false",
-        "DBEAVER_TIMEOUT": "30000"
+        "OMNISQL_DEBUG": "false",
+        "OMNISQL_TIMEOUT": "30000"
       }
     }
   }
 }
 ```
 
-Restart Claude Desktop
+Restart Claude Desktop.
 
 ## Verification
 Test the installation:
 ```bash
 # Test help command
-dbeaver-mcp-server --help
+omnisql-mcp --help
 
 # Test MCP server functionality
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | dbeaver-mcp-server
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | omnisql-mcp
 # Should return available tools
 ```
 
@@ -86,39 +80,37 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | dbeaver-mcp-
 
 ### Windows
 - Use PowerShell or Command Prompt as Administrator for global installation
-- DBeaver path is usually auto-detected
-- May need to set DBEAVER_PATH environment variable if using portable version
+- To enable the unsupported-driver CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
 
 ### macOS
-- May need to allow Terminal access to DBeaver in System Preferences
 - Use Homebrew for Node.js installation: `brew install node`
-- DBeaver app bundle is automatically detected
+- To enable the unsupported-driver CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
 
 ### Linux
 - Install via package manager: `sudo apt install nodejs npm` (Ubuntu/Debian)
-- DBeaver AppImage and package installations are both supported
-- May need to set execute permissions: `chmod +x dbeaver-mcp-server`
+- To enable the unsupported-driver CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
 
 ## Environment Variables
 
 Configure the server behavior with these environment variables:
 
-- `DBEAVER_PATH`: Path to DBeaver executable (auto-detected if not set)
-- `DBEAVER_TIMEOUT`: Query timeout in milliseconds (default: 30000)
-- `DBEAVER_DEBUG`: Enable debug logging (true/false)
+- `OMNISQL_CLI_PATH`: Path to external DB client CLI (for unsupported-driver fallback)
+- `OMNISQL_WORKSPACE`: Path to local DB client workspace directory
+- `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
+- `OMNISQL_DEBUG`: Enable debug logging (true/false)
 
 Example:
 ```bash
-export DBEAVER_DEBUG=true
-export DBEAVER_TIMEOUT=60000
-dbeaver-mcp-server
+export OMNISQL_DEBUG=true
+export OMNISQL_TIMEOUT=60000
+omnisql-mcp
 ```
 
 ## Troubleshooting Installation
 
 ### Common Issues
 
-- "dbeaver-mcp-server command not found"
+- "omnisql-mcp command not found"
   - Ensure npm global bin directory is in PATH
   - Try `npm config get prefix` to find global directory
   - Add `[prefix]/bin` to PATH
@@ -128,10 +120,10 @@ dbeaver-mcp-server
   - Use nvm to manage Node.js versions
   - Install recommended version: `nvm install 18 && nvm use 18`
 - Binary execution issues
-  - Ensure the package was installed correctly: `npm install -g dbeaver-mcp-server@latest`
+  - Ensure the package was installed correctly: `npm install -g omnisql-mcp@latest`
   - Check if the binary has execute permissions
 
 ## Getting Help
 - Check the [Troubleshooting Guide](../troubleshooting.md)
-- Open an issue on [GitHub](https://github.com/srthkdev/dbeaver-mcp-server/issues)
-- View the package on [npm](https://www.npmjs.com/package/dbeaver-mcp-server)
+- Open an issue on [GitHub](https://github.com/srthkdev/omnisql-mcp/issues)
+- View the package on [npm](https://www.npmjs.com/package/omnisql-mcp)

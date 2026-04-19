@@ -1,14 +1,10 @@
-# DBeaver MCP Server
+# OmniSQL MCP
 
-MCP server that provides AI assistants access to databases through DBeaver connections.
+Universal database MCP server — give AI assistants read/write access to your databases using connections already saved in your local DB client workspace (DBeaver-compatible).
 
-[![npm version](https://badge.fury.io/js/dbeaver-mcp-server.svg)](https://www.npmjs.com/package/dbeaver-mcp-server)
+[![npm version](https://badge.fury.io/js/omnisql-mcp.svg)](https://www.npmjs.com/package/omnisql-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
-
-<a href="https://glama.ai/mcp/servers/@srthkdev/dbeaver-mcp-server">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@srthkdev/dbeaver-mcp-server/badge" alt="DBeaver Server MCP server" />
-</a>
 
 ## Database Support
 
@@ -21,11 +17,11 @@ MCP server that provides AI assistants access to databases through DBeaver conne
 **Postgres-compatible** (routed through `pg` driver automatically):
 - CockroachDB, TimescaleDB, Amazon Redshift, YugabyteDB, AlloyDB, Supabase, Neon, Citus
 
-**Other databases**: Falls back to DBeaver CLI. Requires DBeaver to be installed and the connection configured in your DBeaver workspace. Results vary by DBeaver version.
+**Other databases**: Fall back to an external CLI configured via `OMNISQL_CLI_PATH`. Results vary by CLI.
 
 ## Features
 
-- Uses existing DBeaver connections (no separate config needed)
+- Reuses connections already configured in your local DB client workspace — no duplicate setup
 - Native query execution for PostgreSQL, MySQL/MariaDB, SQLite, SQL Server
 - Connection pooling with configurable pool size and timeouts
 - Transaction support (BEGIN/COMMIT/ROLLBACK)
@@ -41,12 +37,12 @@ MCP server that provides AI assistants access to databases through DBeaver conne
 ## Requirements
 
 - Node.js 18+
-- DBeaver with at least one configured connection
+- A local DB client (DBeaver-compatible) with at least one configured connection
 
 ## Installation
 
 ```bash
-npm install -g dbeaver-mcp-server
+npm install -g omnisql-mcp
 ```
 
 ## Configuration
@@ -58,8 +54,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server"
+    "omnisql": {
+      "command": "omnisql-mcp"
     }
   }
 }
@@ -72,8 +68,8 @@ Add to `~/.claude/settings.json`:
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server"
+    "omnisql": {
+      "command": "omnisql-mcp"
     }
   }
 }
@@ -86,8 +82,8 @@ Add to Cursor Settings > MCP Servers:
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server"
+    "omnisql": {
+      "command": "omnisql-mcp"
     }
   }
 }
@@ -97,17 +93,17 @@ Add to Cursor Settings > MCP Servers:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DBEAVER_PATH` | Path to DBeaver executable | Auto-detected |
-| `DBEAVER_WORKSPACE` | Path to DBeaver workspace | OS default |
-| `DBEAVER_TIMEOUT` | Query timeout (ms) | `30000` |
-| `DBEAVER_DEBUG` | Enable debug logging | `false` |
-| `DBEAVER_READ_ONLY` | Disable all write operations | `false` |
-| `DBEAVER_ALLOWED_CONNECTIONS` | Comma-separated whitelist of connection IDs or names | All |
-| `DBEAVER_DISABLED_TOOLS` | Comma-separated tools to disable | None |
-| `DBEAVER_POOL_MIN` | Minimum connections per pool | `2` |
-| `DBEAVER_POOL_MAX` | Maximum connections per pool | `10` |
-| `DBEAVER_POOL_IDLE_TIMEOUT` | Idle connection timeout (ms) | `30000` |
-| `DBEAVER_POOL_ACQUIRE_TIMEOUT` | Connection acquire timeout (ms) | `10000` |
+| `OMNISQL_CLI_PATH` | Path to external DB client CLI (used for unsupported-driver fallback) | Unset |
+| `OMNISQL_WORKSPACE` | Path to local DB client workspace directory | OS default |
+| `OMNISQL_TIMEOUT` | Query timeout (ms) | `30000` |
+| `OMNISQL_DEBUG` | Enable debug logging | `false` |
+| `OMNISQL_READ_ONLY` | Disable all write operations | `false` |
+| `OMNISQL_ALLOWED_CONNECTIONS` | Comma-separated whitelist of connection IDs or names | All |
+| `OMNISQL_DISABLED_TOOLS` | Comma-separated tools to disable | None |
+| `OMNISQL_POOL_MIN` | Minimum connections per pool | `2` |
+| `OMNISQL_POOL_MAX` | Maximum connections per pool | `10` |
+| `OMNISQL_POOL_IDLE_TIMEOUT` | Idle connection timeout (ms) | `30000` |
+| `OMNISQL_POOL_ACQUIRE_TIMEOUT` | Connection acquire timeout (ms) | `10000` |
 
 ### Read-Only Mode
 
@@ -116,10 +112,10 @@ Blocks all write operations. The `execute_query` tool only allows SELECT, EXPLAI
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_READ_ONLY": "true"
+        "OMNISQL_READ_ONLY": "true"
       }
     }
   }
@@ -128,15 +124,15 @@ Blocks all write operations. The `execute_query` tool only allows SELECT, EXPLAI
 
 ### Connection Whitelist
 
-Restrict which DBeaver connections are visible. Accepts connection IDs or display names, comma-separated:
+Restrict which workspace connections are visible. Accepts connection IDs or display names, comma-separated:
 
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_ALLOWED_CONNECTIONS": "dev-postgres,staging-mysql"
+        "OMNISQL_ALLOWED_CONNECTIONS": "dev-postgres,staging-mysql"
       }
     }
   }
@@ -148,10 +144,10 @@ Restrict which DBeaver connections are visible. Accepts connection IDs or displa
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_DISABLED_TOOLS": "drop_table,alter_table,write_query"
+        "OMNISQL_DISABLED_TOOLS": "drop_table,alter_table,write_query"
       }
     }
   }
@@ -161,7 +157,7 @@ Restrict which DBeaver connections are visible. Accepts connection IDs or displa
 ## Available Tools
 
 ### Connection Management
-- `list_connections` - List all DBeaver connections
+- `list_connections` - List all database connections
 - `get_connection_info` - Get connection details
 - `test_connection` - Test connectivity
 
@@ -197,24 +193,24 @@ Restrict which DBeaver connections are visible. Accepts connection IDs or displa
 
 - **Read-only enforcement**: `execute_query` only accepts read-only statements (SELECT, EXPLAIN, SHOW, DESCRIBE, PRAGMA). Write operations must use `write_query`.
 - **Query validation**: Blocks DROP DATABASE, DROP SCHEMA, TRUNCATE, DELETE/UPDATE without WHERE, GRANT, REVOKE, and user management statements.
-- **Connection whitelist**: Restrict which connections are exposed via `DBEAVER_ALLOWED_CONNECTIONS`.
-- **Tool filtering**: Disable any tool via `DBEAVER_DISABLED_TOOLS`.
+- **Connection whitelist**: Restrict which connections are exposed via `OMNISQL_ALLOWED_CONNECTIONS`.
+- **Tool filtering**: Disable any tool via `OMNISQL_DISABLED_TOOLS`.
 - **Input sanitization**: Connection IDs and SQL identifiers are sanitized to prevent injection.
 - **Recommendation**: For production use, also use a database-level read-only user for defense in depth.
 
-## DBeaver Version Support
+## Workspace Format Support
 
-Supports both configuration formats:
-- DBeaver 6.x: XML config in `.metadata/.plugins/org.jkiss.dbeaver.core/`
-- DBeaver 21.x+: JSON config in `General/.dbeaver/`
+Supports both configuration formats written by DBeaver-compatible DB clients:
+- Legacy: XML config in `.metadata/.plugins/org.jkiss.dbeaver.core/`
+- Modern: JSON config in `General/.dbeaver/`
 
-Credentials are automatically decrypted from DBeaver's `credentials-config.json`.
+Credentials are automatically decrypted from the workspace `credentials-config.json`.
 
 ## Development
 
 ```bash
-git clone https://github.com/srthkdev/dbeaver-mcp-server.git
-cd dbeaver-mcp-server
+git clone https://github.com/srthkdev/omnisql-mcp.git
+cd omnisql-mcp
 npm install
 npm run build
 npm test

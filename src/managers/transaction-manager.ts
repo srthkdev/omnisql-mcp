@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { PoolClient as PgPoolClient } from 'pg';
 import { PoolConnection as MySqlPoolConnection } from 'mysql2/promise';
 import sql from 'mssql';
-import { Transaction, TransactionResult, DBeaverConnection } from '../types.js';
+import { Transaction, TransactionResult, DatabaseConnection } from '../types.js';
 import { ConnectionPoolManager } from '../pools/connection-pool.js';
 
 interface ActiveTransaction {
@@ -31,7 +31,7 @@ export class TransactionManager {
     return `txn_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
   }
 
-  async beginTransaction(connection: DBeaverConnection): Promise<TransactionResult> {
+  async beginTransaction(connection: DatabaseConnection): Promise<TransactionResult> {
     const transactionId = this.generateTransactionId();
     const driver = connection.driver.toLowerCase();
 

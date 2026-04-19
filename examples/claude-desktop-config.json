@@ -1,18 +1,18 @@
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_DEBUG": "false",
-        "DBEAVER_TIMEOUT": "30000"
+        "OMNISQL_DEBUG": "false",
+        "OMNISQL_TIMEOUT": "30000"
       }
     }
   },
   "explanation": {
-    "purpose": "DBeaver MCP Server configuration for Claude Desktop",
+    "purpose": "OmniSQL MCP configuration for Claude Desktop",
     "features": [
       "Native query execution for PostgreSQL, MySQL/MariaDB, SQLite, SQL Server",
-      "DBeaver CLI fallback for other database types",
+      "CLI fallback for other database types",
       "Connection pooling and transaction support",
       "Query execution plan analysis (EXPLAIN)",
       "Schema comparison between connections",
@@ -44,36 +44,36 @@
       "list_insights"
     ],
     "environment_variables": {
-      "DBEAVER_PATH": "Custom path to DBeaver executable (auto-detected if not set)",
-      "DBEAVER_WORKSPACE": "Custom DBeaver workspace path (OS default if not set)",
-      "DBEAVER_TIMEOUT": "Query timeout in milliseconds (default: 30000)",
-      "DBEAVER_DEBUG": "Enable debug logging (true/false)",
-      "DBEAVER_READ_ONLY": "Disable all write operations (true/false)",
-      "DBEAVER_ALLOWED_CONNECTIONS": "Comma-separated whitelist of connection IDs or names",
-      "DBEAVER_DISABLED_TOOLS": "Comma-separated list of tools to disable"
+      "OMNISQL_CLI_PATH": "Path to external DB client CLI (for unsupported-driver fallback)",
+      "OMNISQL_WORKSPACE": "Custom workspace path (OS default if not set)",
+      "OMNISQL_TIMEOUT": "Query timeout in milliseconds (default: 30000)",
+      "OMNISQL_DEBUG": "Enable debug logging (true/false)",
+      "OMNISQL_READ_ONLY": "Disable all write operations (true/false)",
+      "OMNISQL_ALLOWED_CONNECTIONS": "Comma-separated whitelist of connection IDs or names",
+      "OMNISQL_DISABLED_TOOLS": "Comma-separated list of tools to disable"
     },
     "configuration_examples": {
       "production": {
-        "command": "dbeaver-mcp-server",
+        "command": "omnisql-mcp",
         "env": {
-          "DBEAVER_READ_ONLY": "true",
-          "DBEAVER_ALLOWED_CONNECTIONS": "prod-readonly",
-          "DBEAVER_TIMEOUT": "60000"
+          "OMNISQL_READ_ONLY": "true",
+          "OMNISQL_ALLOWED_CONNECTIONS": "prod-readonly",
+          "OMNISQL_TIMEOUT": "60000"
         }
       },
       "development": {
-        "command": "dbeaver-mcp-server",
+        "command": "omnisql-mcp",
         "env": {
-          "DBEAVER_DEBUG": "true",
-          "DBEAVER_TIMEOUT": "30000"
+          "OMNISQL_DEBUG": "true",
+          "OMNISQL_TIMEOUT": "30000"
         }
       },
       "restricted": {
-        "command": "dbeaver-mcp-server",
+        "command": "omnisql-mcp",
         "env": {
-          "DBEAVER_READ_ONLY": "true",
-          "DBEAVER_DISABLED_TOOLS": "drop_table,alter_table",
-          "DBEAVER_ALLOWED_CONNECTIONS": "analytics-db,reporting-db"
+          "OMNISQL_READ_ONLY": "true",
+          "OMNISQL_DISABLED_TOOLS": "drop_table,alter_table",
+          "OMNISQL_ALLOWED_CONNECTIONS": "analytics-db,reporting-db"
         }
       }
     }

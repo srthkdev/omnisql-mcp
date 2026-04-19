@@ -2,7 +2,7 @@
 
 ## Claude Desktop Integration
 
-To use DBeaver MCP Server with Claude Desktop, add the following to your configuration file:
+To use OmniSQL MCP with Claude Desktop, add the following to your configuration file:
 
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
@@ -12,11 +12,11 @@ To use DBeaver MCP Server with Claude Desktop, add the following to your configu
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_DEBUG": "false",
-        "DBEAVER_TIMEOUT": "30000"
+        "OMNISQL_DEBUG": "false",
+        "OMNISQL_TIMEOUT": "30000"
       }
     }
   }
@@ -27,12 +27,12 @@ To use DBeaver MCP Server with Claude Desktop, add the following to your configu
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_DEBUG": "true",
-        "DBEAVER_TIMEOUT": "60000",
-        "DBEAVER_PATH": "/Applications/DBeaver.app/Contents/MacOS/dbeaver"
+        "OMNISQL_DEBUG": "true",
+        "OMNISQL_TIMEOUT": "60000",
+        "OMNISQL_CLI_PATH": "/path/to/your/db-client/cli"
       }
     }
   }
@@ -43,11 +43,11 @@ To use DBeaver MCP Server with Claude Desktop, add the following to your configu
 ```json
 {
   "mcpServers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_READ_ONLY": "true",
-        "DBEAVER_TIMEOUT": "30000"
+        "OMNISQL_READ_ONLY": "true",
+        "OMNISQL_TIMEOUT": "30000"
       }
     }
   }
@@ -57,46 +57,34 @@ To use DBeaver MCP Server with Claude Desktop, add the following to your configu
 ## Environment Variables
 
 ### Core Variables
-- `DBEAVER_PATH`: Set a custom path to the DBeaver executable if not auto-detected
-- `DBEAVER_WORKSPACE`: Set a custom path to your DBeaver workspace (useful for non-default workspaces and DBeaver CLI execution)
-- `DBEAVER_TIMEOUT`: Set the query timeout in milliseconds (default: 30000)
-- `DBEAVER_DEBUG`: Set to `true` to enable debug logging
+- `OMNISQL_CLI_PATH`: Path to external DB client CLI binary (required only for the unsupported-driver CLI fallback)
+- `OMNISQL_WORKSPACE`: Path to your local DB client workspace directory (defaults to the OS-standard location)
+- `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
+- `OMNISQL_DEBUG`: Set to `true` to enable debug logging
 
 ### Security Variables
-- `DBEAVER_READ_ONLY`: Set to `true` to disable all write operations (blocks `write_query`, `create_table`, `alter_table`, `drop_table`)
-- `DBEAVER_DISABLED_TOOLS`: Comma-separated list of tool names to disable (e.g., `drop_table,alter_table`)
-
-### Platform-Specific Paths
-```bash
-# macOS
-export DBEAVER_PATH="/Applications/DBeaver.app/Contents/MacOS/dbeaver"
-
-# Windows
-export DBEAVER_PATH="C:\\Program Files\\DBeaver\\dbeaver.exe"
-
-# Linux
-export DBEAVER_PATH="/usr/bin/dbeaver"
-```
+- `OMNISQL_READ_ONLY`: Set to `true` to disable all write operations (blocks `write_query`, `create_table`, `alter_table`, `drop_table`)
+- `OMNISQL_DISABLED_TOOLS`: Comma-separated list of tool names to disable (e.g., `drop_table,alter_table`)
 
 ### Configuration Examples
 ```bash
 # Development with debug logging
-export DBEAVER_DEBUG=true
-export DBEAVER_TIMEOUT=60000
-dbeaver-mcp-server
+export OMNISQL_DEBUG=true
+export OMNISQL_TIMEOUT=60000
+omnisql-mcp
 
 # Production with custom timeout
-export DBEAVER_DEBUG=false
-export DBEAVER_TIMEOUT=120000
-dbeaver-mcp-server
+export OMNISQL_DEBUG=false
+export OMNISQL_TIMEOUT=120000
+omnisql-mcp
 
 # Read-only mode (disable all write operations)
-export DBEAVER_READ_ONLY=true
-dbeaver-mcp-server
+export OMNISQL_READ_ONLY=true
+omnisql-mcp
 
 # Disable specific tools
-export DBEAVER_DISABLED_TOOLS="drop_table,alter_table"
-dbeaver-mcp-server
+export OMNISQL_DISABLED_TOOLS="drop_table,alter_table"
+omnisql-mcp
 ```
 
 ## Cursor IDE Integration
@@ -106,11 +94,11 @@ For Cursor IDE, add to your settings:
 ```json
 {
   "mcp.servers": {
-    "dbeaver": {
-      "command": "dbeaver-mcp-server",
+    "omnisql": {
+      "command": "omnisql-mcp",
       "env": {
-        "DBEAVER_DEBUG": "false",
-        "DBEAVER_TIMEOUT": "30000"
+        "OMNISQL_DEBUG": "false",
+        "OMNISQL_TIMEOUT": "30000"
       }
     }
   }
@@ -122,43 +110,38 @@ For Cursor IDE, add to your settings:
 ### Command Line Usage
 ```bash
 # Basic usage
-dbeaver-mcp-server
+omnisql-mcp
 
 # With environment variables
-DBEAVER_DEBUG=true dbeaver-mcp-server
+OMNISQL_DEBUG=true omnisql-mcp
 
 # Test MCP server
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' | dbeaver-mcp-server
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' | omnisql-mcp
 ```
 
 ### Docker Configuration
 ```dockerfile
 FROM node:18-alpine
-RUN npm install -g dbeaver-mcp-server
-ENV DBEAVER_DEBUG=false
-ENV DBEAVER_TIMEOUT=30000
-CMD ["dbeaver-mcp-server"]
+RUN npm install -g omnisql-mcp
+ENV OMNISQL_DEBUG=false
+ENV OMNISQL_TIMEOUT=30000
+CMD ["omnisql-mcp"]
 ```
 
 ## Troubleshooting Configuration
 
 ### Common Issues
-1. **DBeaver not found**: Set `DBEAVER_PATH` environment variable
-2. **Permission denied**: Ensure DBeaver executable has proper permissions
-3. **Timeout errors**: Increase `DBEAVER_TIMEOUT` value
-4. **Debug information needed**: Set `DBEAVER_DEBUG=true`
+1. **CLI fallback fails**: Set `OMNISQL_CLI_PATH` to your DB client CLI binary
+2. **Timeout errors**: Increase `OMNISQL_TIMEOUT` value
+3. **Debug information needed**: Set `OMNISQL_DEBUG=true`
 
 ### Verification Commands
 ```bash
-# Check if DBeaver is accessible
-which dbeaver
-dbeaver --version
-
 # Test MCP server
-dbeaver-mcp-server --help
+omnisql-mcp --help
 
 # Check environment variables
-echo $DBEAVER_PATH
-echo $DBEAVER_DEBUG
-echo $DBEAVER_TIMEOUT
+echo $OMNISQL_CLI_PATH
+echo $OMNISQL_DEBUG
+echo $OMNISQL_TIMEOUT
 ```

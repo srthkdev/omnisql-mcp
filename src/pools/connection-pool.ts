@@ -1,7 +1,7 @@
 import { Pool as PgPool } from 'pg';
 import mysql, { Pool as MySqlPool } from 'mysql2/promise';
 import sql, { ConnectionPool as MssqlPool } from 'mssql';
-import { DBeaverConnection, PoolConfig, PoolStats } from '../types.js';
+import { DatabaseConnection, PoolConfig, PoolStats } from '../types.js';
 
 const DEFAULT_POOL_CONFIG: PoolConfig = {
   min: 2,
@@ -34,7 +34,7 @@ export class ConnectionPoolManager {
     }
   }
 
-  async getPool(connection: DBeaverConnection): Promise<PoolEntry | null> {
+  async getPool(connection: DatabaseConnection): Promise<PoolEntry | null> {
     const poolKey = connection.id;
 
     // Return existing pool
@@ -60,7 +60,7 @@ export class ConnectionPoolManager {
     }
   }
 
-  private async createPool(connection: DBeaverConnection): Promise<PoolEntry | null> {
+  private async createPool(connection: DatabaseConnection): Promise<PoolEntry | null> {
     const driver = connection.driver.toLowerCase();
 
     try {
@@ -99,7 +99,7 @@ export class ConnectionPoolManager {
     );
   }
 
-  private async createPostgresPool(connection: DBeaverConnection): Promise<PoolEntry> {
+  private async createPostgresPool(connection: DatabaseConnection): Promise<PoolEntry> {
     this.log(`Creating PostgreSQL pool for ${connection.name}`);
 
     const sslConfig = this.getPostgresSslConfig(connection);
@@ -128,18 +128,22 @@ export class ConnectionPoolManager {
     return entry;
   }
 
-  private getPostgresSslConfig(connection: DBeaverConnection): object {
+  private getPostgresSslConfig(connection: DatabaseConnection): object {
     const props = connection.properties || {};
-    // DBeaver's JSON config format stores driver properties under a nested `properties` key,
+    // The workspace JSON config format stores driver properties under a nested `properties` key,
     // and SSL handler config under `handlers.postgre_ssl`. Check all locations.
     const nestedProps = (props.properties as unknown as Record<string, unknown>) || {};
-    const sslHandler = (props.handlers as unknown as Record<string, unknown> | undefined)?.['postgre_ssl'] as Record<string, unknown> | undefined;
+    const sslHandler = (props.handlers as unknown as Record<string, unknown> | undefined)?.[
+      'postgre_ssl'
+    ] as Record<string, unknown> | undefined;
     const sslMode =
       props.sslmode ||
       props.ssl ||
       nestedProps['sslmode'] ||
       nestedProps['ssl'] ||
-      (sslHandler?.enabled ? ((sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require') : undefined);
+      (sslHandler?.enabled
+        ? (sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require'
+        : undefined);
 
     if (sslMode === 'disable' || sslMode === 'false') {
       return { ssl: false };
@@ -162,7 +166,7 @@ export class ConnectionPoolManager {
     return { ssl: { rejectUnauthorized: false } };
   }
 
-  private async createMysqlPool(connection: DBeaverConnection): Promise<PoolEntry> {
+  private async createMysqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
     this.log(`Creating MySQL pool for ${connection.name}`);
 
     const pool = mysql.createPool({
@@ -188,7 +192,7 @@ export class ConnectionPoolManager {
     return entry;
   }
 
-  private async createMssqlPool(connection: DBeaverConnection): Promise<PoolEntry> {
+  private async createMssqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
     this.log(`Creating MSSQL pool for ${connection.name}`);
 
     const host = connection.host || 'localhost';

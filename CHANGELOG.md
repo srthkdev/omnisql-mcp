@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-04-20
+
+### Changed (Breaking)
+- **Renamed package**: `dbeaver-mcp-server` → `omnisql-mcp`. The old package on npm is deprecated; install `omnisql-mcp` going forward.
+- **Renamed binary**: `dbeaver-mcp-server` → `omnisql-mcp`.
+- **Renamed environment variables**: All `DBEAVER_*` env vars are now `OMNISQL_*` (e.g. `DBEAVER_READ_ONLY` → `OMNISQL_READ_ONLY`, `DBEAVER_WORKSPACE` → `OMNISQL_WORKSPACE`, `DBEAVER_PATH` → `OMNISQL_CLI_PATH`). Update your MCP client config.
+- **Renamed resource URI scheme**: `dbeaver://` → `omnisql://` for table schema resources.
+- **Renamed internal classes**: `DBeaverConfigParser` → `WorkspaceConfigParser`, `DBeaverConnectionSource` → `WorkspaceConnectionSource`, `DBeaverClient` → `WorkspaceClient`.
+
+The tool still reads connection configs from the same local DB client workspace location — only the branding has changed. Functional behavior is unchanged.
+
 ## [1.3.0] - 2026-02-16
 
 ### Added

@@ -57,11 +57,113 @@ export interface ConstraintInfo {
 }
 
 export interface ExportOptions {
-  format: 'csv' | 'json' | 'xml' | 'excel' | 'sql';
+  format: 'csv' | 'json';
   includeHeaders: boolean;
   delimiter?: string;
   encoding?: string;
   maxRows?: number;
+}
+
+// Driver system types
+export type DriverDialect = 'postgres' | 'mysql' | 'mssql' | 'sqlite';
+
+export interface ConnectionConfig {
+  host?: string;
+  port?: number;
+  database?: string;
+  user?: string;
+  password?: string;
+  ssl?: any;
+  timeout?: number;
+  poolConfig?: PoolConfig;
+  properties?: Record<string, string>;
+}
+
+export interface ExecuteResult {
+  affectedRows: number;
+}
+
+export interface TableInfo {
+  name: string;
+  type: 'table' | 'view';
+  schema?: string;
+}
+
+// Tool system types
+export interface ToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  [key: string]: unknown;
+}
+
+export interface ToolContext {
+  connectionRegistry: ConnectionRegistryInterface;
+  driverRegistry: DriverRegistryInterface;
+  safetyLayer: SafetyLayerInterface;
+  transactionManager: TransactionManagerInterface;
+  config: ServerConfig;
+  log: (message: string, level?: 'info' | 'error' | 'debug') => void;
+}
+
+export interface ServerConfig {
+  debug: boolean;
+  readOnly: boolean;
+  disabledTools: string[];
+  allowedConnections: Set<string> | null;
+  timeout: number;
+}
+
+// Access control types
+export interface AccessRules {
+  readOnly: boolean;
+  allowInsert: boolean;
+  allowUpdate: boolean;
+  allowDelete: boolean;
+  allowDDL: boolean;
+}
+
+// Interfaces for dependency injection
+export interface ConnectionRegistryInterface {
+  getConnection(id: string): Promise<DBeaverConnection | null>;
+  getAllConnections(): Promise<DBeaverConnection[]>;
+}
+
+export interface DriverRegistryInterface {
+  getDriver(connection: DBeaverConnection): Promise<DatabaseDriverInterface>;
+  closeAll(): Promise<void>;
+}
+
+export interface DatabaseDriverInterface {
+  readonly name: string;
+  readonly dialect: DriverDialect;
+  query(sql: string, params?: unknown[]): Promise<QueryResult>;
+  execute(sql: string, params?: unknown[]): Promise<ExecuteResult>;
+  getSchema(table: string): Promise<SchemaInfo>;
+  listTables(schema?: string, includeViews?: boolean): Promise<TableInfo[]>;
+  getStats(): Promise<DatabaseStats>;
+  testConnection(): Promise<ConnectionTest>;
+  getPoolStats(): PoolStats | null;
+  disconnect(): Promise<void>;
+}
+
+export interface SafetyLayerInterface {
+  classifyQuery(sql: string): { type: string; isReadOnly: boolean };
+  validateQuery(sql: string, rules: AccessRules): string | null;
+  enforceReadOnly(sql: string): string | null;
+  quoteIdentifier(identifier: string, dialect: DriverDialect): string;
+  sanitizeIdentifier(identifier: string): string;
+}
+
+export interface TransactionManagerInterface {
+  beginTransaction(connection: DBeaverConnection): Promise<TransactionResult>;
+  commitTransaction(transactionId: string): Promise<TransactionResult>;
+  rollbackTransaction(transactionId: string): Promise<TransactionResult>;
+  executeInTransaction(
+    transactionId: string,
+    query: string
+  ): Promise<{ columns: string[]; rows: unknown[][]; rowCount: number }>;
+  rollbackAll(): Promise<number>;
+  cleanupStaleTransactions(maxAgeMs?: number): Promise<number>;
+  getActiveTransactions(): Transaction[];
 }
 
 export interface DBeaverConfig {

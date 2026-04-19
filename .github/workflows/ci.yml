@@ -40,6 +40,23 @@ jobs:
         run: npm audit --audit-level=high
         continue-on-error: true
 
+  bun-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Run tests with Bun
+        run: bun run test
+        continue-on-error: true
+
   typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -53,7 +70,7 @@ jobs:
         run: npm run typecheck
 
   publish:
-    needs: [build, typecheck]
+    needs: [build, typecheck, bun-compat]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:

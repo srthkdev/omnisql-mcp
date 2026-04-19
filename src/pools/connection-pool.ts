@@ -130,7 +130,16 @@ export class ConnectionPoolManager {
 
   private getPostgresSslConfig(connection: DBeaverConnection): object {
     const props = connection.properties || {};
-    const sslMode = props.sslmode || props.ssl;
+    // DBeaver's JSON config format stores driver properties under a nested `properties` key,
+    // and SSL handler config under `handlers.postgre_ssl`. Check all locations.
+    const nestedProps = (props.properties as unknown as Record<string, unknown>) || {};
+    const sslHandler = (props.handlers as unknown as Record<string, unknown> | undefined)?.['postgre_ssl'] as Record<string, unknown> | undefined;
+    const sslMode =
+      props.sslmode ||
+      props.ssl ||
+      nestedProps['sslmode'] ||
+      nestedProps['ssl'] ||
+      (sslHandler?.enabled ? ((sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require') : undefined);
 
     if (sslMode === 'disable' || sslMode === 'false') {
       return { ssl: false };

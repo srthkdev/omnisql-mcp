@@ -214,6 +214,8 @@ export function getTestQuery(driver: string): string {
     return 'SELECT version();';
   } else if (driverLower.includes('mysql')) {
     return 'SELECT version();';
+  } else if (driverLower.includes('clickhouse')) {
+    return 'SELECT version();';
   } else if (driverLower.includes('oracle')) {
     return 'SELECT * FROM dual;';
   } else if (driverLower.includes('sqlite')) {

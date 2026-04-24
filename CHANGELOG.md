@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **DBeaver 25+ compatibility**: query execution for drivers without a native branch (Oracle, ClickHouse pre-patch, etc.) silently timed out because the CLI fallback passed `-o`/`-of` flags that DBeaver 25 removed. DBeaver would ignore the flags, open the UI, and never exit. The CLI query fallback has been removed in favor of clear errors.
+- **`export_data` no longer depends on the CLI**: routed through the existing native drivers; CSV/JSON is produced in-process, fixing the same hang.
+
+### Added
+- **ClickHouse native driver**: query execution via the ClickHouse HTTP interface (`default_format=JSON`). TLS is selected automatically when `ssl=true` is set on the DBeaver connection or when the port is 443/8443. Auth uses `X-ClickHouse-User` / `X-ClickHouse-Key` headers.
+- **Clear error for unsupported drivers**: `executeQuery` now fails fast with a message listing the natively supported drivers instead of hanging for the full timeout.
+
+### Removed
+- Dead CLI plumbing: `executeViaCli`, `executeCli`, `isCliAvailable`, `parseCSVOutput`, `cleanupFiles`, the `csv-parser` usage in `workspace-client.ts`, and the unused `executablePath` field. The `_executablePath` constructor parameter is preserved (ignored) for backward compatibility.
+
 ## [2.0.1] - 2026-04-20
 
 ### Changed

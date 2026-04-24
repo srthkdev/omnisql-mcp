@@ -3,7 +3,6 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import csv from 'csv-parser';
 import { Client } from 'pg';
 import sql from 'mssql';
 import mysql from 'mysql2/promise';
@@ -16,26 +15,26 @@ import {
   DatabaseStats,
 } from './types.js';
 import {
-  findCliExecutable,
   getTestQuery,
   parseVersionFromResult,
   buildSchemaQuery,
   buildListTablesQuery,
+  convertToCSV,
 } from './utils.js';
 
 export class WorkspaceClient {
-  private executablePath: string;
   private timeout: number;
   private debug: boolean;
   private workspacePath?: string;
 
   constructor(
-    executablePath?: string,
+    // Retained for backward compatibility; no longer used since the CLI fallback
+    // was removed (DBeaver 25+ dropped the -o/-of flags this server depended on).
+    _executablePath?: string,
     timeout: number = 30000,
     debug: boolean = false,
     workspacePath?: string
   ) {
-    this.executablePath = executablePath || findCliExecutable();
     this.timeout = timeout;
     this.debug = debug;
     this.workspacePath = workspacePath;
@@ -112,44 +111,40 @@ export class WorkspaceClient {
     query: string,
     options: ExportOptions
   ): Promise<string> {
+    const format = options.format || 'csv';
+    const supportedFormats: ExportOptions['format'][] = ['csv', 'json'];
+    if (!supportedFormats.includes(format)) {
+      throw new Error(
+        `Unsupported export format: ${format}. Supported formats: ${supportedFormats.join(', ')}.`
+      );
+    }
+
     const tempDir = os.tmpdir();
     const exportId = `export_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const sqlFile = path.join(tempDir, `${exportId}.sql`);
-    const outputFile = path.join(tempDir, `${exportId}_output.${options.format || 'csv'}`);
+    const outputFile = path.join(tempDir, `${exportId}_output.${format}`);
 
     try {
-      // Write query to temporary file
-      fs.writeFileSync(sqlFile, query, 'utf-8');
+      const result = await this.executeWithNativeTool(connection, query);
 
-      // Build CLI command arguments
-      const args = [
-        '-nosplash',
-        '-reuseWorkspace',
-        ...(this.workspacePath ? ['-data', this.workspacePath] : []),
-        '-con',
-        connection.id,
-        '-f',
-        sqlFile,
-        '-o',
-        outputFile,
-        '-of',
-        options.format || 'csv',
-        '-quit',
-      ];
-
-      await this.executeCli(args);
-
-      // Optionally, you could check if the file exists and return the path
-      if (!fs.existsSync(outputFile)) {
-        throw new Error('Export failed: output file not found');
+      let content: string;
+      if (format === 'csv') {
+        content = convertToCSV(result.columns, result.rows);
+      } else {
+        // json
+        const objects = result.rows.map((row) => {
+          const obj: Record<string, unknown> = {};
+          result.columns.forEach((col, idx) => {
+            obj[col] = row[idx];
+          });
+          return obj;
+        });
+        content = JSON.stringify(objects, null, 2);
       }
 
+      fs.writeFileSync(outputFile, content, 'utf-8');
       return outputFile;
     } catch (error) {
-      throw new Error(`Export failed: ${error}`);
-    } finally {
-      // Cleanup the SQL file, but keep the output file for the user
-      this.cleanupFiles([sqlFile]);
+      throw new Error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -192,86 +187,19 @@ export class WorkspaceClient {
       return this.executeSQLServerQuery(connection, query);
     } else if (driver.includes('mysql') || driver.includes('mariadb')) {
       return this.executeMySQLQuery(connection, query);
+    } else if (driver.includes('clickhouse')) {
+      return this.executeClickHouseQuery(connection, query);
     } else {
-      // Unsupported driver – try the CLI as a best-effort fallback, but
-      // wrap with a clear error message listing the natively supported drivers.
-      try {
-        return await this.executeViaCli(connection, query);
-      } catch (cliError) {
-        const driverName = connection.driver;
-        const nativeDrivers =
-          'PostgreSQL (+ CockroachDB, TimescaleDB, Redshift, YugabyteDB, Supabase, Neon, Citus, AlloyDB), MySQL/MariaDB, SQL Server (MSSQL), SQLite';
-        const cliMsg = cliError instanceof Error ? cliError.message : String(cliError);
-        throw new Error(
-          `Database driver "${driverName}" is not natively supported. ` +
-            `Natively supported drivers: ${nativeDrivers}. ` +
-            `CLI fallback also failed: ${cliMsg}. ` +
-            `To use "${driverName}", consider connecting through a supported driver ` +
-            `(e.g. via an ODBC/JDBC bridge) or ensure a compatible DB client CLI is installed and ` +
-            `the connection is configured in your workspace.`
-        );
-      }
-    }
-  }
-
-  private async executeViaCli(connection: DatabaseConnection, query: string): Promise<QueryResult> {
-    // Verify the CLI executable exists before attempting
-    if (!this.isCliAvailable()) {
+      const nativeDrivers =
+        'PostgreSQL (+ CockroachDB, TimescaleDB, Redshift, YugabyteDB, Supabase, Neon, Citus, AlloyDB), ' +
+        'MySQL/MariaDB, SQL Server (MSSQL), SQLite, ClickHouse';
       throw new Error(
-        'DB client CLI executable not found. Install a compatible CLI or set OMNISQL_CLI_PATH environment variable.'
+        `Database driver "${connection.driver}" is not supported. ` +
+          `Natively supported drivers: ${nativeDrivers}. ` +
+          `DBeaver 25+ removed the \`-o\`/\`-of\` CLI flags that older versions of this server relied on, ` +
+          `so the CLI fallback has been removed. To add support for a new driver, contribute a native ` +
+          `implementation that speaks the database's wire/HTTP protocol directly.`
       );
-    }
-
-    const tempDir = os.tmpdir();
-    const exportId = `query_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const sqlFile = path.join(tempDir, `${exportId}.sql`);
-    const outputFile = path.join(tempDir, `${exportId}_output.csv`);
-
-    try {
-      fs.writeFileSync(sqlFile, query, 'utf-8');
-
-      // Build connection spec - try name first, then ID
-      const conSpec = `name=${connection.name}`;
-
-      const args = [
-        '-nosplash',
-        '-reuseWorkspace',
-        ...(this.workspacePath ? ['-data', this.workspacePath] : []),
-        '-con',
-        conSpec,
-        '-f',
-        sqlFile,
-        '-o',
-        outputFile,
-        '-of',
-        'csv',
-        '-quit',
-      ];
-
-      await this.executeCli(args);
-
-      if (!fs.existsSync(outputFile)) {
-        // Some non-SELECT statements may not produce a resultset/export file.
-        return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
-      }
-
-      return await this.parseCSVOutput(outputFile);
-    } finally {
-      this.cleanupFiles([sqlFile, outputFile]);
-    }
-  }
-
-  private isCliAvailable(): boolean {
-    try {
-      // Check if the executable path exists (skip for bare command names that rely on PATH)
-      if (this.executablePath.includes('/') || this.executablePath.includes('\\')) {
-        return fs.existsSync(this.executablePath);
-      }
-      // For bare command names on PATH, we cannot easily verify presence here,
-      // so assume it might be available and let executeCli surface any error
-      return true;
-    } catch {
-      return false;
     }
   }
 
@@ -618,82 +546,96 @@ export class WorkspaceClient {
     }
   }
 
-  private async executeCli(args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const proc = spawn(this.executablePath, args, { stdio: this.debug ? 'inherit' : 'ignore' });
+  private async executeClickHouseQuery(
+    connection: DatabaseConnection,
+    query: string
+  ): Promise<QueryResult> {
+    const host = connection.host || connection.properties?.host || 'localhost';
+    const portRaw = connection.port ?? connection.properties?.port;
+    const port = portRaw ? parseInt(String(portRaw)) : 8123;
+    const user = connection.user || connection.properties?.user || 'default';
+    const password = connection.properties?.password || '';
+    const database = connection.database || connection.properties?.database || 'default';
 
-      // Set up timeout
-      const timeoutId = setTimeout(() => {
-        proc.kill('SIGTERM');
-        reject(new Error(`CLI execution timed out after ${this.timeout}ms`));
-      }, this.timeout);
+    // ClickHouse SSL config may live at properties.ssl, nested properties.properties.ssl,
+    // the legacy `ssl.mode`, or the `clickhouse-ssl` handler block.
+    const nestedProps =
+      (connection.properties?.['properties'] as unknown as Record<string, unknown>) || {};
+    const sslHandler = (
+      connection.properties?.['handlers'] as unknown as Record<string, unknown> | undefined
+    )?.['clickhouse-ssl'] as Record<string, unknown> | undefined;
+    const sslRaw =
+      connection.properties?.['ssl'] ||
+      connection.properties?.['ssl.mode'] ||
+      nestedProps['ssl'] ||
+      nestedProps['ssl.mode'] ||
+      (sslHandler?.enabled ? 'true' : undefined);
+    const sslFlag = String(sslRaw ?? '').toLowerCase();
+    const explicitSsl = ['true', '1', 'yes', 'require', 'enabled', 'on'].includes(sslFlag);
+    const explicitNoSsl = ['false', '0', 'no', 'disable', 'off', 'none'].includes(sslFlag);
+    // Default to HTTPS when the JDBC port looks like a TLS port and SSL isn't explicitly disabled.
+    const useHttps = explicitSsl || (!explicitNoSsl && (port === 443 || port === 8443));
+    const proto = useHttps ? 'https' : 'http';
 
-      proc.on('error', (error) => {
-        clearTimeout(timeoutId);
-        reject(error);
+    const url =
+      `${proto}://${host}:${port}/?default_format=JSON` +
+      `&database=${encodeURIComponent(database)}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'text/plain; charset=UTF-8',
+    };
+    if (user) headers['X-ClickHouse-User'] = user;
+    if (password) headers['X-ClickHouse-Key'] = password;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: query,
+        signal: controller.signal,
       });
-
-      proc.on('exit', (code) => {
-        clearTimeout(timeoutId);
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`CLI process exited with code ${code}`));
-        }
-      });
-    });
-  }
-
-  private cleanupFiles(files: string[]): void {
-    for (const file of files) {
-      try {
-        if (fs.existsSync(file)) {
-          fs.unlinkSync(file);
-        }
-      } catch {
-        // Ignore errors
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw new Error(`ClickHouse request timed out after ${this.timeout}ms`);
       }
+      throw new Error(
+        `ClickHouse request failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      clearTimeout(timeoutId);
     }
-  }
 
-  private async parseCSVOutput(filePath: string): Promise<QueryResult> {
-    return new Promise((resolve, reject) => {
-      const rows: any[] = [];
-      let columns: string[] = [];
-      let rowCount = 0;
+    const bodyText = await response.text();
+    if (!response.ok) {
+      // ClickHouse error bodies are plain text; trim and truncate to keep the message readable.
+      const snippet = bodyText.trim().split('\n').slice(0, 4).join(' ').slice(0, 800);
+      throw new Error(`ClickHouse HTTP ${response.status}: ${snippet}`);
+    }
 
-      // Check if file exists first
-      if (!fs.existsSync(filePath)) {
-        reject(new Error(`Output file not found: ${filePath}`));
-        return;
-      }
+    const trimmed = bodyText.trim();
+    if (!trimmed) {
+      // DDL/INSERT statements return an empty body.
+      return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
+    }
 
-      try {
-        const stats = fs.statSync(filePath);
-        if (stats.size === 0) {
-          resolve({ columns: [], rows: [], rowCount: 0, executionTime: 0 });
-          return;
-        }
-      } catch {
-        // If stat fails, continue and let the stream handle errors
-      }
+    let parsed: any;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      // Non-JSON response (e.g. a statement ClickHouse decided to return as TSV) — treat as empty resultset.
+      return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
+    }
 
-      fs.createReadStream(filePath)
-        .pipe(csv())
-        .on('headers', (headers) => {
-          columns = headers;
-        })
-        .on('data', (data) => {
-          rows.push(Object.values(data));
-          rowCount++;
-        })
-        .on('end', () => {
-          resolve({ columns, rows, rowCount, executionTime: 0 });
-        })
-        .on('error', (error) => {
-          reject(new Error(`CSV parsing failed: ${error.message}`));
-        });
-    });
+    const meta: any[] = Array.isArray(parsed.meta) ? parsed.meta : [];
+    const data: any[] = Array.isArray(parsed.data) ? parsed.data : [];
+    const columns: string[] = meta.map((m) => String(m.name));
+    const rows: any[][] = data.map((row: Record<string, unknown>) =>
+      columns.map((c) => row[c] as unknown)
+    );
+    const rowCount = typeof parsed.rows === 'number' ? parsed.rows : rows.length;
+    return { columns, rows, rowCount, executionTime: 0 };
   }
 
   private getTestQuery(driver: string): string {

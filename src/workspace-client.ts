@@ -442,6 +442,13 @@ export class WorkspaceClient {
     }
 
     const isAzure = host.includes('.database.windows.net');
+    const props = connection.properties || {};
+    const nestedProps = (props['properties'] as unknown as Record<string, string>) || {};
+    const encryptProp = props['encrypt'] ?? nestedProps['encrypt'];
+    const trustCertProp = props['trustServerCertificate'] ?? nestedProps['trustServerCertificate'];
+    const encrypt = encryptProp !== undefined ? encryptProp === 'true' : isAzure;
+    const trustServerCertificate =
+      trustCertProp !== undefined ? trustCertProp === 'true' : !isAzure;
     const config = {
       user,
       password,
@@ -449,8 +456,8 @@ export class WorkspaceClient {
       port,
       database,
       options: {
-        encrypt: isAzure,
-        trustServerCertificate: !isAzure,
+        encrypt,
+        trustServerCertificate,
       },
     };
 

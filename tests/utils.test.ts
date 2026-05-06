@@ -5,6 +5,7 @@ import {
   sanitizeConnectionId,
   sanitizeIdentifier,
   getTestQuery,
+  parseConnectionId,
 } from '../src/utils.js';
 
 describe('validateQuery', () => {
@@ -129,6 +130,45 @@ describe('sanitizeConnectionId', () => {
   it('should remove invalid characters', () => {
     expect(sanitizeConnectionId('conn;DROP TABLE')).toBe('connDROPTABLE');
     expect(sanitizeConnectionId('test<script>')).toBe('testscript');
+  });
+
+  it('should preserve "/" for the database-override suffix', () => {
+    expect(sanitizeConnectionId('my-conn/analytics')).toBe('my-conn/analytics');
+    expect(sanitizeConnectionId('postgres-jdbc-abc/orders')).toBe('postgres-jdbc-abc/orders');
+  });
+});
+
+describe('parseConnectionId', () => {
+  it('should return baseId and null override when no slash is present', () => {
+    expect(parseConnectionId('my-conn')).toEqual({
+      baseId: 'my-conn',
+      databaseOverride: null,
+    });
+  });
+
+  it('should split on the first slash into base and override', () => {
+    expect(parseConnectionId('my-conn/analytics')).toEqual({
+      baseId: 'my-conn',
+      databaseOverride: 'analytics',
+    });
+  });
+
+  it('should treat empty halves as no override', () => {
+    expect(parseConnectionId('/analytics')).toEqual({
+      baseId: '/analytics',
+      databaseOverride: null,
+    });
+    expect(parseConnectionId('my-conn/')).toEqual({
+      baseId: 'my-conn/',
+      databaseOverride: null,
+    });
+  });
+
+  it('should preserve later slashes inside the database name', () => {
+    expect(parseConnectionId('my-conn/foo/bar')).toEqual({
+      baseId: 'my-conn',
+      databaseOverride: 'foo/bar',
+    });
   });
 });
 

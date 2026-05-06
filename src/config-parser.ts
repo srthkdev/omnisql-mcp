@@ -5,6 +5,7 @@ import { parseString } from 'xml2js';
 import { promisify } from 'util';
 import crypto from 'crypto';
 import { DatabaseConnection, WorkspaceConfig } from './types.js';
+import { parseConnectionId } from './utils.js';
 
 const parseXML = promisify(parseString);
 
@@ -273,10 +274,23 @@ export class WorkspaceConfigParser {
 
   async getConnection(connectionId: string): Promise<DatabaseConnection | null> {
     try {
+      const { baseId, databaseOverride } = parseConnectionId(connectionId);
       const connections = await this.parseConnections();
-      return (
-        connections.find((conn) => conn.id === connectionId || conn.name === connectionId) || null
-      );
+      const match = connections.find((conn) => conn.id === baseId || conn.name === baseId) || null;
+
+      if (!match || !databaseOverride) {
+        return match;
+      }
+
+      // Database-override syntax "<id>/<database>": clone the matched connection
+      // with the requested database swapped in. The synthetic id ensures pool
+      // caches keyed on connection.id stay separated per target database.
+      return {
+        ...match,
+        id: `${match.id}/${databaseOverride}`,
+        database: databaseOverride,
+        properties: { ...(match.properties || {}), database: databaseOverride },
+      };
     } catch (error) {
       if (this.config.debug) {
         console.error(`Failed to get connection ${connectionId}: ${error}`);

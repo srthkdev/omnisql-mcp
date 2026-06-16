@@ -71,6 +71,8 @@ class OmniSQLMCPServer {
   private disabledTools: string[];
   private allowedConnections: Set<string> | null; // null = allow all
   private staleCleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private outputDir: string;
+  private allowAnyOutputPath: boolean;
 
   constructor() {
     this.debug = process.env.OMNISQL_DEBUG === 'true';
@@ -87,6 +89,9 @@ class OmniSQLMCPServer {
       .map((c) => c.trim())
       .filter(Boolean);
     this.allowedConnections = allowedList.length > 0 ? new Set(allowedList) : null;
+
+    this.outputDir = path.resolve(process.env.OMNISQL_OUTPUT_DIR || os.tmpdir());
+    this.allowAnyOutputPath = process.env.OMNISQL_ALLOW_ANY_OUTPUT_PATH === 'true';
 
     this.insightsFile = path.join(os.tmpdir(), 'omnisql-mcp-insights.json');
 
@@ -170,6 +175,31 @@ class OmniSQLMCPServer {
     } catch (error) {
       this.log(`Failed to save insights: ${error}`, 'error');
     }
+  }
+
+  private resolveOutputPath(input: string): string {
+    if (this.allowAnyOutputPath) {
+      return path.resolve(input);
+    }
+    const root = this.outputDir;
+    const resolved = path.isAbsolute(input) ? path.resolve(input) : path.resolve(root, input);
+    const parent = path.dirname(resolved);
+    let realParent: string;
+    try {
+      realParent = fs.realpathSync(parent);
+    } catch {
+      realParent = parent;
+    }
+    const realResolved = path.join(realParent, path.basename(resolved));
+    const rel = path.relative(root, realResolved);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `outputPath must be inside OMNISQL_OUTPUT_DIR (${root}). Got: ${input}. ` +
+          `Set OMNISQL_ALLOW_ANY_OUTPUT_PATH=true to disable this check.`
+      );
+    }
+    return realResolved;
   }
 
   /**
@@ -469,7 +499,8 @@ class OmniSQLMCPServer {
         },
         {
           name: 'export_data',
-          description: 'Export query results to various formats (CSV, JSON, etc.)',
+          description:
+            'Export query results to CSV, JSON, or JSONL. When outputPath is set, writes to disk and returns a small summary (filePath, rowCount, byteSize, columns, previewRows) instead of the full payload — useful for large dumps that would otherwise bloat the LLM context.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -483,8 +514,8 @@ class OmniSQLMCPServer {
               },
               format: {
                 type: 'string',
-                enum: ['csv', 'json'],
-                description: 'Export format (csv or json)',
+                enum: ['csv', 'json', 'jsonl'],
+                description: 'Export format (csv, json, or jsonl)',
                 default: 'csv',
               },
               includeHeaders: {
@@ -496,6 +527,11 @@ class OmniSQLMCPServer {
                 type: 'number',
                 description: 'Maximum number of rows to export',
                 default: 10000,
+              },
+              outputPath: {
+                type: 'string',
+                description:
+                  'Optional file path to write the export to. Relative paths resolve against OMNISQL_OUTPUT_DIR; absolute paths must live inside it unless OMNISQL_ALLOW_ANY_OUTPUT_PATH=true. When set, the response is a summary (filePath, rowCount, byteSize, columns, previewRows) instead of the full data.',
               },
             },
             required: ['connectionId', 'query'],
@@ -832,6 +868,7 @@ class OmniSQLMCPServer {
                 format?: string;
                 includeHeaders?: boolean;
                 maxRows?: number;
+                outputPath?: string;
               }
             );
 
@@ -1275,11 +1312,11 @@ class OmniSQLMCPServer {
     format?: string;
     includeHeaders?: boolean;
     maxRows?: number;
+    outputPath?: string;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
 
-    // Validate query - only SELECT queries for export
     if (!query.toLowerCase().trimStart().startsWith('select')) {
       throw new McpError(ErrorCode.InvalidParams, 'Only SELECT queries are allowed for export');
     }
@@ -1291,49 +1328,72 @@ class OmniSQLMCPServer {
 
     const requestedRows = args.maxRows || DEFAULT_EXPORT_ROWS;
     const maxRows = Math.min(Math.max(1, requestedRows), MAX_EXPORT_ROWS);
-    const format = args.format || 'csv';
+    const format = (args.format || 'csv') as 'csv' | 'json' | 'jsonl';
 
-    // Add LIMIT clause if not present
+    if (!['csv', 'json', 'jsonl'].includes(format)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unsupported export format: ${format}. Use 'csv', 'json', or 'jsonl'`
+      );
+    }
+
     let finalQuery = query;
     if (!query.toLowerCase().includes('limit')) {
       finalQuery = `${query} LIMIT ${maxRows}`;
     }
 
+    if (args.outputPath) {
+      const resolvedPath = this.resolveOutputPath(args.outputPath);
+      const { filePath, result } = await this.workspaceClient.exportData(connection, finalQuery, {
+        format,
+        outputPath: resolvedPath,
+      });
+      const byteSize = fs.statSync(filePath).size;
+      const summary = {
+        filePath,
+        format,
+        rowCount: result.rowCount,
+        byteSize,
+        columns: result.columns,
+        previewRows: result.rows.slice(0, 20),
+        truncated: result.rows.length >= maxRows,
+      };
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }],
+      };
+    }
+
     const result = await this.workspaceClient.executeQuery(connection, finalQuery);
 
     if (format === 'csv') {
-      const csvData = convertToCSV(result.columns, result.rows);
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: csvData,
-          },
-        ],
+        content: [{ type: 'text' as const, text: convertToCSV(result.columns, result.rows) }],
       };
-    } else if (format === 'json') {
-      const jsonData = result.rows.map((row) => {
-        const obj: any = {};
-        result.columns.forEach((col, idx) => {
-          obj[col] = row[idx];
-        });
-        return obj;
-      });
-
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(jsonData, null, 2),
-          },
-        ],
-      };
-    } else {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unsupported export format: ${format}. Use 'csv' or 'json'`
-      );
     }
+
+    if (format === 'jsonl') {
+      const lines = result.rows
+        .map((row) => {
+          const obj: any = {};
+          result.columns.forEach((col, idx) => {
+            obj[col] = row[idx];
+          });
+          return JSON.stringify(obj);
+        })
+        .join('\n');
+      return { content: [{ type: 'text' as const, text: lines }] };
+    }
+
+    const jsonData = result.rows.map((row) => {
+      const obj: any = {};
+      result.columns.forEach((col, idx) => {
+        obj[col] = row[idx];
+      });
+      return obj;
+    });
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(jsonData, null, 2) }],
+    };
   }
 
   private async handleTestConnection(args: { connectionId: string }) {

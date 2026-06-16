@@ -110,18 +110,24 @@ export class WorkspaceClient {
     connection: DatabaseConnection,
     query: string,
     options: ExportOptions
-  ): Promise<string> {
+  ): Promise<{ filePath: string; format: 'csv' | 'json' | 'jsonl'; result: QueryResult }> {
     const format = options.format || 'csv';
-    const supportedFormats: ExportOptions['format'][] = ['csv', 'json'];
+    const supportedFormats: NonNullable<ExportOptions['format']>[] = ['csv', 'json', 'jsonl'];
     if (!supportedFormats.includes(format)) {
       throw new Error(
         `Unsupported export format: ${format}. Supported formats: ${supportedFormats.join(', ')}.`
       );
     }
 
-    const tempDir = os.tmpdir();
-    const exportId = `export_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const outputFile = path.join(tempDir, `${exportId}_output.${format}`);
+    let outputFile: string;
+    if (options.outputPath) {
+      outputFile = options.outputPath;
+      fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+    } else {
+      const tempDir = os.tmpdir();
+      const exportId = `export_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+      outputFile = path.join(tempDir, `${exportId}_output.${format}`);
+    }
 
     try {
       const result = await this.executeWithNativeTool(connection, query);
@@ -129,8 +135,18 @@ export class WorkspaceClient {
       let content: string;
       if (format === 'csv') {
         content = convertToCSV(result.columns, result.rows);
+      } else if (format === 'jsonl') {
+        content =
+          result.rows
+            .map((row) => {
+              const obj: Record<string, unknown> = {};
+              result.columns.forEach((col, idx) => {
+                obj[col] = row[idx];
+              });
+              return JSON.stringify(obj);
+            })
+            .join('\n') + (result.rows.length > 0 ? '\n' : '');
       } else {
-        // json
         const objects = result.rows.map((row) => {
           const obj: Record<string, unknown> = {};
           result.columns.forEach((col, idx) => {
@@ -142,7 +158,7 @@ export class WorkspaceClient {
       }
 
       fs.writeFileSync(outputFile, content, 'utf-8');
-      return outputFile;
+      return { filePath: outputFile, format, result };
     } catch (error) {
       throw new Error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
     }

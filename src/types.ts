@@ -57,11 +57,22 @@ export interface ConstraintInfo {
 }
 
 export interface ExportOptions {
-  format: 'csv' | 'json' | 'xml' | 'excel' | 'sql';
-  includeHeaders: boolean;
+  format?: 'csv' | 'json' | 'jsonl';
+  includeHeaders?: boolean;
   delimiter?: string;
   encoding?: string;
   maxRows?: number;
+  outputPath?: string;
+}
+
+export interface ExportResult {
+  filePath: string;
+  format: 'csv' | 'json' | 'jsonl';
+  rowCount: number;
+  byteSize: number;
+  columns: string[];
+  previewRows: any[][];
+  truncated: boolean;
 }
 
 export interface WorkspaceConfig {

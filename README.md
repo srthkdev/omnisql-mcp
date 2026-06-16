@@ -104,6 +104,8 @@ Add to Cursor Settings > MCP Servers:
 | `OMNISQL_POOL_MAX` | Maximum connections per pool | `10` |
 | `OMNISQL_POOL_IDLE_TIMEOUT` | Idle connection timeout (ms) | `30000` |
 | `OMNISQL_POOL_ACQUIRE_TIMEOUT` | Connection acquire timeout (ms) | `10000` |
+| `OMNISQL_OUTPUT_DIR` | Allow-root for `export_data` `outputPath` writes | `os.tmpdir()` |
+| `OMNISQL_ALLOW_ANY_OUTPUT_PATH` | Disable the allow-root check for `outputPath` | `false` |
 
 ### Read-Only Mode
 
@@ -164,7 +166,7 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 ### Data Operations
 - `execute_query` - Run read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE only)
 - `write_query` - Run INSERT/UPDATE/DELETE
-- `export_data` - Export to CSV/JSON
+- `export_data` - Export to CSV, JSON, or JSONL. Set `outputPath` to dump to disk and receive a small summary (filePath, rowCount, byteSize, columns, previewRows) instead of the full payload — avoids bloating the LLM context for large result sets.
 
 ### Schema Management
 - `list_tables` - List tables and views

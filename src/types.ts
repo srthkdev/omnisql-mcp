@@ -69,6 +69,11 @@ export interface WorkspaceConfig {
   executablePath?: string;
   timeout?: number;
   debug?: boolean;
+  /**
+   * Name of the DB client project/workspace folder to read connections from
+   * (e.g. a custom-named DBeaver project instead of the default "General").
+   */
+  projectName?: string;
 }
 
 export interface ConnectionTest {

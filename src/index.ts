@@ -108,6 +108,7 @@ class OmniSQLMCPServer {
       timeout: parseInt(process.env.OMNISQL_TIMEOUT || '30000'),
       executablePath: process.env.OMNISQL_CLI_PATH,
       workspacePath: process.env.OMNISQL_WORKSPACE,
+      projectName: process.env.OMNISQL_PROJECT,
     });
 
     this.workspaceClient = new WorkspaceClient(
@@ -1743,6 +1744,7 @@ Options:
 Environment Variables:
   OMNISQL_CLI_PATH             Path to local DB client CLI executable (for unsupported-driver fallback)
   OMNISQL_WORKSPACE            Path to local DB client workspace directory
+  OMNISQL_PROJECT              Name of the DB client project/workspace folder (default: "General")
   OMNISQL_TIMEOUT              Query timeout in milliseconds (default: 30000)
   OMNISQL_DEBUG                Enable debug logging (true/false)
   OMNISQL_READ_ONLY            Disable all write operations (true/false)

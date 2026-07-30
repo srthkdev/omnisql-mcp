@@ -22,6 +22,8 @@ import {
   buildSchemaQuery,
   buildListTablesQuery,
 } from './utils.js';
+import { isIamAuthConnection, resolveIamCredentials } from './auth/iam-auth.js';
+import { resolvePostgresSsl, resolveMysqlSsl } from './auth/ssl.js';
 
 export class WorkspaceClient {
   private executablePath: string;
@@ -202,13 +204,22 @@ export class WorkspaceClient {
         const nativeDrivers =
           'PostgreSQL (+ CockroachDB, TimescaleDB, Redshift, YugabyteDB, Supabase, Neon, Citus, AlloyDB), MySQL/MariaDB, SQL Server (MSSQL), SQLite';
         const cliMsg = cliError instanceof Error ? cliError.message : String(cliError);
+        // Custom drivers can carry an opaque id; surfacing it alongside the
+        // provider makes an unresolved dialect obvious rather than mysterious.
+        const identity =
+          connection.driverId && connection.driverId !== driverName
+            ? `"${driverName}" (driver id "${connection.driverId}"${
+                connection.provider ? `, provider "${connection.provider}"` : ''
+              })`
+            : `"${driverName}"`;
         throw new Error(
-          `Database driver "${driverName}" is not natively supported. ` +
+          `Database driver ${identity} is not natively supported. ` +
             `Natively supported drivers: ${nativeDrivers}. ` +
             `CLI fallback also failed: ${cliMsg}. ` +
-            `To use "${driverName}", consider connecting through a supported driver ` +
-            `(e.g. via an ODBC/JDBC bridge) or ensure a compatible DB client CLI is installed and ` +
-            `the connection is configured in your workspace.`
+            `If this is a custom driver wrapping a supported engine, set its connection ` +
+            `"provider" (or a JDBC URL such as jdbc:postgresql://...) so the engine can be ` +
+            `detected; otherwise connect through a supported driver or ensure a compatible ` +
+            `DB client CLI is installed.`
         );
       }
     }
@@ -333,73 +344,25 @@ export class WorkspaceClient {
       connection.port ||
       (connection.properties?.port ? parseInt(connection.properties.port) : 5432);
     const database = connection.database || connection.properties?.database || 'postgres';
-    const user = connection.user || connection.properties?.user || process.env.PGUSER || 'postgres';
-    const password = connection.properties?.password || process.env.PGPASSWORD;
 
-    // SSL handling
-    // The workspace JSON config format stores driver properties under a nested `properties` key,
-    // and SSL handler config under `handlers.postgre_ssl`. Check all locations.
-    const nestedProps =
-      (connection.properties?.['properties'] as unknown as Record<string, unknown>) || {};
-    const sslHandler = (
-      connection.properties?.['handlers'] as unknown as Record<string, unknown> | undefined
-    )?.['postgre_ssl'] as Record<string, unknown> | undefined;
-    const sslModeRaw =
-      connection.properties?.['ssl.mode'] ||
-      connection.properties?.['sslmode'] ||
-      connection.properties?.['ssl'] ||
-      nestedProps['sslmode'] ||
-      nestedProps['ssl'] ||
-      (sslHandler?.enabled
-        ? (sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require'
-        : undefined);
-    const sslMode = String(sslModeRaw ?? '').toLowerCase();
-    const sslRootCert =
-      connection.properties?.['sslrootcert'] ||
-      connection.properties?.['ssl.root.cert'] ||
-      connection.properties?.['sslRootCert'];
-    const sslCert =
-      connection.properties?.['sslcert'] ||
-      connection.properties?.['ssl.cert'] ||
-      connection.properties?.['sslCert'];
-    const sslKey =
-      connection.properties?.['sslkey'] ||
-      connection.properties?.['ssl.key'] ||
-      connection.properties?.['sslKey'];
+    // IAM-authenticated connections store no credential, so mint a short-lived
+    // token and authenticate with that. This also resolves the username, which
+    // such connections frequently omit.
+    const iamAuth = isIamAuthConnection(connection);
+    const iamCreds = iamAuth
+      ? await resolveIamCredentials(connection, 5432, { debug: this.debug })
+      : undefined;
 
-    let ssl: any = undefined;
-    const requireSsl = ['require', 'verify-ca', 'verify-full', 'true', '1'].includes(sslMode);
-    const verifyModes = ['verify-ca', 'verify-full'];
-    const disableSsl = ['disable', 'false', '0'].includes(sslMode);
-    if (requireSsl) {
-      const sslObj: any = {};
-      try {
-        if (sslRootCert && fs.existsSync(String(sslRootCert)))
-          sslObj.ca = fs.readFileSync(String(sslRootCert)).toString();
-        if (sslCert && fs.existsSync(String(sslCert)))
-          sslObj.cert = fs.readFileSync(String(sslCert)).toString();
-        if (sslKey && fs.existsSync(String(sslKey)))
-          sslObj.key = fs.readFileSync(String(sslKey)).toString();
-      } catch {
-        // ignore errors, we'll set a reasonable default below
-      }
-      const hasCa = typeof sslObj.ca === 'string' && sslObj.ca.length > 0;
-      if (verifyModes.includes(sslMode)) {
-        // Enforce certificate verification. If no custom CA is provided, fallback to system trust store.
-        sslObj.rejectUnauthorized = true;
-        if (this.debug && !hasCa) {
-          console.warn(
-            'sslMode set to verify-ca/verify-full but no sslrootcert provided; using system CA store'
-          );
-        }
-      } else {
-        // "require" mode: encrypt without verification
-        sslObj.rejectUnauthorized = false;
-      }
-      ssl = sslObj;
-    } else if (disableSsl) {
-      ssl = false;
-    }
+    const user =
+      iamCreds?.user ||
+      connection.user ||
+      connection.properties?.user ||
+      process.env.PGUSER ||
+      'postgres';
+    const password =
+      iamCreds?.password || connection.properties?.password || process.env.PGPASSWORD;
+
+    const ssl = resolvePostgresSsl(connection, iamAuth, this.debug);
 
     const client = new Client({ host, port, database, user, password, ssl });
     try {
@@ -500,60 +463,28 @@ export class WorkspaceClient {
       connection.port ||
       (connection.properties?.port ? parseInt(connection.properties.port) : 3306);
     const database = connection.database || connection.properties?.database;
-    const user = connection.user || connection.properties?.user || process.env.MYSQL_USER || 'root';
+
+    // IAM-authenticated connections store no credential, so mint a short-lived
+    // token and authenticate with that. mysql2 answers RDS's auth-plugin switch
+    // with mysql_clear_password out of the box, safe over the TLS we force below.
+    const iamAuth = isIamAuthConnection(connection);
+    const iamCreds = iamAuth
+      ? await resolveIamCredentials(connection, 3306, { debug: this.debug })
+      : undefined;
+
+    const user =
+      iamCreds?.user ||
+      connection.user ||
+      connection.properties?.user ||
+      process.env.MYSQL_USER ||
+      'root';
     const password =
-      connection.properties?.password || process.env.MYSQL_PWD || process.env.MYSQL_PASSWORD;
+      iamCreds?.password ||
+      connection.properties?.password ||
+      process.env.MYSQL_PWD ||
+      process.env.MYSQL_PASSWORD;
 
-    // SSL handling (best-effort; varies across workspace driver configs)
-    const sslModeRaw =
-      connection.properties?.['ssl.mode'] ||
-      connection.properties?.['sslMode'] ||
-      connection.properties?.['sslmode'] ||
-      connection.properties?.['useSSL'] ||
-      connection.properties?.['ssl'];
-    const sslMode = String(sslModeRaw ?? '').toLowerCase();
-    const sslCa =
-      connection.properties?.['ssl.ca'] ||
-      connection.properties?.['sslCA'] ||
-      connection.properties?.['sslrootcert'];
-    const sslCert =
-      connection.properties?.['ssl.cert'] ||
-      connection.properties?.['sslCert'] ||
-      connection.properties?.['sslcert'];
-    const sslKey =
-      connection.properties?.['ssl.key'] ||
-      connection.properties?.['sslKey'] ||
-      connection.properties?.['sslkey'];
-
-    let ssl: any = undefined;
-    const requireSsl = [
-      'require',
-      'verify-ca',
-      'verify-full',
-      'true',
-      '1',
-      'preferred',
-      'enabled',
-      'yes',
-    ].includes(sslMode);
-    const disableSsl = ['disable', 'false', '0', 'none', 'off', 'no'].includes(sslMode);
-    if (requireSsl) {
-      const sslObj: any = {};
-      try {
-        if (sslCa && fs.existsSync(String(sslCa)))
-          sslObj.ca = fs.readFileSync(String(sslCa)).toString();
-        if (sslCert && fs.existsSync(String(sslCert)))
-          sslObj.cert = fs.readFileSync(String(sslCert)).toString();
-        if (sslKey && fs.existsSync(String(sslKey)))
-          sslObj.key = fs.readFileSync(String(sslKey)).toString();
-      } catch {
-        // ignore and let mysql2 use defaults
-      }
-      // For MySQL, verification behavior depends on the TLS layer. If CA is provided, mysql2 will verify.
-      ssl = sslObj;
-    } else if (disableSsl) {
-      ssl = undefined;
-    }
+    const ssl = resolveMysqlSsl(connection, iamAuth);
 
     const connectTimeout = Math.max(1000, this.timeout);
     const connectionConfig: mysql.ConnectionOptions = {

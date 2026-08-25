@@ -261,21 +261,52 @@ export function enforceReadOnly(query: string): string | null {
 }
 
 /**
- * Sanitize connection ID to prevent injection
+ * Sanitize connection ID to prevent injection.
+ *
+ * Allows an optional database-override suffix using the syntax
+ * `<connectionIdOrName>/<database>`. The forward slash is preserved so that
+ * `parseConnectionId` (and downstream lookup) can split it back out.
  */
 export function sanitizeConnectionId(connectionId: string): string {
   if (!connectionId || typeof connectionId !== 'string') {
     throw new Error('Connection ID must be a non-empty string');
   }
 
-  // Remove potentially dangerous characters
-  const sanitized = connectionId.replace(/[^a-zA-Z0-9_\-.]/g, '');
+  // Remove potentially dangerous characters; '/' is allowed for the database
+  // override syntax "<id>/<database>" and is split out by parseConnectionId.
+  const sanitized = connectionId.replace(/[^a-zA-Z0-9_\-./]/g, '');
 
   if (sanitized.length === 0) {
     throw new Error('Connection ID contains no valid characters');
   }
 
   return sanitized;
+}
+
+/**
+ * Split an incoming connection identifier into its base ID/name and an optional
+ * database-override component. Returns `databaseOverride: null` when no
+ * override is present.
+ *
+ * Examples:
+ *   "my-conn"                 -> { baseId: "my-conn", databaseOverride: null }
+ *   "my-conn/analytics"       -> { baseId: "my-conn", databaseOverride: "analytics" }
+ *   "postgres-jdbc-abc/orders" -> { baseId: "postgres-jdbc-abc", databaseOverride: "orders" }
+ */
+export function parseConnectionId(connectionId: string): {
+  baseId: string;
+  databaseOverride: string | null;
+} {
+  const slashIdx = connectionId.indexOf('/');
+  if (slashIdx < 0) {
+    return { baseId: connectionId, databaseOverride: null };
+  }
+  const baseId = connectionId.slice(0, slashIdx);
+  const databaseOverride = connectionId.slice(slashIdx + 1);
+  if (!baseId || !databaseOverride) {
+    return { baseId: connectionId, databaseOverride: null };
+  }
+  return { baseId, databaseOverride };
 }
 
 /**

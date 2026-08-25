@@ -66,4 +66,72 @@ describe('WorkspaceConfigParser', () => {
       );
     });
   });
+
+  describe('getConnection database-override syntax', () => {
+    const baseConnection = {
+      id: 'conn-1',
+      name: 'my-conn',
+      driver: 'postgres-jdbc',
+      url: 'jdbc:postgresql://host:5432/postgres',
+      host: 'host',
+      port: 5432,
+      database: 'postgres',
+      user: 'app',
+      properties: { user: 'app', host: 'host', database: 'postgres', sslmode: 'require' },
+    };
+
+    it('should look up by base id when no slash is present', async () => {
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([baseConnection]);
+
+      const result = await parser.getConnection('conn-1');
+      expect(result).toEqual(baseConnection);
+    });
+
+    it('should look up by name when no slash is present', async () => {
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([baseConnection]);
+
+      const result = await parser.getConnection('my-conn');
+      expect(result).toEqual(baseConnection);
+    });
+
+    it('should override database when "<id>/<database>" syntax is used', async () => {
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([baseConnection]);
+
+      const result = await parser.getConnection('conn-1/analytics');
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('conn-1/analytics');
+      expect(result!.database).toBe('analytics');
+      expect(result!.properties?.database).toBe('analytics');
+      // Other fields remain intact
+      expect(result!.host).toBe('host');
+      expect(result!.user).toBe('app');
+      expect(result!.properties?.sslmode).toBe('require');
+    });
+
+    it('should not mutate the cached connection when overriding', async () => {
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([baseConnection]);
+
+      await parser.getConnection('conn-1/analytics');
+      expect(baseConnection.id).toBe('conn-1');
+      expect(baseConnection.database).toBe('postgres');
+      expect(baseConnection.properties.database).toBe('postgres');
+    });
+
+    it('should return null when the base id does not match', async () => {
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([baseConnection]);
+
+      const result = await parser.getConnection('does-not-exist/analytics');
+      expect(result).toBeNull();
+    });
+  });
 });

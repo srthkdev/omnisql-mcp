@@ -301,9 +301,25 @@ export class WorkspaceClient {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      proc.on('error', (err) => {
-        reject(new Error(`sqlite3 CLI not found: ${err.message}`));
-      });
+      // A failed spawn surfaces twice: once as 'error' on the child, and again
+      // as EPIPE on the stdin we write to below. Both are 'error' events with
+      // no listener, which Node turns into an uncaught throw that takes the
+      // whole MCP server down instead of failing this one tool call.
+      let settled = false;
+      const fail = (err: NodeJS.ErrnoException) => {
+        if (settled) return;
+        settled = true;
+        const hint =
+          err.code === 'ENOENT'
+            ? 'sqlite3 CLI not found on PATH - install it to query SQLite connections'
+            : err.code === 'EACCES'
+              ? 'sqlite3 CLI is not executable'
+              : 'Failed to run sqlite3 CLI';
+        reject(new Error(`${hint}: ${err.message}`));
+      };
+
+      proc.on('error', fail);
+      proc.stdin.on('error', fail);
 
       let output = '';
       let error = '';
@@ -317,6 +333,8 @@ export class WorkspaceClient {
       });
 
       proc.on('close', (code) => {
+        if (settled) return;
+        settled = true;
         if (code !== 0) {
           reject(new Error(`SQLite error: ${error}`));
           return;
@@ -334,8 +352,12 @@ export class WorkspaceClient {
         resolve({ columns, rows, rowCount: rows.length, executionTime: 0 });
       });
 
-      proc.stdin.write(query);
-      proc.stdin.end();
+      try {
+        proc.stdin.write(query);
+        proc.stdin.end();
+      } catch (err) {
+        fail(err as NodeJS.ErrnoException);
+      }
     });
   }
 

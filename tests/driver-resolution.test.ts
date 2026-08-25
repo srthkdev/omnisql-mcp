@@ -117,3 +117,30 @@ describe('parseJdbcUrl', () => {
     expect(parseJdbcUrl('')).toEqual({});
   });
 });
+
+describe('opaque (UUID) driver ids', () => {
+  // `db2` is a valid hex triple, so a substring scan judges roughly one UUID in
+  // 140 "already routable" and returns it unresolved.
+  const uuidContainingDb2 = 'a1db2f3c-9e4d-4a1b-8c7e-000000000000';
+
+  it('should not treat a UUID driver id as carrying a dialect', () => {
+    expect(isRoutableDriverId(uuidContainingDb2)).toBe(false);
+    expect(isRoutableDriverId('7f3a9c21-1111-2222-3333-444455556666')).toBe(false);
+  });
+
+  it('should fall through to the provider for a UUID driver id', () => {
+    expect(resolveDriverDialect(uuidContainingDb2, 'postgresql', '')).toBe('postgresql');
+  });
+
+  it('should fall through to the JDBC URL when there is no provider', () => {
+    expect(resolveDriverDialect(uuidContainingDb2, '', 'jdbc:mysql://h:3306/app')).toBe('mysql');
+  });
+
+  it('should accept brace-wrapped and upper-case UUIDs', () => {
+    expect(isRoutableDriverId('{A1DB2F3C-9E4D-4A1B-8C7E-000000000000}')).toBe(false);
+  });
+
+  it('should still route a driver id that genuinely names db2', () => {
+    expect(isRoutableDriverId('db2_luw')).toBe(true);
+  });
+});

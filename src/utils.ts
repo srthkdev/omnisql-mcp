@@ -61,9 +61,24 @@ const PROVIDER_DIALECTS: Record<string, string> = {
 };
 
 /**
+ * Driver ids that are opaque identifiers rather than descriptive names.
+ *
+ * Custom drivers are frequently registered under a generated UUID. Those carry
+ * no dialect, but they are hex, and `db2` is a valid hex triple - so a
+ * substring scan would judge `a1db2f3c-...` routable and strand the connection
+ * on a dialect it has nothing to do with. Recognise the shape and skip it.
+ */
+function isOpaqueDriverId(driver: string): boolean {
+  return /^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(driver);
+}
+
+/**
  * True when a driver id already carries a dialect the native routing understands.
  */
 export function isRoutableDriverId(driver: string): boolean {
+  if (isOpaqueDriverId(driver)) {
+    return false;
+  }
   const d = driver.toLowerCase();
   return DIALECT_TOKENS.some((token) => d.includes(token));
 }

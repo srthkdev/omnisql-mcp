@@ -154,6 +154,55 @@ describe('WorkspaceConfigParser', () => {
     });
   });
 
+  describe('SSH tunnel connections (#28)', () => {
+    it('should carry the tunnel handler onto the connection', async () => {
+      const dataSources = '/Users/test/workspace6/General/.dbeaver/data-sources.json';
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === dataSources);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({
+          connections: {
+            'pg-tunnel': {
+              name: 'Behind bastion',
+              provider: 'postgresql',
+              driver: 'postgres-jdbc',
+              configuration: {
+                // The target as the SSH server sees it - not an address this
+                // machine can use.
+                host: 'localhost',
+                port: 5432,
+                database: 'mydb',
+                handlers: {
+                  ssh_tunnel: {
+                    type: 'TUNNEL',
+                    enabled: true,
+                    properties: {
+                      host: 'db-host.internal.example.com',
+                      port: 22,
+                      authType: 'AGENT',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }) as never
+      );
+
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({ workspacePath: '/Users/test/workspace6' });
+      const [conn] = await parser.parseConnections();
+
+      expect(conn.sshTunnel).toMatchObject({
+        enabled: true,
+        host: 'db-host.internal.example.com',
+        port: 22,
+        authType: 'AGENT',
+      });
+      // The recorded host stays as-is; it is the forward's destination.
+      expect(conn.host).toBe('localhost');
+    });
+  });
+
   describe('projectName', () => {
     it('should default to General when projectName is not provided', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);

@@ -62,6 +62,8 @@ To use OmniSQL MCP with Claude Desktop, add the following to your configuration 
 - `OMNISQL_PROJECT`: Name of the DB client project/workspace folder, for custom-named or renamed DBeaver projects (default: `General`)
 - `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
 - `OMNISQL_DEBUG`: Set to `true` to enable debug logging
+- `OMNISQL_SSH_KNOWN_HOSTS`: known_hosts file used to verify SSH tunnel hosts (default: `~/.ssh/known_hosts`)
+- `OMNISQL_SSH_STRICT_HOST_KEY`: Set to `true` to refuse SSH tunnel hosts with no `known_hosts` entry
 
 ### Security Variables
 - `OMNISQL_READ_ONLY`: Set to `true` to disable all write operations (blocks `write_query`, `create_table`, `alter_table`, `drop_table`)

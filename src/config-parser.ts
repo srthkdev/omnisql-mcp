@@ -4,7 +4,7 @@ import os from 'os';
 import { parseString } from 'xml2js';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import { DatabaseConnection, WorkspaceConfig } from './types.js';
+import { DatabaseConnection, SshTunnelConfig, WorkspaceConfig } from './types.js';
 import {
   resolveDriverDialect,
   parseJdbcUrl,
@@ -20,6 +20,64 @@ const WORKSPACE_AES_IV = Buffer.alloc(16, 0);
 
 // Default project/workspace folder name used by the local DB client (DBeaver-compatible)
 const DEFAULT_PROJECT_NAME = 'General';
+
+/**
+ * Read a connection's SSH tunnel handler.
+ *
+ * The workspace keeps network handlers alongside the connection configuration,
+ * keyed by handler id, with the SSH server's own endpoint under `properties`.
+ * Property naming has drifted across DBeaver versions, so each field accepts
+ * the spellings seen in the wild.
+ */
+export function readSshTunnel(handlers: unknown): SshTunnelConfig | undefined {
+  if (!handlers || typeof handlers !== 'object') {
+    return undefined;
+  }
+
+  const handler = (handlers as Record<string, unknown>)['ssh_tunnel'];
+  if (!handler || typeof handler !== 'object') {
+    return undefined;
+  }
+
+  const entry = handler as Record<string, unknown>;
+  const props = (entry.properties as Record<string, unknown> | undefined) ?? {};
+
+  const read = (...names: string[]): string | undefined => {
+    for (const name of names) {
+      for (const source of [props, entry]) {
+        const value = source[name];
+        if (value !== undefined && value !== null && typeof value !== 'object') {
+          const str = String(value);
+          if (str.length > 0) {
+            return str;
+          }
+        }
+      }
+    }
+    return undefined;
+  };
+
+  const host = read('host', 'hostName');
+  if (!host) {
+    return undefined;
+  }
+
+  const portRaw = read('port');
+  const port = portRaw ? parseInt(portRaw, 10) : 22;
+
+  return {
+    // A handler present but disabled is a tunnel the user turned off, and the
+    // connection is then genuinely direct.
+    enabled: entry.enabled === true || entry.enabled === 'true',
+    host,
+    port: Number.isNaN(port) ? 22 : port,
+    user: read('userName', 'user', 'username'),
+    authType: read('authType', 'auth_type'),
+    privateKeyPath: read('keyPath', 'privKeyPath', 'privateKeyPath', 'keyFile', 'privKeyFile'),
+    passphrase: read('passphrase', 'keyPassphrase'),
+    password: read('password'),
+  };
+}
 
 export class WorkspaceConfigParser {
   private config: WorkspaceConfig;
@@ -244,6 +302,7 @@ export class WorkspaceConfigParser {
         connection.database = config.database || '';
 
         this.applyUrlEndpoint(connection, props, config.configurationType);
+        connection.sshTunnel = readSshTunnel(config.handlers);
       }
 
       connections.push(connection);
@@ -546,6 +605,19 @@ export class WorkspaceConfigParser {
                 connection.properties = {};
               }
               connection.properties.password = creds.password;
+            }
+          }
+
+          // Network handlers keep their credentials in a sibling entry rather
+          // than under '#connection', so an SSH tunnel's user and password are
+          // invisible to anything that only reads the connection's own.
+          const tunnelCreds = connCreds['network/ssh_tunnel'];
+          if (tunnelCreds && connection.sshTunnel) {
+            if (tunnelCreds.user) {
+              connection.sshTunnel.user = tunnelCreds.user;
+            }
+            if (tunnelCreds.password) {
+              connection.sshTunnel.password = tunnelCreds.password;
             }
           }
         }

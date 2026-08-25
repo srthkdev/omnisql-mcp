@@ -23,6 +23,7 @@ import {
   buildListTablesQuery,
 } from './utils.js';
 import { isIamAuthConnection, resolveIamCredentials } from './auth/iam-auth.js';
+import { sshTunnelManager } from './net/ssh-tunnel.js';
 import { resolvePostgresSsl, resolveMysqlSsl } from './auth/ssl.js';
 
 export class WorkspaceClient {
@@ -286,6 +287,35 @@ export class WorkspaceClient {
     }
   }
 
+  /**
+   * Work out where to actually connect for this connection.
+   *
+   * For a tunneled connection the recorded host/port describe the database as
+   * seen from the SSH server, so they are not an address this process can use.
+   * Opening the tunnel yields a loopback endpoint that is. Failing to open it
+   * throws rather than falling through to the recorded host, which for a
+   * tunneled connection is usually `localhost` and would quietly reach some
+   * unrelated local database.
+   */
+  private async resolveEndpoint(
+    connection: DatabaseConnection,
+    defaultPort: number
+  ): Promise<{ host: string; port: number }> {
+    const tunnel = await sshTunnelManager.resolveEndpoint(connection, defaultPort);
+    if (tunnel) {
+      return tunnel;
+    }
+
+    const port =
+      connection.port ||
+      (connection.properties?.port ? parseInt(String(connection.properties.port)) : defaultPort);
+
+    return {
+      host: connection.host || connection.properties?.host || 'localhost',
+      port: Number.isNaN(port) ? defaultPort : port,
+    };
+  }
+
   private async executeSQLiteQuery(
     connection: DatabaseConnection,
     query: string
@@ -365,10 +395,7 @@ export class WorkspaceClient {
     connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
-    const host = connection.host || connection.properties?.host || 'localhost';
-    const port =
-      connection.port ||
-      (connection.properties?.port ? parseInt(connection.properties.port) : 5432);
+    const { host, port } = await this.resolveEndpoint(connection, 5432);
     const database = connection.database || connection.properties?.database || 'postgres';
 
     // IAM-authenticated connections store no credential, so mint a short-lived
@@ -420,8 +447,7 @@ export class WorkspaceClient {
     connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
-    const host = connection.host || connection.properties?.host || 'localhost';
-    const port = parseInt(String(connection.port || connection.properties?.port || '1433'));
+    const { host, port } = await this.resolveEndpoint(connection, 1433);
     const database = connection.database || connection.properties?.database || 'master';
     const user = connection.user || connection.properties?.user;
     const password = connection.properties?.password;
@@ -430,7 +456,9 @@ export class WorkspaceClient {
       throw new Error('User and password are required for SQL Server connection');
     }
 
-    const isAzure = host.includes('.database.windows.net');
+    // Judge Azure from the configured host: through a tunnel `host` is a
+    // loopback address and would read as an ordinary on-prem server.
+    const isAzure = (connection.host || host).includes('.database.windows.net');
     const config = {
       user,
       password,
@@ -484,10 +512,7 @@ export class WorkspaceClient {
     connection: DatabaseConnection,
     query: string
   ): Promise<QueryResult> {
-    const host = connection.host || connection.properties?.host || 'localhost';
-    const port =
-      connection.port ||
-      (connection.properties?.port ? parseInt(connection.properties.port) : 3306);
+    const { host, port } = await this.resolveEndpoint(connection, 3306);
     const database = connection.database || connection.properties?.database;
 
     // IAM-authenticated connections store no credential, so mint a short-lived

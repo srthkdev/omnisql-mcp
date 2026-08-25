@@ -3,6 +3,7 @@ import mysql, { Pool as MySqlPool } from 'mysql2/promise';
 import sql, { ConnectionPool as MssqlPool } from 'mssql';
 import { DatabaseConnection, PoolConfig, PoolStats } from '../types.js';
 import { isIamAuthConnection, resolveIamCredentials } from '../auth/iam-auth.js';
+import { sshTunnelManager } from '../net/ssh-tunnel.js';
 import { resolvePostgresSsl, resolveMysqlSsl } from '../auth/ssl.js';
 
 const DEFAULT_POOL_CONFIG: PoolConfig = {
@@ -101,9 +102,27 @@ export class ConnectionPoolManager {
     );
   }
 
+  /**
+   * Where to actually connect. A tunneled connection's recorded host/port are
+   * the database as seen from the SSH server, so they are resolved through the
+   * local forward instead; failing to open it throws rather than falling back
+   * to an address that would reach something else entirely.
+   */
+  private async resolveEndpoint(
+    connection: DatabaseConnection,
+    defaultPort: number
+  ): Promise<{ host: string; port: number }> {
+    const tunnel = await sshTunnelManager.resolveEndpoint(connection, defaultPort);
+    if (tunnel) {
+      return tunnel;
+    }
+    return { host: connection.host || 'localhost', port: connection.port || defaultPort };
+  }
+
   private async createPostgresPool(connection: DatabaseConnection): Promise<PoolEntry> {
     this.log(`Creating PostgreSQL pool for ${connection.name}`);
 
+    const { host, port } = await this.resolveEndpoint(connection, 5432);
     const iamAuth = isIamAuthConnection(connection);
     const resolvedSsl = resolvePostgresSsl(connection, iamAuth, this.debug);
     // When a connection says nothing about TLS the resolver defers to the
@@ -125,8 +144,8 @@ export class ConnectionPoolManager {
     }
 
     const pool = new PgPool({
-      host: connection.host,
-      port: connection.port || 5432,
+      host,
+      port,
       database: connection.database,
       user,
       password,
@@ -151,6 +170,7 @@ export class ConnectionPoolManager {
   private async createMysqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
     this.log(`Creating MySQL pool for ${connection.name}`);
 
+    const { host, port } = await this.resolveEndpoint(connection, 3306);
     const iamAuth = isIamAuthConnection(connection);
     const ssl = resolveMysqlSsl(connection, iamAuth);
 
@@ -174,8 +194,8 @@ export class ConnectionPoolManager {
     }
 
     const pool = mysql.createPool({
-      host: connection.host,
-      port: connection.port || 3306,
+      host,
+      port,
       database: connection.database,
       user,
       password,
@@ -201,12 +221,14 @@ export class ConnectionPoolManager {
   private async createMssqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
     this.log(`Creating MSSQL pool for ${connection.name}`);
 
-    const host = connection.host || 'localhost';
-    const isAzure = host.includes('.database.windows.net');
+    const { host, port } = await this.resolveEndpoint(connection, 1433);
+    // Judge Azure from the configured host: through a tunnel `host` is a
+    // loopback address and would read as an ordinary on-prem server.
+    const isAzure = (connection.host || host).includes('.database.windows.net');
 
     const pool = new sql.ConnectionPool({
       server: host,
-      port: connection.port || 1433,
+      port,
       database: connection.database,
       user: connection.user,
       password: connection.properties?.password,

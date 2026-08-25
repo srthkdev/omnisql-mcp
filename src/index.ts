@@ -23,6 +23,7 @@ import {
   redactArgs,
 } from './utils.js';
 import { ConnectionPoolManager } from './pools/index.js';
+import { sshTunnelManager } from './net/ssh-tunnel.js';
 import { TransactionManager } from './managers/index.js';
 import { buildExplainQuery, parseExplainOutput } from './utils/query-analyzer.js';
 import { compareSchemas, parseTableSchema, generateMigrationScript } from './utils/schema-diff.js';
@@ -120,6 +121,8 @@ class OmniSQLMCPServer {
     );
 
     // Initialize connection pool and transaction manager
+    sshTunnelManager.setDebug(this.debug);
+
     this.poolManager = new ConnectionPoolManager(
       {
         min: parseInt(process.env.OMNISQL_POOL_MIN || '2'),
@@ -249,6 +252,12 @@ class OmniSQLMCPServer {
         await this.poolManager.closeAllPools();
       } catch (error) {
         this.log(`Error closing pools during shutdown: ${formatError(error)}`, 'error');
+      }
+      try {
+        // After the pools, so nothing is still using a forward when it closes.
+        await sshTunnelManager.closeAll();
+      } catch (error) {
+        this.log(`Error closing SSH tunnels during shutdown: ${formatError(error)}`, 'error');
       }
       if (this.staleCleanupInterval) {
         clearInterval(this.staleCleanupInterval);
@@ -1772,9 +1781,12 @@ Environment Variables:
   OMNISQL_READ_ONLY            Disable all write operations (true/false)
   OMNISQL_ALLOWED_CONNECTIONS  Comma-separated whitelist of connection IDs or names
   OMNISQL_DISABLED_TOOLS       Comma-separated list of tools to disable
+  OMNISQL_SSH_KNOWN_HOSTS      known_hosts used to verify SSH tunnel hosts (default: ~/.ssh/known_hosts)
+  OMNISQL_SSH_STRICT_HOST_KEY  Refuse SSH tunnel hosts with no known_hosts entry (true/false)
 
 Features:
   - Universal database support via your local DB client's saved connections
+  - SSH tunnels and URL-mode connections honoured as the DB client configures them
   - Read and write operations with safety checks
   - Schema introspection and table management
   - Data export in multiple formats

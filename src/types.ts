@@ -21,6 +21,27 @@ export interface DatabaseConnection {
   readonly?: boolean;
   folder?: string;
   properties?: Record<string, string>;
+  /** Populated when the workspace routes this connection through an SSH tunnel. */
+  sshTunnel?: SshTunnelConfig;
+}
+
+/**
+ * An SSH tunnel declared by a connection's `handlers.ssh_tunnel` block.
+ *
+ * The connection's own host/port describe the database *as seen from this SSH
+ * server*, which is why they are frequently `localhost`.
+ */
+export interface SshTunnelConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  user?: string;
+  /** AGENT | PASSWORD | PUBLIC_KEY; inferred from the material when absent. */
+  authType?: string;
+  privateKeyPath?: string;
+  passphrase?: string;
+  password?: string;
+  connectTimeoutMs?: number;
 }
 
 export interface QueryResult {

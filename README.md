@@ -110,6 +110,8 @@ Add to Cursor Settings > MCP Servers:
 | `OMNISQL_POOL_ACQUIRE_TIMEOUT` | Connection acquire timeout (ms) | `10000` |
 | `OMNISQL_AWS_CLI_PATH` | Path to the AWS CLI (used for RDS IAM authentication) | `aws` |
 | `OMNISQL_IAM_TOKEN_TIMEOUT` | Timeout for minting an RDS IAM auth token (ms) | `20000` |
+| `OMNISQL_SSH_KNOWN_HOSTS` | known_hosts file used to verify SSH tunnel hosts | `~/.ssh/known_hosts` |
+| `OMNISQL_SSH_STRICT_HOST_KEY` | Refuse SSH tunnel hosts with no `known_hosts` entry | `false` |
 
 ### Read-Only Mode
 
@@ -213,6 +215,41 @@ Supports both configuration formats written by DBeaver-compatible DB clients:
 The project/workspace folder name (`General` by default) is configurable via `OMNISQL_PROJECT`,
 so workspaces using a custom or renamed DBeaver project (e.g. `DataPlatform`) are discovered
 without needing to rename the project or symlink the folder.
+
+### Connection modes
+
+DBeaver connections are configured either **manually** (host, port, database fields) or by
+**URL** (a JDBC URL). Both work. In URL mode DBeaver leaves the host/port fields at placeholder
+values — usually `localhost` — and reads only the URL, so the URL is what is used here too.
+
+### SSH tunnels
+
+Connections that DBeaver reaches through an SSH tunnel are tunneled here as well. The tunnel is
+opened on first use and reused for the lifetime of the server, with a loopback-only local
+forward, and the connection's host/port are treated the way DBeaver treats them: as the database
+*as seen from the SSH server*.
+
+- Agent, password and public-key authentication are supported, taken from the connection's SSH
+  tab. Credentials saved in the workspace (including the tunnel's own, stored separately from
+  the database credentials) are decrypted and used.
+- Agent authentication needs `SSH_AUTH_SOCK` set **in the MCP server's environment**. MCP clients
+  usually do not inherit your shell, so set it explicitly in the client's server config if you
+  use an agent.
+- The SSH host key is checked against `known_hosts`. A host recorded there must match, or the
+  tunnel is refused; a host that is not recorded is accepted, unless
+  `OMNISQL_SSH_STRICT_HOST_KEY=true`.
+- If a tunnel cannot be opened the connection fails with that reason. It never falls back to
+  connecting directly to the recorded host, which would reach an unrelated local database.
+
+### Querying another database on the same server
+
+A connection id may carry a database override — `my-connection/analytics` — to run against a
+different database on the same server without adding a second connection in DBeaver. This does
+not apply to file-backed engines such as SQLite, where the "database" is a file path.
+
+With `OMNISQL_ALLOWED_CONNECTIONS` set, whitelisting a connection allows the databases its
+credentials can reach. To pin it to specific databases, list `connection/database` entries
+instead of the bare connection.
 
 Credentials are automatically decrypted from the workspace `credentials-config.json`.
 

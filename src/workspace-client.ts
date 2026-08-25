@@ -290,6 +290,10 @@ export class WorkspaceClient {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
+      proc.on('error', (err) => {
+        reject(new Error(`sqlite3 CLI not found: ${err.message}`));
+      });
+
       let output = '';
       let error = '';
 

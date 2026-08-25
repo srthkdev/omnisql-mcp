@@ -2,6 +2,8 @@ import { Pool as PgPool } from 'pg';
 import mysql, { Pool as MySqlPool } from 'mysql2/promise';
 import sql, { ConnectionPool as MssqlPool } from 'mssql';
 import { DatabaseConnection, PoolConfig, PoolStats } from '../types.js';
+import { isIamAuthConnection, resolveIamCredentials } from '../auth/iam-auth.js';
+import { resolvePostgresSsl, resolveMysqlSsl } from '../auth/ssl.js';
 
 const DEFAULT_POOL_CONFIG: PoolConfig = {
   min: 2,
@@ -102,19 +104,37 @@ export class ConnectionPoolManager {
   private async createPostgresPool(connection: DatabaseConnection): Promise<PoolEntry> {
     this.log(`Creating PostgreSQL pool for ${connection.name}`);
 
-    const sslConfig = this.getPostgresSslConfig(connection);
+    const iamAuth = isIamAuthConnection(connection);
+    const resolvedSsl = resolvePostgresSsl(connection, iamAuth, this.debug);
+    // When a connection says nothing about TLS the resolver defers to the
+    // driver, but pooled connections have always opted into opportunistic
+    // unverified TLS here. Keep that so servers demanding TLS keep working.
+    const ssl = resolvedSsl === undefined ? { rejectUnauthorized: false } : resolvedSsl;
+
+    let user = connection.user;
+    let password: string | (() => Promise<string>) | undefined = connection.properties?.password;
+
+    if (iamAuth) {
+      // Resolve the username once, but hand pg a password *function*: it is
+      // invoked per physical connection, so a pool outliving the token's
+      // 15-minute lifetime still authenticates with a fresh one.
+      const creds = await resolveIamCredentials(connection, 5432, { debug: this.debug });
+      user = creds.user;
+      password = async () =>
+        (await resolveIamCredentials(connection, 5432, { debug: this.debug })).password;
+    }
 
     const pool = new PgPool({
       host: connection.host,
       port: connection.port || 5432,
       database: connection.database,
-      user: connection.user,
-      password: connection.properties?.password,
+      user,
+      password,
       min: this.config.min,
       max: this.config.max,
       idleTimeoutMillis: this.config.idleTimeoutMs,
       connectionTimeoutMillis: this.config.acquireTimeoutMs,
-      ...sslConfig,
+      ssl,
     });
 
     const entry: PoolEntry = {
@@ -128,53 +148,39 @@ export class ConnectionPoolManager {
     return entry;
   }
 
-  private getPostgresSslConfig(connection: DatabaseConnection): object {
-    const props = connection.properties || {};
-    // The workspace JSON config format stores driver properties under a nested `properties` key,
-    // and SSL handler config under `handlers.postgre_ssl`. Check all locations.
-    const nestedProps = (props.properties as unknown as Record<string, unknown>) || {};
-    const sslHandler = (props.handlers as unknown as Record<string, unknown> | undefined)?.[
-      'postgre_ssl'
-    ] as Record<string, unknown> | undefined;
-    const sslMode =
-      props.sslmode ||
-      props.ssl ||
-      nestedProps['sslmode'] ||
-      nestedProps['ssl'] ||
-      (sslHandler?.enabled
-        ? (sslHandler?.properties as Record<string, unknown>)?.['sslMode'] || 'require'
-        : undefined);
+  private async createMysqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
+    this.log(`Creating MySQL pool for ${connection.name}`);
 
-    if (sslMode === 'disable' || sslMode === 'false') {
-      return { ssl: false };
-    }
+    const iamAuth = isIamAuthConnection(connection);
+    const ssl = resolveMysqlSsl(connection, iamAuth);
 
-    if (
-      sslMode === 'require' ||
-      sslMode === 'true' ||
-      sslMode === 'verify-ca' ||
-      sslMode === 'verify-full'
-    ) {
-      return {
-        ssl: {
-          rejectUnauthorized: sslMode === 'verify-full',
+    let user = connection.user;
+    let password = connection.properties?.password;
+    let authPlugins: mysql.PoolOptions['authPlugins'];
+
+    if (iamAuth) {
+      const creds = await resolveIamCredentials(connection, 3306, { debug: this.debug });
+      user = creds.user;
+      password = creds.password;
+      // RDS switches IAM users to mysql_clear_password. mysql2 invokes this
+      // factory per physical connection, so mint a fresh token there and a
+      // pool outliving the token's 15-minute lifetime keeps working.
+      authPlugins = {
+        mysql_clear_password: () => async () => {
+          const fresh = await resolveIamCredentials(connection, 3306, { debug: this.debug });
+          return Buffer.from(`${fresh.password}\0`);
         },
       };
     }
-
-    // Default: try SSL but don't require it
-    return { ssl: { rejectUnauthorized: false } };
-  }
-
-  private async createMysqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
-    this.log(`Creating MySQL pool for ${connection.name}`);
 
     const pool = mysql.createPool({
       host: connection.host,
       port: connection.port || 3306,
       database: connection.database,
-      user: connection.user,
-      password: connection.properties?.password,
+      user,
+      password,
+      ssl,
+      authPlugins,
       connectionLimit: this.config.max,
       waitForConnections: true,
       queueLimit: 0,

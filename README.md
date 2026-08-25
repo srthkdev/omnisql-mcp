@@ -19,10 +19,13 @@ Universal database MCP server — give AI assistants read/write access to your d
 
 **Other databases**: Fall back to an external CLI configured via `OMNISQL_CLI_PATH`. Results vary by CLI.
 
+**Custom drivers** wrapping any of the above are detected automatically — see [Custom and IAM-Authenticated Drivers](#custom-and-iam-authenticated-drivers).
+
 ## Features
 
 - Reuses connections already configured in your local DB client workspace — no duplicate setup
 - Native query execution for PostgreSQL, MySQL/MariaDB, SQLite, SQL Server
+- AWS RDS IAM authentication, including custom drivers built on the AWS Advanced JDBC Wrapper
 - Connection pooling with configurable pool size and timeouts
 - Transaction support (BEGIN/COMMIT/ROLLBACK)
 - Query execution plan analysis (EXPLAIN)
@@ -105,6 +108,8 @@ Add to Cursor Settings > MCP Servers:
 | `OMNISQL_POOL_MAX` | Maximum connections per pool | `10` |
 | `OMNISQL_POOL_IDLE_TIMEOUT` | Idle connection timeout (ms) | `30000` |
 | `OMNISQL_POOL_ACQUIRE_TIMEOUT` | Connection acquire timeout (ms) | `10000` |
+| `OMNISQL_AWS_CLI_PATH` | Path to the AWS CLI (used for RDS IAM authentication) | `aws` |
+| `OMNISQL_IAM_TOKEN_TIMEOUT` | Timeout for minting an RDS IAM auth token (ms) | `20000` |
 
 ### Read-Only Mode
 
@@ -210,6 +215,43 @@ so workspaces using a custom or renamed DBeaver project (e.g. `DataPlatform`) ar
 without needing to rename the project or symlink the folder.
 
 Credentials are automatically decrypted from the workspace `credentials-config.json`.
+
+## Custom and IAM-Authenticated Drivers
+
+### Custom drivers
+
+Native routing normally keys off the driver id (`postgres-jdbc`, `mysql8`). Custom drivers often use an
+opaque id instead — a UUID, say — which names no engine. Those connections are resolved by falling back
+to the connection's `provider` (`postgresql`, `mysql`, …) and then to the JDBC URL's sub-protocol,
+including wrapped ones such as `jdbc:aws-wrapper:postgresql://…`. A custom driver wrapping a supported
+engine therefore works with no extra configuration.
+
+If an engine still cannot be identified, the resulting error names both the driver id and the provider
+so you can see what was missing.
+
+### AWS RDS IAM authentication
+
+Connections that authenticate with an RDS IAM token instead of a stored password are detected and
+handled automatically. Both shapes are recognised:
+
+- **AWS Advanced JDBC Wrapper** drivers, which record `wrapperPlugins: "iam"` alongside `awsProfile`
+  and `iamRegion`.
+- The DB client's own **AWS IAM auth models**.
+
+For these connections OmniSQL:
+
+1. Mints a token with `aws rds generate-db-auth-token` (via the AWS CLI, so SSO and role-chained
+   profiles work as configured) and uses it as the password.
+2. Caches each token for 13 minutes, under its 15-minute lifetime, and re-mints per physical
+   connection so long-lived pools keep working.
+3. Forces TLS, which RDS requires for IAM tokens.
+4. Resolves the database username from the connection when present. Where it is absent, the username is
+   derived from your AWS identity: either the per-developer role name (`<profile>-<user>`) or the
+   assumed SSO session name.
+
+**Requirements**: the AWS CLI on `PATH` (or `OMNISQL_AWS_CLI_PATH`), a valid session for the
+connection's profile (`aws sso login --profile <profile>`), and network reachability to the endpoint.
+An expired SSO session produces an error naming the profile to re-authenticate.
 
 ## Development
 

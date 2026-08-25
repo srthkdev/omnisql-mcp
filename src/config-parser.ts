@@ -5,6 +5,7 @@ import { parseString } from 'xml2js';
 import { promisify } from 'util';
 import crypto from 'crypto';
 import { DatabaseConnection, WorkspaceConfig } from './types.js';
+import { resolveDriverDialect, parseJdbcUrl } from './utils.js';
 
 const parseXML = promisify(parseString);
 
@@ -200,10 +201,17 @@ export class WorkspaceConfigParser {
     for (const [connectionId, connData] of Object.entries(data.connections)) {
       const conn = connData as any;
 
+      const rawDriver = conn.driver || '';
+      const url = conn.configuration?.url || '';
+
       const connection: DatabaseConnection = {
         id: connectionId,
         name: conn.name || connectionId,
-        driver: conn.driver || conn.provider || '',
+        // Custom drivers can carry an opaque id (e.g. a UUID), which no native
+        // routing would match. Resolve it to a dialect via provider/URL.
+        driver: resolveDriverDialect(rawDriver, conn.provider, url) || conn.provider || '',
+        driverId: rawDriver || undefined,
+        provider: conn.provider || undefined,
         url: '',
         folder: conn.folder || '',
         description: conn.description || '',
@@ -213,7 +221,7 @@ export class WorkspaceConfigParser {
       // Extract properties from the new format
       if (conn.configuration) {
         const config = conn.configuration;
-        connection.properties = {
+        const props: Record<string, string> = {
           url: config.url || '',
           user: config.user || '',
           host: config.host || '',
@@ -223,11 +231,28 @@ export class WorkspaceConfigParser {
           ...config,
         };
 
+        connection.properties = props;
         connection.url = config.url || '';
         connection.user = config.user || '';
         connection.host = config.host || config.server || '';
         connection.port = config.port ? parseInt(String(config.port)) : undefined;
         connection.database = config.database || '';
+
+        // Backfill anything the config omits but the JDBC URL carries. Custom
+        // drivers sometimes record only the URL.
+        const fromUrl = parseJdbcUrl(connection.url);
+        if (!connection.host && fromUrl.host) {
+          connection.host = fromUrl.host;
+          props.host = fromUrl.host;
+        }
+        if (!connection.port && fromUrl.port) {
+          connection.port = fromUrl.port;
+          props.port = String(fromUrl.port);
+        }
+        if (!connection.database && fromUrl.database) {
+          connection.database = fromUrl.database;
+          props.database = fromUrl.database;
+        }
       }
 
       connections.push(connection);
@@ -255,19 +280,9 @@ export class WorkspaceConfigParser {
       : [xmlData.connections.connection];
 
     for (const conn of connectionArray) {
-      const connection: DatabaseConnection = {
-        id: conn.$.id || '',
-        name: conn.$.name || '',
-        driver: conn.$.driver || '',
-        url: '',
-        folder: conn.$.folder || '',
-        description: conn.$.description || '',
-        readonly: conn.$.readonly === 'true',
-      };
-
-      // Extract properties
+      // Collect properties first: the JDBC URL feeds driver dialect resolution.
+      const properties: Record<string, string> = {};
       if (conn.property) {
-        const properties: Record<string, string> = {};
         const propArray = Array.isArray(conn.property) ? conn.property : [conn.property];
 
         for (const prop of propArray) {
@@ -275,13 +290,44 @@ export class WorkspaceConfigParser {
             properties[prop.$.name] = prop.$.value;
           }
         }
+      }
 
+      const rawDriver = conn.$.driver || '';
+      const provider = conn.$.provider || '';
+
+      const connection: DatabaseConnection = {
+        id: conn.$.id || '',
+        name: conn.$.name || '',
+        driver: resolveDriverDialect(rawDriver, provider, properties.url) || provider,
+        driverId: rawDriver || undefined,
+        provider: provider || undefined,
+        url: '',
+        folder: conn.$.folder || '',
+        description: conn.$.description || '',
+        readonly: conn.$.readonly === 'true',
+      };
+
+      if (conn.property) {
         connection.properties = properties;
         connection.url = properties.url || '';
         connection.user = properties.user || '';
         connection.host = properties.host || '';
         connection.port = properties.port ? parseInt(properties.port) : undefined;
         connection.database = properties.database || '';
+
+        const fromUrl = parseJdbcUrl(connection.url);
+        if (!connection.host && fromUrl.host) {
+          connection.host = fromUrl.host;
+          connection.properties.host = fromUrl.host;
+        }
+        if (!connection.port && fromUrl.port) {
+          connection.port = fromUrl.port;
+          connection.properties.port = String(fromUrl.port);
+        }
+        if (!connection.database && fromUrl.database) {
+          connection.database = fromUrl.database;
+          connection.properties.database = fromUrl.database;
+        }
       }
 
       connections.push(connection);

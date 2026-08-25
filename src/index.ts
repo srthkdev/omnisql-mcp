@@ -943,6 +943,11 @@ class OmniSQLMCPServer {
       id: conn.id,
       name: conn.name,
       driver: conn.driver,
+      // Only interesting when the configured id needed resolving to a dialect,
+      // as custom drivers with an opaque id do.
+      ...(conn.driverId && conn.driverId !== conn.driver
+        ? { driverId: conn.driverId, provider: conn.provider }
+        : {}),
       host: conn.host,
       database: conn.database,
       folder: conn.folder,

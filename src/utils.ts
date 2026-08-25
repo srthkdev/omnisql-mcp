@@ -10,6 +10,172 @@ export function findCliExecutable(): string {
 }
 
 /**
+ * Dialect tokens that the rest of the codebase pattern-matches on to pick a
+ * native driver. A driver id containing any of these is already routable.
+ */
+const DIALECT_TOKENS = [
+  'postgres',
+  'postgresql',
+  'cockroach',
+  'timescale',
+  'redshift',
+  'yugabyte',
+  'alloydb',
+  'supabase',
+  'neon',
+  'citus',
+  'mysql',
+  'mariadb',
+  'mssql',
+  'sqlserver',
+  'microsoft',
+  'sqlite',
+  'oracle',
+  'db2',
+  'hana',
+  'mongodb',
+  'redis',
+];
+
+/**
+ * Map a workspace `provider` id onto a dialect token.
+ *
+ * Providers are stable across custom drivers: a hand-rolled driver keeps
+ * `provider: "postgresql"` even when its driver id is an opaque UUID.
+ */
+const PROVIDER_DIALECTS: Record<string, string> = {
+  postgresql: 'postgresql',
+  postgres: 'postgresql',
+  cockroach: 'cockroachdb',
+  timescale: 'timescaledb',
+  redshift: 'redshift',
+  yugabyte: 'yugabytedb',
+  greenplum: 'postgresql',
+  mysql: 'mysql',
+  mariadb: 'mariadb',
+  mssql: 'mssql',
+  sqlserver: 'mssql',
+  sqlite: 'sqlite',
+  oracle: 'oracle',
+  db2: 'db2',
+};
+
+/**
+ * True when a driver id already carries a dialect the native routing understands.
+ */
+export function isRoutableDriverId(driver: string): boolean {
+  const d = driver.toLowerCase();
+  return DIALECT_TOKENS.some((token) => d.includes(token));
+}
+
+/**
+ * Extract the dialect from a JDBC URL, tolerating wrapper sub-protocols.
+ *
+ * Custom drivers commonly layer a wrapper in front of the engine sub-protocol,
+ * e.g. the AWS Advanced JDBC Wrapper's `jdbc:aws-wrapper:postgresql://host/db`.
+ * Scan every colon-delimited segment and return the first recognised dialect,
+ * so unknown wrapper names never mask the engine behind them.
+ */
+export function dialectFromJdbcUrl(url: string): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const withoutAuthority = url.split('://')[0].toLowerCase();
+  const segments = withoutAuthority.split(':').filter((s) => s && s !== 'jdbc');
+
+  for (const segment of segments) {
+    if (PROVIDER_DIALECTS[segment]) {
+      return PROVIDER_DIALECTS[segment];
+    }
+  }
+
+  // Fall back to a looser match so e.g. `mysql8` or `postgresql-42` still resolve.
+  for (const segment of segments) {
+    const token = DIALECT_TOKENS.find((t) => segment.includes(t));
+    if (token) {
+      return token;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Resolve a driver id that the native routing can dispatch on.
+ *
+ * Stock workspace drivers ("postgres-jdbc", "mysql8") already contain their
+ * dialect and are returned untouched. Custom drivers may use an opaque id -
+ * a UUID, say - in which case fall back to the connection's `provider` and
+ * finally to the JDBC URL's sub-protocol.
+ *
+ * Returns the original id when nothing resolves, so error messages still name
+ * the driver the user actually configured.
+ */
+export function resolveDriverDialect(
+  driver: string | undefined,
+  provider?: string,
+  url?: string
+): string {
+  const rawDriver = driver ?? '';
+
+  if (rawDriver && isRoutableDriverId(rawDriver)) {
+    return rawDriver;
+  }
+
+  const providerKey = (provider ?? '').toLowerCase();
+  if (PROVIDER_DIALECTS[providerKey]) {
+    return PROVIDER_DIALECTS[providerKey];
+  }
+  if (providerKey && isRoutableDriverId(providerKey)) {
+    return providerKey;
+  }
+
+  const fromUrl = dialectFromJdbcUrl(url ?? '');
+  if (fromUrl) {
+    return fromUrl;
+  }
+
+  return rawDriver || providerKey;
+}
+
+/**
+ * Parse host, port and database out of a JDBC URL.
+ *
+ * Used only to backfill fields a connection config omits; wrapper
+ * sub-protocols and query strings are both tolerated.
+ */
+export function parseJdbcUrl(url: string): { host?: string; port?: number; database?: string } {
+  if (!url) {
+    return {};
+  }
+
+  const authorityIdx = url.indexOf('://');
+  if (authorityIdx === -1) {
+    return {};
+  }
+
+  let remainder = url.slice(authorityIdx + 3);
+  // Strip query string / JDBC property suffixes before splitting on '/'.
+  remainder = remainder.split('?')[0].split(';')[0];
+
+  const slashIdx = remainder.indexOf('/');
+  const authority = slashIdx === -1 ? remainder : remainder.slice(0, slashIdx);
+  const database = slashIdx === -1 ? '' : remainder.slice(slashIdx + 1);
+
+  // Only the final colon separates the port, so IPv6 literals survive.
+  const portMatch = authority.match(/^(.*):(\d+)$/);
+  const host = portMatch ? portMatch[1] : authority;
+  const port = portMatch ? parseInt(portMatch[2], 10) : undefined;
+
+  const result: { host?: string; port?: number; database?: string } = {};
+  if (host) result.host = host;
+  if (port !== undefined && !Number.isNaN(port)) result.port = port;
+  if (database) result.database = database;
+  return result;
+}
+
+/**
  * Validate SQL query for basic safety
  */
 export function validateQuery(query: string): string | null {

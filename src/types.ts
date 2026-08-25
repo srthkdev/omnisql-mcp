@@ -1,7 +1,16 @@
 export interface DatabaseConnection {
   id: string;
   name: string;
+  /**
+   * Driver id normalized to a dialect the native routing can dispatch on.
+   * Custom drivers may use an opaque id (e.g. a UUID), in which case this is
+   * resolved from the connection's `provider` or JDBC URL sub-protocol.
+   */
   driver: string;
+  /** Driver id exactly as configured in the workspace, for display and errors. */
+  driverId?: string;
+  /** Workspace `provider` id, e.g. "postgresql" or "mysql". */
+  provider?: string;
   url: string;
   user?: string;
   host?: string;

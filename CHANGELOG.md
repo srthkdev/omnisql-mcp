@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **AWS RDS IAM authentication**: Connections that authenticate with an IAM token instead of a stored password now work natively, for both PostgreSQL and MySQL. Tokens are minted with `aws rds generate-db-auth-token` (so SSO and role-chained profiles work as configured), cached for 13 minutes under their 15-minute lifetime, and re-minted per physical connection so long-lived pools keep working. TLS is forced for these connections, as RDS requires. Recognised from AWS Advanced JDBC Wrapper properties (`wrapperPlugins: "iam"`) or an `iam` auth model.
+- **Database username derivation**: When an IAM connection records no username, it is derived from the caller's AWS identity — either the per-developer role name (`<profile>-<user>`) or the assumed SSO session name.
+- **Custom driver support**: Drivers with an opaque id (a UUID, for instance) now route to the right native driver by falling back to the connection's `provider` and then the JDBC URL sub-protocol, including wrapped protocols such as `jdbc:aws-wrapper:postgresql://`. Previously any such driver fell through to the CLI fallback and failed.
+- New `OMNISQL_AWS_CLI_PATH` and `OMNISQL_IAM_TOKEN_TIMEOUT` environment variables.
+
+### Fixed
+- **MySQL TLS options were read from the wrong place**: only top-level connection properties were checked, so the nested `properties` block written by the JSON workspace format was ignored. PostgreSQL already handled both.
+- **MySQL `ssl-mode` semantics**: `REQUIRED` now encrypts without validating the certificate chain, per MySQL's documented behaviour, and only the `VERIFY_CA`/`VERIFY_IDENTITY` modes verify it. Previously `REQUIRED` implied full verification, which fails against managed engines whose CA is not in the system trust store. `REQUIRED`/`DISABLED` spellings are also recognised now.
+- **Host, port and database are backfilled from the JDBC URL** when a connection config omits them.
+- Unsupported-driver errors now name the raw driver id and provider alongside the resolved driver, instead of only the resolved one.
+
+### Internal
+- TLS resolution is now shared between the direct-query and pooled connection paths, which previously read different property locations and disagreed about what `require` meant.
+
 ## [2.0.1] - 2026-04-20
 
 ### Changed

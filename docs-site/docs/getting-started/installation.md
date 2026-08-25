@@ -96,6 +96,7 @@ Configure the server behavior with these environment variables:
 
 - `OMNISQL_CLI_PATH`: Path to external DB client CLI (for unsupported-driver fallback)
 - `OMNISQL_WORKSPACE`: Path to local DB client workspace directory
+- `OMNISQL_PROJECT`: Name of the DB client project/workspace folder (default: `General`)
 - `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
 - `OMNISQL_DEBUG`: Enable debug logging (true/false)
 

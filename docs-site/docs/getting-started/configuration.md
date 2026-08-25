@@ -59,6 +59,7 @@ To use OmniSQL MCP with Claude Desktop, add the following to your configuration 
 ### Core Variables
 - `OMNISQL_CLI_PATH`: Path to external DB client CLI binary (required only for the unsupported-driver CLI fallback)
 - `OMNISQL_WORKSPACE`: Path to your local DB client workspace directory (defaults to the OS-standard location)
+- `OMNISQL_PROJECT`: Name of the DB client project/workspace folder, for custom-named or renamed DBeaver projects (default: `General`)
 - `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
 - `OMNISQL_DEBUG`: Set to `true` to enable debug logging
 

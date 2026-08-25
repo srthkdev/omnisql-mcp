@@ -12,6 +12,9 @@ const parseXML = promisify(parseString);
 const WORKSPACE_AES_KEY = Buffer.from('babb4a9f774ab853c96c2d653dfe544a', 'hex');
 const WORKSPACE_AES_IV = Buffer.alloc(16, 0);
 
+// Default project/workspace folder name used by the local DB client (DBeaver-compatible)
+const DEFAULT_PROJECT_NAME = 'General';
+
 export class WorkspaceConfigParser {
   private config: WorkspaceConfig;
   private isNewFormat: boolean = false;
@@ -19,10 +22,12 @@ export class WorkspaceConfigParser {
   constructor(config: WorkspaceConfig = {}) {
     const workspacePath = config.workspacePath ?? this.getDefaultWorkspacePath();
     const debug = config.debug ?? false;
+    const projectName = config.projectName ?? DEFAULT_PROJECT_NAME;
     this.config = {
       ...config,
       workspacePath,
       debug,
+      projectName,
     };
 
     // Detect which workspace config format is in use (new JSON vs legacy XML)
@@ -32,7 +37,7 @@ export class WorkspaceConfigParser {
   private detectNewFormat(): boolean {
     const newFormatPath = path.join(
       this.config.workspacePath!,
-      'General',
+      this.config.projectName!,
       '.dbeaver',
       'data-sources.json'
     );
@@ -55,7 +60,11 @@ export class WorkspaceConfigParser {
     }
 
     // If neither exists, check for new format directory structure
-    const newFormatDir = path.join(this.config.workspacePath!, 'General', '.dbeaver');
+    const newFormatDir = path.join(
+      this.config.workspacePath!,
+      this.config.projectName!,
+      '.dbeaver'
+    );
     const oldFormatDir = path.join(this.config.workspacePath!, '.metadata');
 
     // Prefer new format if its directory structure exists
@@ -88,7 +97,12 @@ export class WorkspaceConfigParser {
 
   private getConnectionsFilePath(): string {
     if (this.isNewFormat) {
-      return path.join(this.config.workspacePath!, 'General', '.dbeaver', 'data-sources.json');
+      return path.join(
+        this.config.workspacePath!,
+        this.config.projectName!,
+        '.dbeaver',
+        'data-sources.json'
+      );
     } else {
       return path.join(
         this.config.workspacePath!,
@@ -104,7 +118,7 @@ export class WorkspaceConfigParser {
     if (this.isNewFormat) {
       return path.join(
         this.config.workspacePath!,
-        'General',
+        this.config.projectName!,
         '.dbeaver',
         'credentials-config.json'
       );
@@ -126,7 +140,12 @@ export class WorkspaceConfigParser {
       // Try the alternative format if the detected format file doesn't exist
       const alternativeFormat = !this.isNewFormat;
       const alternativeFile = alternativeFormat
-        ? path.join(this.config.workspacePath!, 'General', '.dbeaver', 'data-sources.json')
+        ? path.join(
+            this.config.workspacePath!,
+            this.config.projectName!,
+            '.dbeaver',
+            'data-sources.json'
+          )
         : path.join(
             this.config.workspacePath!,
             '.metadata',
@@ -357,7 +376,7 @@ export class WorkspaceConfigParser {
     const workspacePath = this.config.workspacePath!;
 
     if (this.isNewFormat) {
-      const newFormatPath = path.join(workspacePath, 'General', '.dbeaver');
+      const newFormatPath = path.join(workspacePath, this.config.projectName!, '.dbeaver');
       return fs.existsSync(workspacePath) && fs.existsSync(newFormatPath);
     } else {
       const metadataPath = path.join(workspacePath, '.metadata');

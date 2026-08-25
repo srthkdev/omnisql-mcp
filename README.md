@@ -95,6 +95,7 @@ Add to Cursor Settings > MCP Servers:
 |----------|-------------|---------|
 | `OMNISQL_CLI_PATH` | Path to external DB client CLI (used for unsupported-driver fallback) | Unset |
 | `OMNISQL_WORKSPACE` | Path to local DB client workspace directory | OS default |
+| `OMNISQL_PROJECT` | Name of the DB client project/workspace folder (e.g. custom-named DBeaver project) | `General` |
 | `OMNISQL_TIMEOUT` | Query timeout (ms) | `30000` |
 | `OMNISQL_DEBUG` | Enable debug logging | `false` |
 | `OMNISQL_READ_ONLY` | Disable all write operations | `false` |
@@ -203,6 +204,10 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 Supports both configuration formats written by DBeaver-compatible DB clients:
 - Legacy: XML config in `.metadata/.plugins/org.jkiss.dbeaver.core/`
 - Modern: JSON config in `General/.dbeaver/`
+
+The project/workspace folder name (`General` by default) is configurable via `OMNISQL_PROJECT`,
+so workspaces using a custom or renamed DBeaver project (e.g. `DataPlatform`) are discovered
+without needing to rename the project or symlink the folder.
 
 Credentials are automatically decrypted from the workspace `credentials-config.json`.
 

@@ -243,27 +243,67 @@ export class WorkspaceConfigParser {
         connection.port = config.port ? parseInt(String(config.port)) : undefined;
         connection.database = config.database || '';
 
-        // Backfill anything the config omits but the JDBC URL carries. Custom
-        // drivers sometimes record only the URL.
-        const fromUrl = parseJdbcUrl(connection.url);
-        if (!connection.host && fromUrl.host) {
-          connection.host = fromUrl.host;
-          props.host = fromUrl.host;
-        }
-        if (!connection.port && fromUrl.port) {
-          connection.port = fromUrl.port;
-          props.port = String(fromUrl.port);
-        }
-        if (!connection.database && fromUrl.database) {
-          connection.database = fromUrl.database;
-          props.database = fromUrl.database;
-        }
+        this.applyUrlEndpoint(connection, props, config.configurationType);
       }
 
       connections.push(connection);
     }
 
     return connections;
+  }
+
+  /**
+   * Reconcile a connection's endpoint fields with its JDBC URL.
+   *
+   * DBeaver connections come in two configuration modes and the mode decides
+   * which side is authoritative:
+   *
+   *  - MANUAL: `host`/`port`/`database` are what the user typed. The URL is
+   *    generated from them, so it only fills in fields the config omits.
+   *  - URL: the user typed the URL and *that* is the connection. The
+   *    host/port/database fields are left at placeholder values - typically
+   *    `localhost` - which DBeaver itself never reads. Taking them at face
+   *    value is how a remote connection ends up pointed at the local machine.
+   *
+   * Anything the URL does not carry still falls back to the config fields, so
+   * a URL without a database keeps the one recorded alongside it.
+   */
+  private applyUrlEndpoint(
+    connection: DatabaseConnection,
+    props: Record<string, string>,
+    configurationType?: string
+  ): void {
+    const fromUrl = parseJdbcUrl(connection.url);
+    const urlMode = String(configurationType ?? '').toUpperCase() === 'URL';
+
+    // In URL mode the URL wins, but only where it actually says something -
+    // and only if it parsed at all, so an exotic URL we cannot read leaves the
+    // recorded fields alone rather than blanking them.
+    const urlWins = urlMode && fromUrl.host !== undefined;
+
+    if (urlMode && !urlWins && this.config.debug) {
+      console.error(
+        `Connection "${connection.name}" is URL-mode but its JDBC URL could not be parsed ` +
+          `("${connection.url}"); falling back to the recorded host/port, which DBeaver ` +
+          `leaves at a placeholder for URL-mode connections.`
+      );
+    }
+
+    const set = (field: 'host' | 'database', value: string) => {
+      connection[field] = value;
+      props[field] = value;
+    };
+
+    if (fromUrl.host !== undefined && (urlWins || !connection.host)) {
+      set('host', fromUrl.host);
+    }
+    if (fromUrl.port !== undefined && (urlWins || !connection.port)) {
+      connection.port = fromUrl.port;
+      props.port = String(fromUrl.port);
+    }
+    if (fromUrl.database !== undefined && (urlWins || !connection.database)) {
+      set('database', fromUrl.database);
+    }
   }
 
   private async parseOldFormatConnections(filePath: string): Promise<DatabaseConnection[]> {
@@ -320,19 +360,7 @@ export class WorkspaceConfigParser {
         connection.port = properties.port ? parseInt(properties.port) : undefined;
         connection.database = properties.database || '';
 
-        const fromUrl = parseJdbcUrl(connection.url);
-        if (!connection.host && fromUrl.host) {
-          connection.host = fromUrl.host;
-          connection.properties.host = fromUrl.host;
-        }
-        if (!connection.port && fromUrl.port) {
-          connection.port = fromUrl.port;
-          connection.properties.port = String(fromUrl.port);
-        }
-        if (!connection.database && fromUrl.database) {
-          connection.database = fromUrl.database;
-          connection.properties.database = fromUrl.database;
-        }
+        this.applyUrlEndpoint(connection, properties, properties.configurationType);
       }
 
       connections.push(connection);

@@ -113,8 +113,9 @@ describe('parseJdbcUrl', () => {
   });
 
   it('returns nothing for a URL with no authority', () => {
-    expect(parseJdbcUrl('jdbc:sqlite:/tmp/local.db')).toEqual({});
     expect(parseJdbcUrl('')).toEqual({});
+    // A TNS descriptor names no single endpoint.
+    expect(parseJdbcUrl('jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(HOST=h)))')).toEqual({});
   });
 });
 
@@ -142,5 +143,56 @@ describe('opaque (UUID) driver ids', () => {
 
   it('should still route a driver id that genuinely names db2', () => {
     expect(isRoutableDriverId('db2_luw')).toBe(true);
+  });
+});
+
+describe('parseJdbcUrl beyond the host/port/path shape', () => {
+  it('reads the database out of a SQL Server property tail', () => {
+    expect(
+      parseJdbcUrl('jdbc:sqlserver://sql.example.com:1433;databaseName=sales;encrypt=true')
+    ).toEqual({ host: 'sql.example.com', port: 1433, database: 'sales' });
+  });
+
+  it('handles both Oracle address forms', () => {
+    expect(parseJdbcUrl('jdbc:oracle:thin:@ora.example.com:1521:ORCL')).toEqual({
+      host: 'ora.example.com',
+      port: 1521,
+      database: 'ORCL',
+    });
+    expect(parseJdbcUrl('jdbc:oracle:thin:@//ora.example.com:1521/ORCLPDB')).toEqual({
+      host: 'ora.example.com',
+      port: 1521,
+      database: 'ORCLPDB',
+    });
+  });
+
+  it('treats a file-backed path as the database', () => {
+    expect(parseJdbcUrl('jdbc:sqlite:/tmp/local.db')).toEqual({ database: '/tmp/local.db' });
+    expect(parseJdbcUrl('jdbc:h2:file:/var/data/app')).toEqual({ database: '/var/data/app' });
+  });
+
+  it('strips credentials embedded in the authority', () => {
+    // The password may itself contain '@', so the last one separates.
+    expect(parseJdbcUrl('jdbc:postgresql://user:p@ss@db.example.com:5432/app')).toEqual({
+      host: 'db.example.com',
+      port: 5432,
+      database: 'app',
+    });
+  });
+
+  it('takes the first endpoint of a failover host list', () => {
+    expect(parseJdbcUrl('jdbc:mysql://h1.example.com:3306,h2.example.com:3306/app')).toEqual({
+      host: 'h1.example.com',
+      port: 3306,
+      database: 'app',
+    });
+  });
+
+  it('unbrackets IPv6 literals, since the native drivers take a bare address', () => {
+    expect(parseJdbcUrl('jdbc:postgresql://[2001:db8::1]:5432/app')).toEqual({
+      host: '2001:db8::1',
+      port: 5432,
+      database: 'app',
+    });
   });
 });

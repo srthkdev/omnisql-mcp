@@ -38,6 +38,122 @@ describe('WorkspaceConfigParser', () => {
     });
   });
 
+  describe('URL-mode connections (#26)', () => {
+    /** Stand up a parser over a synthetic data-sources.json. */
+    async function parseWith(connections: Record<string, unknown>) {
+      const dataSources = '/Users/test/workspace6/General/.dbeaver/data-sources.json';
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === dataSources);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ connections }) as never);
+
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({ workspacePath: '/Users/test/workspace6' });
+      return parser.parseConnections();
+    }
+
+    it('should use the JDBC URL host, not the localhost placeholder', async () => {
+      // Exactly the shape DBeaver writes for a URL-mode connection: host and
+      // port are placeholders it never reads, the URL is the connection.
+      const [conn] = await parseWith({
+        'mysql-1': {
+          name: 'Aliyun RDS',
+          provider: 'mysql',
+          driver: 'mysql8',
+          configuration: {
+            host: 'localhost',
+            port: '3306',
+            url: 'jdbc:mysql://rm-xxxxx.mysql.rds.aliyuncs.com:3306/orders',
+            configurationType: 'URL',
+          },
+        },
+      });
+
+      expect(conn.host).toBe('rm-xxxxx.mysql.rds.aliyuncs.com');
+      expect(conn.port).toBe(3306);
+      expect(conn.database).toBe('orders');
+      // The properties bag feeds the direct-query path, so it has to agree.
+      expect(conn.properties?.host).toBe('rm-xxxxx.mysql.rds.aliyuncs.com');
+    });
+
+    it('should keep recorded fields the URL does not carry', async () => {
+      const [conn] = await parseWith({
+        'pg-1': {
+          name: 'Reporting',
+          provider: 'postgresql',
+          driver: 'postgres-jdbc',
+          configuration: {
+            host: 'localhost',
+            port: '5432',
+            database: 'reporting',
+            url: 'jdbc:postgresql://pg.example.com',
+            configurationType: 'URL',
+          },
+        },
+      });
+
+      expect(conn.host).toBe('pg.example.com');
+      expect(conn.database).toBe('reporting');
+    });
+
+    it('should leave the endpoint alone when a URL-mode URL cannot be parsed', async () => {
+      const [conn] = await parseWith({
+        'ora-1': {
+          name: 'Legacy',
+          provider: 'oracle',
+          driver: 'oracle_thin',
+          configuration: {
+            host: 'ora.internal',
+            port: '1521',
+            url: 'jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(HOST=ora.internal)))',
+            configurationType: 'URL',
+          },
+        },
+      });
+
+      expect(conn.host).toBe('ora.internal');
+      expect(conn.port).toBe(1521);
+    });
+
+    it('should not let a generated URL override a MANUAL connection', async () => {
+      // In MANUAL mode the typed host wins; the URL is derived from it and can
+      // lag behind an edit. Nothing here may point at the stale value.
+      const [conn] = await parseWith({
+        'pg-2': {
+          name: 'Primary',
+          provider: 'postgresql',
+          driver: 'postgres-jdbc',
+          configuration: {
+            host: 'pg-new.example.com',
+            port: '5432',
+            database: 'app',
+            url: 'jdbc:postgresql://pg-old.example.com:5432/app',
+            configurationType: 'MANUAL',
+          },
+        },
+      });
+
+      expect(conn.host).toBe('pg-new.example.com');
+    });
+
+    it('should still backfill from the URL when the config omits a field', async () => {
+      const [conn] = await parseWith({
+        'pg-3': {
+          name: 'Custom driver',
+          provider: 'postgresql',
+          driver: 'a1db2f3c-9e4d-4a1b-8c7e-000000000000',
+          configuration: {
+            url: 'jdbc:postgresql://pg.example.com:5433/analytics',
+          },
+        },
+      });
+
+      expect(conn.host).toBe('pg.example.com');
+      expect(conn.port).toBe(5433);
+      expect(conn.database).toBe('analytics');
+      // And the UUID driver id resolves through the provider.
+      expect(conn.driver).toBe('postgresql');
+    });
+  });
+
   describe('projectName', () => {
     it('should default to General when projectName is not provided', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);

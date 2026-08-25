@@ -154,40 +154,180 @@ export function resolveDriverDialect(
   return rawDriver || providerKey;
 }
 
+export interface JdbcEndpoint {
+  host?: string;
+  port?: number;
+  database?: string;
+}
+
+/**
+ * Pull the port off an authority, tolerating IPv6 literals and host lists.
+ *
+ * Failover URLs carry several endpoints (`host1:5432,host2:5432`); the first is
+ * the one to connect to.
+ */
+function splitAuthority(authority: string): JdbcEndpoint {
+  const first = authority.split(',')[0];
+  if (!first) {
+    return {};
+  }
+
+  // Bracketed IPv6: drop the brackets, since the native drivers take a bare
+  // address, and read the port from after them.
+  const bracketed = first.match(/^\[([^\]]+)\](?::(\d+))?$/);
+  if (bracketed) {
+    const port = bracketed[2] ? parseInt(bracketed[2], 10) : undefined;
+    return port === undefined || Number.isNaN(port)
+      ? { host: bracketed[1] }
+      : { host: bracketed[1], port };
+  }
+
+  // Only the final colon separates the port, so bare IPv6 literals survive.
+  const portMatch = first.match(/^(.*):(\d+)$/);
+  if (!portMatch) {
+    return first ? { host: first } : {};
+  }
+  const port = parseInt(portMatch[2], 10);
+  return Number.isNaN(port) ? { host: portMatch[1] } : { host: portMatch[1], port };
+}
+
+/**
+ * Read a database name out of the `;key=value` property list some drivers use
+ * in place of a path segment (SQL Server, Sybase, SAP HANA).
+ */
+function databaseFromUrlProperties(propertySection: string): string | undefined {
+  const names = ['databasename', 'database', 'db', 'initial catalog', 'initialcatalog'];
+  for (const pair of propertySection.split(/[;&]/)) {
+    const eq = pair.indexOf('=');
+    if (eq === -1) continue;
+    const key = pair.slice(0, eq).trim().toLowerCase();
+    const value = pair.slice(eq + 1).trim();
+    if (value && names.includes(key)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Oracle addresses the database by SID or service name rather than a path:
+ *   jdbc:oracle:thin:@host:1521:ORCL
+ *   jdbc:oracle:thin:@//host:1521/ORCLPDB
+ * A full TNS descriptor (`@(DESCRIPTION=...)`) is left alone - there is no
+ * single endpoint to report.
+ */
+function parseOracleUrl(target: string): JdbcEndpoint {
+  if (target.startsWith('(')) {
+    return {};
+  }
+
+  // EZConnect form, which is just an authority with a service path.
+  if (target.startsWith('//')) {
+    const rest = target.slice(2);
+    const slashIdx = rest.indexOf('/');
+    const authority = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
+    const service = slashIdx === -1 ? '' : rest.slice(slashIdx + 1);
+    const endpoint = splitAuthority(authority);
+    return service ? { ...endpoint, database: service } : endpoint;
+  }
+
+  // host:port:SID
+  const sidForm = target.match(/^([^:/]+):(\d+):(.+)$/);
+  if (sidForm) {
+    return { host: sidForm[1], port: parseInt(sidForm[2], 10), database: sidForm[3] };
+  }
+
+  const endpoint = splitAuthority(target.split('/')[0]);
+  const service = target.includes('/') ? target.slice(target.indexOf('/') + 1) : '';
+  return service ? { ...endpoint, database: service } : endpoint;
+}
+
+/**
+ * File-backed engines put a path where a network URL would put an authority:
+ *   jdbc:sqlite:/var/data/app.db
+ *   jdbc:h2:file:/var/data/app
+ *   jdbc:duckdb:C:\\data\\app.duckdb
+ * There is no host; the path is the database.
+ */
+function parseFileJdbcUrl(url: string): JdbcEndpoint {
+  const withoutScheme = url.replace(/^jdbc:/i, '');
+  const colonIdx = withoutScheme.indexOf(':');
+  if (colonIdx === -1) {
+    return {};
+  }
+
+  let target = withoutScheme.slice(colonIdx + 1);
+  // H2 and friends prefix a storage mode that is not part of the path.
+  target = target.replace(/^(file|mem|nio|split):/i, '');
+  target = target.split('?')[0].split(';')[0];
+
+  return target ? { database: target } : {};
+}
+
 /**
  * Parse host, port and database out of a JDBC URL.
  *
- * Used only to backfill fields a connection config omits; wrapper
- * sub-protocols and query strings are both tolerated.
+ * This is the authority for URL-mode connections, where the workspace leaves
+ * `host`/`port`/`database` at placeholder values and records the real endpoint
+ * only here. Wrapper sub-protocols, credentials in the authority, host lists,
+ * query strings and `;key=value` property tails are all tolerated; anything
+ * genuinely unparseable comes back empty rather than half-right.
  */
-export function parseJdbcUrl(url: string): { host?: string; port?: number; database?: string } {
+export function parseJdbcUrl(url: string): JdbcEndpoint {
   if (!url) {
     return {};
   }
 
-  const authorityIdx = url.indexOf('://');
-  if (authorityIdx === -1) {
-    return {};
+  const trimmed = url.trim();
+
+  // Oracle never uses an authority, even for network connections.
+  const oracle = trimmed.match(/^jdbc:oracle:[a-z]*:?@(.*)$/i);
+  if (oracle) {
+    return parseOracleUrl(oracle[1]);
   }
 
-  let remainder = url.slice(authorityIdx + 3);
-  // Strip query string / JDBC property suffixes before splitting on '/'.
-  remainder = remainder.split('?')[0].split(';')[0];
+  const authorityIdx = trimmed.indexOf('://');
+  if (authorityIdx === -1) {
+    return parseFileJdbcUrl(trimmed);
+  }
+
+  let remainder = trimmed.slice(authorityIdx + 3);
+
+  // A `;key=value` tail can carry the database, so keep it before trimming.
+  const semicolonIdx = remainder.indexOf(';');
+  const propertySection = semicolonIdx === -1 ? '' : remainder.slice(semicolonIdx + 1);
+  if (semicolonIdx !== -1) {
+    remainder = remainder.slice(0, semicolonIdx);
+  }
+
+  const questionIdx = remainder.indexOf('?');
+  const querySection = questionIdx === -1 ? '' : remainder.slice(questionIdx + 1);
+  if (questionIdx !== -1) {
+    remainder = remainder.slice(0, questionIdx);
+  }
 
   const slashIdx = remainder.indexOf('/');
-  const authority = slashIdx === -1 ? remainder : remainder.slice(0, slashIdx);
-  const database = slashIdx === -1 ? '' : remainder.slice(slashIdx + 1);
+  let authority = slashIdx === -1 ? remainder : remainder.slice(0, slashIdx);
+  const pathDatabase = slashIdx === -1 ? '' : remainder.slice(slashIdx + 1);
 
-  // Only the final colon separates the port, so IPv6 literals survive.
-  const portMatch = authority.match(/^(.*):(\d+)$/);
-  const host = portMatch ? portMatch[1] : authority;
-  const port = portMatch ? parseInt(portMatch[2], 10) : undefined;
+  // Credentials embedded in the authority are not part of the host. The last
+  // '@' wins, since a password may legitimately contain one.
+  const atIdx = authority.lastIndexOf('@');
+  if (atIdx !== -1) {
+    authority = authority.slice(atIdx + 1);
+  }
 
-  const result: { host?: string; port?: number; database?: string } = {};
-  if (host) result.host = host;
-  if (port !== undefined && !Number.isNaN(port)) result.port = port;
-  if (database) result.database = database;
-  return result;
+  const endpoint = splitAuthority(authority);
+
+  const database =
+    pathDatabase ||
+    databaseFromUrlProperties(propertySection) ||
+    databaseFromUrlProperties(querySection);
+  if (database) {
+    endpoint.database = database;
+  }
+
+  return endpoint;
 }
 
 /**

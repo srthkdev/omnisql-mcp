@@ -203,6 +203,72 @@ describe('WorkspaceConfigParser', () => {
     });
   });
 
+  describe('project discovery', () => {
+    /**
+     * A workspace with two projects, each holding its own connections and
+     * credentials - the layout DBeaver creates as soon as you add a project.
+     */
+    function mockWorkspace() {
+      const files: Record<string, string> = {
+        '/Users/test/workspace6/General/.dbeaver/data-sources.json': JSON.stringify({
+          connections: {
+            'pg-general': { name: 'Shared', provider: 'postgresql', driver: 'postgres-jdbc' },
+          },
+        }),
+        '/Users/test/workspace6/DataPlatform/.dbeaver/data-sources.json': JSON.stringify({
+          connections: {
+            'pg-platform': { name: 'Warehouse', provider: 'postgresql', driver: 'postgres-jdbc' },
+          },
+        }),
+      };
+
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'DataPlatform', isDirectory: () => true },
+        { name: 'General', isDirectory: () => true },
+        { name: '.metadata', isDirectory: () => true },
+        { name: 'notes.txt', isDirectory: () => false },
+      ] as never);
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p) in files);
+      vi.mocked(fs.readFileSync).mockImplementation((p) => files[String(p)] as never);
+    }
+
+    it('should read connections from every project in the workspace', async () => {
+      mockWorkspace();
+
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({ workspacePath: '/Users/test/workspace6' });
+      const connections = await parser.parseConnections();
+
+      expect(connections.map((c) => c.id).sort()).toEqual(['pg-general', 'pg-platform']);
+    });
+
+    it('should read only the named project when OMNISQL_PROJECT pins one', async () => {
+      mockWorkspace();
+
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({
+        workspacePath: '/Users/test/workspace6',
+        projectName: 'DataPlatform',
+      });
+      const connections = await parser.parseConnections();
+
+      expect(connections.map((c) => c.id)).toEqual(['pg-platform']);
+    });
+
+    it('should fall back to General when nothing is discoverable', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(fs.readdirSync).mockReturnValue([] as never);
+
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({ workspacePath: '/Users/test/workspace6' });
+
+      const debugInfo = parser.getDebugInfo() as { connectionsFile: string };
+      expect(debugInfo.connectionsFile).toBe(
+        '/Users/test/workspace6/General/.dbeaver/data-sources.json'
+      );
+    });
+  });
+
   describe('projectName', () => {
     it('should default to General when projectName is not provided', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);

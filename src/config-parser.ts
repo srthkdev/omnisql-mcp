@@ -86,12 +86,12 @@ export class WorkspaceConfigParser {
   constructor(config: WorkspaceConfig = {}) {
     const workspacePath = config.workspacePath ?? this.getDefaultWorkspacePath();
     const debug = config.debug ?? false;
-    const projectName = config.projectName ?? DEFAULT_PROJECT_NAME;
+    // Left undefined on purpose: absence means "discover every project",
+    // while a value pins reading to that one.
     this.config = {
       ...config,
       workspacePath,
       debug,
-      projectName,
     };
 
     // Detect which workspace config format is in use (new JSON vs legacy XML)
@@ -99,12 +99,7 @@ export class WorkspaceConfigParser {
   }
 
   private detectNewFormat(): boolean {
-    const newFormatPath = path.join(
-      this.config.workspacePath!,
-      this.config.projectName!,
-      '.dbeaver',
-      'data-sources.json'
-    );
+    const newFormatPath = path.join(this.getProjectDirs()[0], '.dbeaver', 'data-sources.json');
     const oldFormatPath = path.join(
       this.config.workspacePath!,
       '.metadata',
@@ -124,11 +119,7 @@ export class WorkspaceConfigParser {
     }
 
     // If neither exists, check for new format directory structure
-    const newFormatDir = path.join(
-      this.config.workspacePath!,
-      this.config.projectName!,
-      '.dbeaver'
-    );
+    const newFormatDir = path.join(this.getProjectDirs()[0], '.dbeaver');
     const oldFormatDir = path.join(this.config.workspacePath!, '.metadata');
 
     // Prefer new format if its directory structure exists
@@ -159,14 +150,49 @@ export class WorkspaceConfigParser {
     }
   }
 
+  /**
+   * The project directories to read connections from.
+   *
+   * A DBeaver workspace holds one directory per project, each with its own
+   * `.dbeaver/data-sources.json`. `General` is only the default name, and a
+   * workspace can legitimately have several projects - so discover them rather
+   * than requiring the user to know which one their connections are in.
+   * OMNISQL_PROJECT narrows this to a single project when that is wanted.
+   */
+  private getProjectDirs(): string[] {
+    const workspacePath = this.config.workspacePath!;
+
+    if (this.config.projectName) {
+      return [path.join(workspacePath, this.config.projectName)];
+    }
+
+    let discovered: string[] = [];
+    try {
+      discovered = fs
+        .readdirSync(workspacePath, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => path.join(workspacePath, entry.name))
+        .filter((dir) => fs.existsSync(path.join(dir, '.dbeaver', 'data-sources.json')));
+    } catch {
+      // An unreadable workspace root falls back to the default project below.
+    }
+
+    if (discovered.length === 0) {
+      return [path.join(workspacePath, DEFAULT_PROJECT_NAME)];
+    }
+
+    // Deterministic order, with the default project first so its connections
+    // win any name collision with another project's.
+    discovered.sort();
+    const general = path.join(workspacePath, DEFAULT_PROJECT_NAME);
+    return discovered.includes(general)
+      ? [general, ...discovered.filter((dir) => dir !== general)]
+      : discovered;
+  }
+
   private getConnectionsFilePath(): string {
     if (this.isNewFormat) {
-      return path.join(
-        this.config.workspacePath!,
-        this.config.projectName!,
-        '.dbeaver',
-        'data-sources.json'
-      );
+      return path.join(this.getProjectDirs()[0], '.dbeaver', 'data-sources.json');
     } else {
       return path.join(
         this.config.workspacePath!,
@@ -180,12 +206,7 @@ export class WorkspaceConfigParser {
 
   private getCredentialsFilePath(): string {
     if (this.isNewFormat) {
-      return path.join(
-        this.config.workspacePath!,
-        this.config.projectName!,
-        '.dbeaver',
-        'credentials-config.json'
-      );
+      return path.join(this.getProjectDirs()[0], '.dbeaver', 'credentials-config.json');
     } else {
       return path.join(
         this.config.workspacePath!,
@@ -204,12 +225,7 @@ export class WorkspaceConfigParser {
       // Try the alternative format if the detected format file doesn't exist
       const alternativeFormat = !this.isNewFormat;
       const alternativeFile = alternativeFormat
-        ? path.join(
-            this.config.workspacePath!,
-            this.config.projectName!,
-            '.dbeaver',
-            'data-sources.json'
-          )
+        ? path.join(this.getProjectDirs()[0], '.dbeaver', 'data-sources.json')
         : path.join(
             this.config.workspacePath!,
             '.metadata',
@@ -234,16 +250,37 @@ export class WorkspaceConfigParser {
     }
 
     try {
-      let connections: DatabaseConnection[] = [];
-
-      if (this.isNewFormat) {
-        connections = await this.parseNewFormatConnections(connectionsFile);
-      } else {
-        connections = await this.parseOldFormatConnections(connectionsFile);
+      if (!this.isNewFormat) {
+        const connections = await this.parseOldFormatConnections(connectionsFile);
+        await this.loadCredentials(connections);
+        return connections;
       }
 
-      // Load and merge credentials
-      await this.loadCredentials(connections);
+      // Each project carries its own connections *and* its own credentials, so
+      // they have to be read as a pair rather than merged at the end.
+      const connections: DatabaseConnection[] = [];
+      const seen = new Set<string>();
+
+      for (const projectDir of this.getProjectDirs()) {
+        const dataSources = path.join(projectDir, '.dbeaver', 'data-sources.json');
+        if (!fs.existsSync(dataSources)) {
+          continue;
+        }
+
+        const projectConnections = await this.parseNewFormatConnections(dataSources);
+        await this.loadCredentials(
+          projectConnections,
+          path.join(projectDir, '.dbeaver', 'credentials-config.json')
+        );
+
+        for (const connection of projectConnections) {
+          if (seen.has(connection.id)) {
+            continue;
+          }
+          seen.add(connection.id);
+          connections.push(connection);
+        }
+      }
 
       return connections;
     } catch (error) {
@@ -540,8 +577,10 @@ export class WorkspaceConfigParser {
     const workspacePath = this.config.workspacePath!;
 
     if (this.isNewFormat) {
-      const newFormatPath = path.join(workspacePath, this.config.projectName!, '.dbeaver');
-      return fs.existsSync(workspacePath) && fs.existsSync(newFormatPath);
+      return (
+        fs.existsSync(workspacePath) &&
+        this.getProjectDirs().some((dir) => fs.existsSync(path.join(dir, '.dbeaver')))
+      );
     } else {
       const metadataPath = path.join(workspacePath, '.metadata');
       return fs.existsSync(workspacePath) && fs.existsSync(metadataPath);
@@ -557,6 +596,7 @@ export class WorkspaceConfigParser {
       credentialsFileExists: fs.existsSync(this.getCredentialsFilePath()),
       workspaceValid: this.isWorkspaceValid(),
       isNewFormat: this.isNewFormat,
+      projects: this.isNewFormat ? this.getProjectDirs() : [],
       platform: os.platform(),
       nodeVersion: process.version,
     };
@@ -565,9 +605,10 @@ export class WorkspaceConfigParser {
   /**
    * Load and decrypt credentials from the workspace's credentials-config.json
    */
-  private async loadCredentials(connections: DatabaseConnection[]): Promise<void> {
-    const credentialsFile = this.getCredentialsFilePath();
-
+  private async loadCredentials(
+    connections: DatabaseConnection[],
+    credentialsFile: string = this.getCredentialsFilePath()
+  ): Promise<void> {
     if (!fs.existsSync(credentialsFile)) {
       if (this.config.debug) {
         console.warn(`Credentials file not found: ${credentialsFile}`);

@@ -16,6 +16,7 @@ import {
   validateQuery,
   enforceReadOnly,
   sanitizeConnectionId,
+  parseConnectionId,
   formatError,
   convertToCSV,
   redactConnection,
@@ -176,10 +177,26 @@ class OmniSQLMCPServer {
   /**
    * Check if a connection is allowed by the whitelist.
    * Matches against both connection ID and name.
+   *
+   * A database-override lookup ("<id>/<database>") produces a synthetic id, so
+   * match on the base id too - otherwise every override would be rejected as
+   * an unknown connection whenever a whitelist is configured. Whitelisting a
+   * connection therefore grants the databases reachable with its credentials,
+   * not just its default one; list explicit "<id>/<database>" entries to pin it.
    */
   private isConnectionAllowed(conn: { id: string; name: string }): boolean {
     if (!this.allowedConnections) return true; // No whitelist = allow all
-    return this.allowedConnections.has(conn.id) || this.allowedConnections.has(conn.name);
+    if (this.allowedConnections.has(conn.id) || this.allowedConnections.has(conn.name)) {
+      return true;
+    }
+
+    const { baseId, databaseOverride } = parseConnectionId(conn.id);
+    if (databaseOverride === null) return false;
+
+    // The exact "<id>/<database>" entry was already checked above, so listing
+    // only pinned entries for a connection - and no bare one - denies every
+    // other database on it, which is what writing them that way asks for.
+    return this.allowedConnections.has(baseId);
   }
 
   /**

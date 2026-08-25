@@ -6,6 +6,7 @@ import {
   sanitizeIdentifier,
   getTestQuery,
   parseConnectionId,
+  isFileBackedDriver,
 } from '../src/utils.js';
 
 describe('validateQuery', () => {
@@ -136,6 +137,22 @@ describe('sanitizeConnectionId', () => {
     expect(sanitizeConnectionId('my-conn/analytics')).toBe('my-conn/analytics');
     expect(sanitizeConnectionId('postgres-jdbc-abc/orders')).toBe('postgres-jdbc-abc/orders');
   });
+
+  it('should not let the database half carry path separators or dots', () => {
+    // The database value reaches a file path on file-backed engines, so `..`
+    // and `/` surviving sanitizing would be a traversal, not a database name.
+    expect(sanitizeConnectionId('my-conn/../../etc/passwd')).toBe('my-conn/etcpasswd');
+    expect(sanitizeConnectionId('my-conn/../secrets.db')).toBe('my-conn/secretsdb');
+  });
+
+  it('should reject a relative-path connection half outright', () => {
+    expect(() => sanitizeConnectionId('../../my-conn')).toThrow(/no valid characters/);
+    expect(() => sanitizeConnectionId('..')).toThrow(/no valid characters/);
+  });
+
+  it('should throw when the database half sanitizes away entirely', () => {
+    expect(() => sanitizeConnectionId('my-conn/../..')).toThrow(/Database override/);
+  });
 });
 
 describe('parseConnectionId', () => {
@@ -169,6 +186,20 @@ describe('parseConnectionId', () => {
       baseId: 'my-conn',
       databaseOverride: 'foo/bar',
     });
+  });
+});
+
+describe('isFileBackedDriver', () => {
+  it('should recognise engines whose database is a file path', () => {
+    expect(isFileBackedDriver('sqlite_jdbc')).toBe(true);
+    expect(isFileBackedDriver('duckdb')).toBe(true);
+    expect(isFileBackedDriver('h2_embedded')).toBe(true);
+  });
+
+  it('should not flag server engines', () => {
+    expect(isFileBackedDriver('postgres-jdbc')).toBe(false);
+    expect(isFileBackedDriver('mysql8')).toBe(false);
+    expect(isFileBackedDriver(undefined)).toBe(false);
   });
 });
 

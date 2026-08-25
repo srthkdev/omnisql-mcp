@@ -278,24 +278,55 @@ export function enforceReadOnly(query: string): string | null {
 /**
  * Sanitize connection ID to prevent injection.
  *
- * Allows an optional database-override suffix using the syntax
- * `<connectionIdOrName>/<database>`. The forward slash is preserved so that
- * `parseConnectionId` (and downstream lookup) can split it back out.
+ * Accepts the optional database-override suffix `<connectionIdOrName>/<database>`,
+ * but sanitizes the two halves separately rather than widening the allowed set
+ * to include '/'. Widening it would also admit `..`, and the database half
+ * reaches a filesystem path on file-backed engines - `conn/../../secrets.db` is
+ * a traversal, not a database name.
  */
 export function sanitizeConnectionId(connectionId: string): string {
   if (!connectionId || typeof connectionId !== 'string') {
     throw new Error('Connection ID must be a non-empty string');
   }
 
-  // Remove potentially dangerous characters; '/' is allowed for the database
-  // override syntax "<id>/<database>" and is split out by parseConnectionId.
-  const sanitized = connectionId.replace(/[^a-zA-Z0-9_\-./]/g, '');
+  const { baseId, databaseOverride } = parseConnectionId(connectionId);
 
-  if (sanitized.length === 0) {
+  // Remove potentially dangerous characters
+  const sanitizedBase = baseId.replace(/[^a-zA-Z0-9_\-.]/g, '');
+
+  if (sanitizedBase.length === 0 || /^\.+$/.test(sanitizedBase)) {
     throw new Error('Connection ID contains no valid characters');
   }
 
-  return sanitized;
+  if (databaseOverride === null) {
+    return sanitizedBase;
+  }
+
+  // Database names are identifiers, so no path separators and no dots.
+  const sanitizedDatabase = databaseOverride.replace(/[^a-zA-Z0-9_$-]/g, '');
+
+  if (sanitizedDatabase.length === 0) {
+    throw new Error(
+      `Database override in "${connectionId}" contains no valid characters. ` +
+        `Expected "<connection>/<database>" where <database> is a database name.`
+    );
+  }
+
+  return `${sanitizedBase}/${sanitizedDatabase}`;
+}
+
+/**
+ * Engines whose "database" is a filesystem path rather than a name on a server.
+ *
+ * The database-override syntax swaps that value straight into the connection,
+ * so on these engines an override does not select a sibling database - it
+ * selects a different file.
+ */
+const FILE_BACKED_DIALECTS = ['sqlite', 'duckdb', 'h2', 'derby', 'access', 'msaccess'];
+
+export function isFileBackedDriver(driver: string | undefined): boolean {
+  const d = (driver ?? '').toLowerCase();
+  return FILE_BACKED_DIALECTS.some((dialect) => d.includes(dialect));
 }
 
 /**

@@ -5,7 +5,12 @@ import { parseString } from 'xml2js';
 import { promisify } from 'util';
 import crypto from 'crypto';
 import { DatabaseConnection, WorkspaceConfig } from './types.js';
-import { resolveDriverDialect, parseJdbcUrl, parseConnectionId } from './utils.js';
+import {
+  resolveDriverDialect,
+  parseJdbcUrl,
+  parseConnectionId,
+  isFileBackedDriver,
+} from './utils.js';
 
 const parseXML = promisify(parseString);
 
@@ -337,30 +342,43 @@ export class WorkspaceConfigParser {
   }
 
   async getConnection(connectionId: string): Promise<DatabaseConnection | null> {
+    const { baseId, databaseOverride } = parseConnectionId(connectionId);
+
+    let match: DatabaseConnection | null = null;
     try {
-      const { baseId, databaseOverride } = parseConnectionId(connectionId);
       const connections = await this.parseConnections();
-      const match = connections.find((conn) => conn.id === baseId || conn.name === baseId) || null;
-
-      if (!match || !databaseOverride) {
-        return match;
-      }
-
-      // Database-override syntax "<id>/<database>": clone the matched connection
-      // with the requested database swapped in. The synthetic id ensures pool
-      // caches keyed on connection.id stay separated per target database.
-      return {
-        ...match,
-        id: `${match.id}/${databaseOverride}`,
-        database: databaseOverride,
-        properties: { ...(match.properties || {}), database: databaseOverride },
-      };
+      match = connections.find((conn) => conn.id === baseId || conn.name === baseId) || null;
     } catch (error) {
       if (this.config.debug) {
         console.error(`Failed to get connection ${connectionId}: ${error}`);
       }
       return null;
     }
+
+    if (!match || !databaseOverride) {
+      return match;
+    }
+
+    // On file-backed engines the database *is* a path, so an override would
+    // point the connection at an unrelated file rather than a sibling database.
+    // Refuse explicitly instead of opening whatever that resolves to.
+    if (isFileBackedDriver(match.driver)) {
+      throw new Error(
+        `Connection "${match.name}" uses a file-backed engine (${match.driver}), where the ` +
+          `database is a file path rather than a name on a server. The "<connection>/<database>" ` +
+          `override does not apply - add a separate connection for the other file instead.`
+      );
+    }
+
+    // Database-override syntax "<id>/<database>": clone the matched connection
+    // with the requested database swapped in. The synthetic id ensures pool
+    // caches keyed on connection.id stay separated per target database.
+    return {
+      ...match,
+      id: `${match.id}/${databaseOverride}`,
+      database: databaseOverride,
+      properties: { ...(match.properties || {}), database: databaseOverride },
+    };
   }
 
   async validateConnection(connectionId: string): Promise<boolean> {

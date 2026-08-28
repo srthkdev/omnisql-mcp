@@ -107,3 +107,16 @@ jobs:
           git push origin "v${VERSION}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Created here rather than by the Release workflow: a tag pushed with the
+      # default GITHUB_TOKEN does not start another workflow run, so waiting for
+      # the tag to trigger one would leave every automated release untagged in
+      # the UI. The Release workflow still covers tags pushed by hand.
+      - name: Create GitHub Release
+        if: steps.version_check.outputs.should_publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version_check.outputs.local_version }}
+          generate_release_notes: true
+          files: |
+            dist/**

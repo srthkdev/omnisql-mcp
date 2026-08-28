@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-08-29
+
+First release carrying the connection-handling work that had accumulated on `main`. Notably, `OMNISQL_PROJECT` was documented before it shipped (#30) - it is in this release.
 
 ### Added
 - **AWS RDS IAM authentication**: Connections that authenticate with an IAM token instead of a stored password now work natively, for both PostgreSQL and MySQL. Tokens are minted with `aws rds generate-db-auth-token` (so SSO and role-chained profiles work as configured), cached for 13 minutes under their 15-minute lifetime, and re-minted per physical connection so long-lived pools keep working. TLS is forced for these connections, as RDS requires. Recognised from AWS Advanced JDBC Wrapper properties (`wrapperPlugins: "iam"`) or an `iam` auth model.

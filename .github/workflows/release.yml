@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
 
     steps:
       - name: Checkout code
@@ -35,10 +34,10 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Publishing is owned by the CI workflow, which publishes on a version
+      # change on main via OIDC trusted publishing and then pushes the tag that
+      # triggers this run. Publishing here too would just hit npm's duplicate
+      # version error and take the GitHub Release down with it.
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

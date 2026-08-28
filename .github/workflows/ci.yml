@@ -64,12 +64,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # No registry-url on purpose: it writes an .npmrc line pinning
+      # _authToken to ${NODE_AUTH_TOKEN}, and npm then presents that empty
+      # placeholder as credentials instead of falling back to OIDC - which
+      # the registry rejects as a 404 on PUT.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-          registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
+
+      # Node 22 ships npm 10.x. OIDC trusted publishing needs npm >= 11.5.1.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -95,7 +102,15 @@ jobs:
             echo "Will publish $LOCAL_VERSION (npm has $NPM_VERSION)"
           fi
 
-      - name: Publish to npm (OIDC trusted publishing)
+      # Falls back to a token when NPM_TOKEN is set, so the release still works
+      # if trusted publishing is not configured for the package.
+      - name: Configure npm token (fallback when not using OIDC)
+        if: steps.version_check.outputs.should_publish == 'true' && env.NPM_TOKEN != ''
+        run: npm config set //registry.npmjs.org/:_authToken="$NPM_TOKEN"
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm
         if: steps.version_check.outputs.should_publish == 'true'
         run: npm publish --provenance --access public
 

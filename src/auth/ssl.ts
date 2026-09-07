@@ -82,6 +82,49 @@ function postgresSslMode(connection: DatabaseConnection): string {
   return '';
 }
 
+function mysqlSslHandler(connection: DatabaseConnection): Record<string, unknown> | undefined {
+  const handlers = connection.properties?.['handlers'] as unknown as
+    | Record<string, unknown>
+    | undefined;
+  return handlers?.['mysql_ssl'] as Record<string, unknown> | undefined;
+}
+
+function mysqlSslHandlerProp(connection: DatabaseConnection, name: string): string | undefined {
+  const properties = mysqlSslHandler(connection)?.properties as Record<string, unknown> | undefined;
+  const value = properties?.[name];
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+/**
+ * Resolve MySQL TLS settings from driver properties or DBeaver's
+ * `handlers.mysql_ssl` block. Explicit driver properties take precedence.
+ */
+function mysqlSslMode(connection: DatabaseConnection): string {
+  const direct = readConnectionProp(connection, 'ssl.mode', 'sslMode', 'sslmode', 'useSSL', 'ssl');
+  if (direct) {
+    return direct.toLowerCase();
+  }
+
+  const handler = mysqlSslHandler(connection);
+  if (!handler?.enabled) {
+    return '';
+  }
+
+  const handlerMode = mysqlSslHandlerProp(connection, 'sslMode');
+  if (handlerMode) {
+    return handlerMode.toLowerCase();
+  }
+
+  const verifyServer = mysqlSslHandlerProp(connection, 'ssl.verify.server');
+  if (verifyServer?.toLowerCase() === 'true') {
+    return 'verify_identity';
+  }
+
+  // Enabling DBeaver's MySQL SSL handler means encryption is required even
+  // when it stores no explicit sslMode (the common CERTIFICATES-mode shape).
+  return 'required';
+}
+
 /**
  * Build the `ssl` option for a `pg` client or pool.
  *
@@ -134,9 +177,7 @@ export function resolveMysqlSsl(
   connection: DatabaseConnection,
   iamAuth = false
 ): Record<string, unknown> | undefined {
-  const sslMode = (
-    readConnectionProp(connection, 'ssl.mode', 'sslMode', 'sslmode', 'useSSL', 'ssl') ?? ''
-  ).toLowerCase();
+  const sslMode = mysqlSslMode(connection);
 
   if (MYSQL_DISABLE_MODES.includes(sslMode)) {
     return undefined;
@@ -147,9 +188,12 @@ export function resolveMysqlSsl(
   }
 
   const material = buildSslMaterial(
-    readConnectionProp(connection, 'ssl.ca', 'sslCA', 'sslrootcert'),
-    readConnectionProp(connection, 'ssl.cert', 'sslCert', 'sslcert'),
-    readConnectionProp(connection, 'ssl.key', 'sslKey', 'sslkey')
+    readConnectionProp(connection, 'ssl.ca', 'sslCA', 'sslrootcert') ??
+      mysqlSslHandlerProp(connection, 'ssl.ca.cert'),
+    readConnectionProp(connection, 'ssl.cert', 'sslCert', 'sslcert') ??
+      mysqlSslHandlerProp(connection, 'ssl.client.cert'),
+    readConnectionProp(connection, 'ssl.key', 'sslKey', 'sslkey') ??
+      mysqlSslHandlerProp(connection, 'ssl.client.key')
   );
 
   const hasCa = typeof material.ca === 'string' && material.ca.length > 0;

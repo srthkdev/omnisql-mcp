@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/wordmark.svg" alt="OmniSQL MCP — your databases, one conversation" width="620">
+  <img src="assets/wordmark.svg" alt="OmniSQL MCP" width="620">
 </p>
 
 <p align="center">

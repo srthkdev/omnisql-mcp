@@ -40,8 +40,8 @@ function renderSearch() {
 document
   .querySelectorAll('.search-trigger')
   .forEach((button) => button.addEventListener('click', openSearch));
+dialog.querySelector('.search-close').addEventListener('click', () => dialog.close());
 dialog.querySelector('form').addEventListener('submit', (event) => {
-  if (event.submitter?.classList.contains('search-close')) return;
   event.preventDefault();
   results.querySelector('a')?.click();
 });

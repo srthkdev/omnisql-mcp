@@ -1,0 +1,12 @@
+{
+  "baseline": {
+    "size": 722836,
+    "unpackedSize": 2772174,
+    "entryCount": 48
+  },
+  "duckdb": {
+    "size": 726258,
+    "unpackedSize": 2784192,
+    "entryCount": 50
+  }
+}

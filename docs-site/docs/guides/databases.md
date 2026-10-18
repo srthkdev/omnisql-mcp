@@ -2,17 +2,45 @@
 
 OmniSQL reads your workspace connection settings and selects a native execution path when one is supported. A connection working in DBeaver does not imply that every DBeaver driver has a native OmniSQL equivalent.
 
-## Native engines
+## Execution paths
 
 | Engine | Driver | Notes |
 | --- | --- | --- |
 | PostgreSQL | `pg` | Also used for compatible PostgreSQL wire-protocol servers. |
 | MySQL / MariaDB | `mysql2` | Reads driver properties and DBeaver's enabled MySQL SSL handler. |
 | SQL Server / MSSQL | `mssql` | Native queries and pooled transactions. |
+| DuckDB | DuckDB CLI 1.5.6+ | Existing local files, locked safe mode, concurrent reads, and coordinated writes. |
 | SQLite | `sqlite3` CLI | Requires a local CLI supporting JSON output and safe mode. Each saved connection points to a file. |
 | Oracle | `oracledb` | Thin mode; no Oracle Instant Client required. Service names, SIDs, TNS aliases, and descriptors are supported. Ordinary queries use bounded pools; privileged sessions stay standalone. Explicit multi-call transactions are unavailable. |
 
 PostgreSQL-compatible routing includes CockroachDB, TimescaleDB, Amazon Redshift, YugabyteDB, AlloyDB, Supabase, Neon, and Citus. SQL compatibility still depends on the server you are connecting to.
+
+## DuckDB local analytics
+
+Install the [official DuckDB CLI](https://duckdb.org/install/) version 1.5.6 or newer. On macOS, `brew install duckdb` is also available. Set `OMNISQL_DUCKDB_CLI` to its absolute executable path when a GUI client's PATH does not include it. OmniSQL keeps DuckDB's native binary outside the npm package.
+
+```json
+{
+  "version": 1,
+  "connections": {
+    "warehouse": {
+      "driver": "duckdb",
+      "database": "/absolute/path/warehouse.duckdb",
+      "policy": { "allowTables": ["main.orders", "orders"] },
+      "properties": { "duckdb.memoryMB": "256", "duckdb.threads": "2" },
+      "limits": { "maxRows": 10000, "maxBytes": 8388608, "timeoutMs": 15000 }
+    }
+  }
+}
+```
+
+Files must already exist. Each file is a separate connection; remote and in-memory targets are unavailable. Read calls open the file read-only. The server coordinates concurrent readers and exclusive writers to the same file; external processes remain subject to DuckDB's own file locks. Explicit multi-call transactions are unavailable. DuckDB's CLI does not report affected-row counts through this execution path, so write responses return `affectedRows: null`.
+
+Both read-only and write-enabled connections disable external file/network access, automatic extension loading/installation, community extensions, and disk spilling. User startup files are skipped. Safe mode locks configuration after applying memory and thread limits. Defaults are 256 MB and two threads; `duckdb.memoryMB` accepts 16–4096 and `duckdb.threads` accepts 1–32. Result limits and process deadlines still apply. These controls follow [DuckDB's security guidance](https://duckdb.org/docs/current/operations_manual/securing_duckdb/overview); operating-system isolation remains the boundary for hostile database files or native engine vulnerabilities.
+
+Tables, views, columns, explicit ART index expressions, primary/foreign/unique/check constraints, row estimates, text/JSON plans, and EXPLAIN ANALYZE are supported. Implicit constraint indexes are represented by their constraints. Per-table storage bytes return `null`: shared database blocks cannot be attributed reliably to individual tables. Metadata compares identifiers using DuckDB's ASCII case rules, including quoted names. Restricted SQL accepts bare or `schema.table` names; catalog-qualified names fail closed.
+
+64-bit integers and nested large integers remain decimal strings. Fractional and exponent-form JSON numbers also remain strings, including inside lists and structs, so nested DECIMAL values keep their exact text. Very large results use the same private paging and compressed exports as other engines. Parquet/CSV/URL scans and extension installation are intentionally unavailable through the server; load data into the local database separately.
 
 ## Select another database
 

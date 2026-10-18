@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'bun:test';
-import { ResultCollector, SQLiteRowStream, parseSQLiteRows } from '../src/runtime/results.js';
+import { ResultCollector, JsonRowStream, parseJsonRows } from '../src/runtime/results.js';
+
+it('preserves nested large integers without assigning prototype properties', () => {
+  const result = parseJsonRows(
+    '[{"data":[9007199254740993,{"__proto__":{"x":1},"n":9007199254740995}]}]'
+  );
+  expect(JSON.stringify(result.rows[0][0])).toBe(
+    '["9007199254740993",{"__proto__":{"x":1},"n":"9007199254740995"}]'
+  );
+  const nested = (result.rows[0][0] as unknown[])[1];
+  expect(Object.getPrototypeOf(nested)).toBeNull();
+  expect(() => parseJsonRows('[{"v":' + '['.repeat(66) + '0' + ']'.repeat(66) + '}]')).toThrow(
+    /nesting/
+  );
+});
+
 const connection = { id: 'fixture', name: 'fixture', driver: 'postgresql', url: '' };
 describe('bounded results', () => {
   it('detects truncation only when an additional row exists', () => {
@@ -39,7 +54,7 @@ describe('bounded results', () => {
   });
   it('preserves SQLite duplicate columns and large integers', () => {
     expect(
-      parseSQLiteRows('[{"id":1,"id":9007199254740993,"text":"a,\\n\\"b\\"","nothing":null}]')
+      parseJsonRows('[{"id":1,"id":9007199254740993,"text":"a,\\n\\"b\\"","nothing":null}]')
     ).toEqual({
       columns: ['id', 'id', 'text', 'nothing'],
       rows: [[1, '9007199254740993', 'a,\n"b"', null]],
@@ -47,7 +62,7 @@ describe('bounded results', () => {
   });
   it('frames rows across arbitrary chunks and stops before buffering the rest', () => {
     const r = new ResultCollector(connection, 1);
-    const s = new SQLiteRowStream(r);
+    const s = new JsonRowStream(r);
     for (const part of ['[{"i', 'd":1,"tex', 't":"a}\\', '"b"},']) expect(s.write(part)).toBe(true);
     expect(s.write('{"id":2,"text":"other"}]')).toBe(false);
     expect(r.result()).toMatchObject({

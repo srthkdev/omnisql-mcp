@@ -1413,7 +1413,7 @@ export class OmniSQLMCPServer {
       query: query,
       connection: connection.name,
       executionTime: result.executionTime,
-      affectedRows: result.rowCount,
+      affectedRows: result.affectedRows === undefined ? result.rowCount : result.affectedRows,
       success: true,
     };
 

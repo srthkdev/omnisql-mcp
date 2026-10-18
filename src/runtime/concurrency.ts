@@ -40,3 +40,40 @@ export class QueryGate {
     };
   }
 }
+
+/** Concurrent readers, with queued writes excluding both readers and other writers. */
+export class ReadWriteGate {
+  private writer: Promise<void> = Promise.resolve();
+  private readers = new Set<Promise<void>>();
+  async acquire(write: boolean, timeoutMs: number): Promise<() => void> {
+    let finish!: () => void;
+    const done = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const wait = write ? Promise.all([this.writer, ...this.readers]) : this.writer;
+    if (write) this.writer = wait.then(() => done);
+    else this.readers.add(done);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const release = () => {
+      this.readers.delete(done);
+      finish();
+    };
+    try {
+      await Promise.race([
+        wait,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Database file lock wait timed out')),
+            timeoutMs
+          );
+        }),
+      ]);
+      return release;
+    } catch (error) {
+      release();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}

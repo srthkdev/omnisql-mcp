@@ -64,7 +64,7 @@ Then call `execute_query` with:
 
 Explicitly configured connections default to read-only. Set `readOnly: false` on a connection to enable its write tools when the process permits writes. Process-wide read-only mode and policy restrictions always take precedence. Default and connection table rules are intersected; a connection cannot widen a default allowlist. Empty allowlists allow nothing. Unknown settings and invalid booleans fail at load time.
 
-Connection configuration is reloaded when resolving a call. Workspace data is cached until its connection or credential files change. Running transactions retain the connection and access rules under which they started; restart the server to revoke an active session immediately.
+Connection configuration is reloaded when resolving a call. Workspace data is cached until its connection or credential files change. Transactions check configuration and policy changes before every operation and roll back when their original scope is revoked.
 
 ## Workspace discovery
 

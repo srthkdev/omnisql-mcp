@@ -34,6 +34,8 @@ export function buildExplainQuery(
     throw new Error('SQL Server plans require the dedicated pinned-session execution path');
   } else if (driverLower.includes('sqlite')) {
     return `EXPLAIN QUERY PLAN ${query}`;
+  } else if (driverLower.includes('duckdb')) {
+    return `EXPLAIN (${analyze ? 'ANALYZE, ' : ''}FORMAT ${format === 'json' ? 'JSON' : 'TEXT'}) ${query}`;
   } else {
     // Generic fallback
     return `EXPLAIN ${query}`;
@@ -76,6 +78,21 @@ export function parseExplainOutput(
     };
   } else if (driverLower.includes('sqlite')) {
     return parseSqliteExplain(output, query);
+  } else if (driverLower.includes('duckdb')) {
+    if (format === 'json')
+      return {
+        query,
+        format,
+        plan: output.map((row) => ({
+          operation: String(row[0]),
+          details: JSON.parse(String(row[1]).replace(/^[^[{]*/, '')),
+        })),
+      };
+    return {
+      query,
+      format,
+      plan: output.map((row) => ({ operation: String(row[0]), details: { text: String(row[1]) } })),
+    };
   } else {
     return parseGenericExplain(output, query);
   }

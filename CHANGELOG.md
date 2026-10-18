@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- DuckDB local-file queries, metadata, plans, exact nested numeric values, coordinated file access, and locked external-access controls. The installed DuckDB CLI 1.5.6+ keeps its native binary outside the npm package.
 - Optional gzip, Brotli, and zstd exports with private chunked download handles.
 - Ordered index and key metadata, catalog table/storage estimates, and a `get_table_stats` tool.
 - Lazy connection-to-table-to-schema resources.

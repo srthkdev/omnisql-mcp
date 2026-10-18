@@ -49,7 +49,7 @@ For permitted writes, enable the write tools deliberately and use `write_query`.
 
 ## A feature differs across engines
 
-SQL syntax and metadata support vary. Oracle does not support OmniSQL transactions or pools. Unsupported drivers require a compatible external CLI and are not guaranteed to behave like native drivers.
+SQL syntax and metadata support vary. Oracle uses pooled queries but does not support explicit multi-call OmniSQL transactions. Unsupported drivers fail with an explicit error; OmniSQL does not fall back to an unrelated CLI.
 
 If you target another database, verify that it exists and the saved user has connection permission. Read the [database guide](guides/databases.md) for supported paths.
 

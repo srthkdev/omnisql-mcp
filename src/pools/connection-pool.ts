@@ -1,3 +1,5 @@
+import type { Pool as OraclePool } from 'oracledb';
+import { resolveOracleConnectOptions } from '../oracle.js';
 import net from 'node:net';
 import { sqlDialect } from '../policy/analyzer.js';
 import { createHash } from 'node:crypto';
@@ -20,8 +22,8 @@ const DEFAULT_POOL_CONFIG: PoolConfig = {
 };
 
 interface PoolEntry {
-  pool: PgPool | MySqlPool | MssqlPool;
-  type: 'postgres' | 'mysql' | 'mssql';
+  pool: PgPool | MySqlPool | MssqlPool | OraclePool;
+  type: 'postgres' | 'mysql' | 'mssql' | 'oracle';
   config: PoolConfig;
   createdAt: Date;
   connectionId: string;
@@ -61,15 +63,17 @@ export class ConnectionPoolManager {
     }
   }
 
-  async getPool(connection: DatabaseConnection): Promise<PoolEntry | null> {
+  private async poolKey(connection: DatabaseConnection): Promise<string> {
     const port =
       sqlDialect(connection.driver) === 'postgres'
         ? 5432
         : sqlDialect(connection.driver) === 'mysql'
           ? 3306
-          : 1433;
+          : connection.driver.toLowerCase().includes('oracle')
+            ? 1521
+            : 1433;
     const endpoint = await this.resolveEndpoint(connection, port);
-    const poolKey = createHash('sha256')
+    return createHash('sha256')
       .update(
         JSON.stringify([
           {
@@ -84,6 +88,9 @@ export class ConnectionPoolManager {
         ])
       )
       .digest('hex');
+  }
+  async getPool(connection: DatabaseConnection): Promise<PoolEntry | null> {
+    const poolKey = await this.poolKey(connection);
 
     // Return existing pool
     if (this.pools.has(poolKey)) {
@@ -123,6 +130,8 @@ export class ConnectionPoolManager {
         return await this.createMysqlPool(connection);
       } else if (driver.includes('mssql') || driver.includes('sqlserver')) {
         return await this.createMssqlPool(connection);
+      } else if (driver.includes('oracle')) {
+        return await this.createOraclePool(connection);
       }
     } catch (error) {
       this.log(`Failed to create pool for ${connection.name}: ${error}`);
@@ -332,10 +341,40 @@ export class ConnectionPoolManager {
     return entry;
   }
 
-  async getStats(connectionId: string): Promise<PoolStats | null> {
+  private async createOraclePool(connection: DatabaseConnection): Promise<PoolEntry> {
+    const config = { ...this.config, max: connection.limits?.poolMax ?? this.config.max };
+    const timeout = connection.limits?.timeoutMs ?? this.queryTimeoutMs;
+    const { host, port } = await this.resolveEndpoint(connection, 1521);
+    const options = resolveOracleConnectOptions(connection, host, port);
+    if (options.privilege !== undefined)
+      throw new Error('Privileged Oracle connections require standalone sessions');
+    const user = connection.user || connection.properties?.user;
+    if (!user) throw new Error('User is required for Oracle connection');
+    const { default: oracledb } = await import('oracledb');
+    const pool = await oracledb.createPool({
+      user,
+      password: connection.properties?.password,
+      connectString: options.connectString,
+      configDir: options.configDir,
+      poolMin: 0,
+      poolMax: config.max,
+      poolIncrement: 1,
+      poolTimeout: Math.max(1, Math.ceil(config.idleTimeoutMs / 1000)),
+      queueMax: 32,
+      queueTimeout: Math.min(config.acquireTimeoutMs, timeout),
+      connectTimeout: Math.max(1, Math.ceil(Math.min(config.acquireTimeoutMs, timeout) / 1000)),
+      enableStatistics: true,
+    });
+    return { pool, type: 'oracle', config, createdAt: new Date(), connectionId: connection.id };
+  }
+
+  async getStats(target: string | DatabaseConnection): Promise<PoolStats | null> {
+    const connectionId = typeof target === 'string' ? target : target.id;
     const entry =
-      this.pools.get(connectionId) ??
-      [...this.pools.values()].find((e) => e.connectionId === connectionId);
+      typeof target === 'string'
+        ? (this.pools.get(target) ??
+          [...this.pools.values()].find((e) => e.connectionId === target))
+        : this.pools.get(await this.poolKey(target));
     if (!entry) return null;
 
     const stats: PoolStats = {
@@ -372,6 +411,12 @@ export class ConnectionPoolManager {
       stats.totalConnections = mssqlPool.size;
       stats.activeConnections = mssqlPool.size - mssqlPool.available;
       stats.idleConnections = mssqlPool.available;
+    } else if (entry.type === 'oracle') {
+      const pool = entry.pool as OraclePool;
+      stats.totalConnections = pool.connectionsOpen;
+      stats.activeConnections = pool.connectionsInUse;
+      stats.idleConnections = pool.connectionsOpen - pool.connectionsInUse;
+      stats.waitingRequests = pool.getStatistics()?.currentQueueLength ?? 0;
     }
 
     return stats;
@@ -392,6 +437,8 @@ export class ConnectionPoolManager {
         await (entry.pool as MySqlPool).end();
       } else if (entry.type === 'mssql') {
         await (entry.pool as MssqlPool).close();
+      } else if (entry.type === 'oracle') {
+        await (entry.pool as OraclePool).close(0);
       }
     } catch (error) {
       this.log(`Error closing pool: ${error}`);
@@ -407,7 +454,7 @@ export class ConnectionPoolManager {
     await Promise.all(closePromises);
   }
 
-  getPoolType(connectionId: string): 'postgres' | 'mysql' | 'mssql' | null {
+  getPoolType(connectionId: string): 'postgres' | 'mysql' | 'mssql' | 'oracle' | null {
     const entry =
       this.pools.get(connectionId) ??
       [...this.pools.values()].find((e) => e.connectionId === connectionId);

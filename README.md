@@ -146,8 +146,8 @@ Large results use private, expiring handles with row and column pagination. Long
 | `OMNISQL_READ_ONLY` | Disable all write operations | `false` |
 | `OMNISQL_ALLOWED_CONNECTIONS` | Comma-separated whitelist of connection IDs or names | All |
 | `OMNISQL_DISABLED_TOOLS` | Comma-separated tools to disable | None |
-| `OMNISQL_POOL_MIN` | Minimum connections per pool | `2` |
-| `OMNISQL_POOL_MAX` | Maximum connections per pool | `10` |
+| `OMNISQL_POOL_MIN` | Minimum connections per pool | `0` |
+| `OMNISQL_POOL_MAX` | Maximum connections per pool | `4` |
 | `OMNISQL_POOL_IDLE_TIMEOUT` | Idle connection timeout (ms) | `30000` |
 | `OMNISQL_POOL_ACQUIRE_TIMEOUT` | Connection acquire timeout (ms) | `10000` |
 | `OMNISQL_AWS_CLI_PATH` | Path to the AWS CLI (used for RDS IAM authentication) | `aws` |
@@ -228,6 +228,8 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 - `drop_table` - Drop tables (requires confirmation)
 
 ### Transactions
+PostgreSQL, MySQL/MariaDB, and SQL Server support explicit transactions. Results obey the same row/byte limits and pagination as ordinary queries. Each transaction accepts one operation at a time; a failed query or changed connection/access policy rolls it back. Schema operations are excluded because some engines commit DDL implicitly. At most 32 transactions may be active or starting; idle transactions expire after one hour.
+
 - `begin_transaction` - Start a new transaction
 - `execute_in_transaction` - Execute query within a transaction
 - `commit_transaction` - Commit a transaction
@@ -303,7 +305,7 @@ The saved host, credentials, IAM, TLS, and SSH settings are reused. The saved co
 
 Oracle runs through `oracledb` in Thin mode, so no Oracle Client is needed. Service names, SIDs,
 TNS aliases and connect descriptors are read from the connection. Rows are capped by the driver,
-since Oracle has no `LIMIT`. Transactions and pooling are not supported yet.
+using a bounded ResultSet fetch. Ordinary queries reuse an isolated, bounded pool; privileged sessions remain standalone. Explicit multi-call Oracle transactions are not available.
 
 ## Custom and IAM-Authenticated Drivers
 

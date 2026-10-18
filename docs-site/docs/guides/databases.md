@@ -10,7 +10,7 @@ OmniSQL reads your workspace connection settings and selects a native execution 
 | MySQL / MariaDB | `mysql2` | Reads driver properties and DBeaver's enabled MySQL SSL handler. |
 | SQL Server / MSSQL | `mssql` | Native queries and pooled transactions. |
 | SQLite | `sqlite3` CLI | Requires a local CLI supporting JSON output and safe mode. Each saved connection points to a file. |
-| Oracle | `oracledb` | Thin mode; no Oracle Instant Client required. Service names, SIDs, TNS aliases, and descriptors are supported. Oracle transactions and pooling are not supported. |
+| Oracle | `oracledb` | Thin mode; no Oracle Instant Client required. Service names, SIDs, TNS aliases, and descriptors are supported. Ordinary queries use bounded pools; privileged sessions stay standalone. Explicit multi-call transactions are unavailable. |
 
 PostgreSQL-compatible routing includes CockroachDB, TimescaleDB, Amazon Redshift, YugabyteDB, AlloyDB, Supabase, Neon, and Citus. SQL compatibility still depends on the server you are connecting to.
 

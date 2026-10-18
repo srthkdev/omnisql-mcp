@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- Preserve exact nested JSON numbers, PostgreSQL NUMERIC arrays, and sub-millisecond PostgreSQL/MySQL timestamps without global driver changes.
+- Read Oracle LOBs in bounded pieces, close skipped locators, and share the remaining query deadline across fetches.
+- Reject malformed UTF-8 and incomplete embedded-engine JSON; keep file locks until failed or timed-out processes close.
 - Apply database-specific policies to configured defaults, confine cross-database SQL, and require exact declared database selections on engines with configurable name collations.
 - Bind cached result/export handles to their original connection settings and application policy revision.
 - Accept the database argument consistently on write, schema, and transaction-start tools.

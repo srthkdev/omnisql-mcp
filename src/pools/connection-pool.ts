@@ -13,6 +13,7 @@ import type { DatabaseConnection, PoolConfig, PoolStats } from '../types.js';
 import { isIamAuthConnection, resolveIamCredentials } from '../auth/iam-auth.js';
 import { sshTunnelManager } from '../net/ssh-tunnel.js';
 import { resolvePostgresSsl, resolveMysqlSsl } from '../auth/ssl.js';
+import { parseJsonValue } from '../runtime/results.js';
 
 const DEFAULT_POOL_CONFIG: PoolConfig = {
   min: 0,
@@ -197,7 +198,15 @@ export class ConnectionPoolManager {
         (await resolveIamCredentials(connection, 5432, { debug: this.debug })).password;
     }
 
-    const { Pool } = await import('pg');
+    const { Pool, types } = await import('pg');
+    const json = (text: string) => parseJsonValue(text, true);
+    const jsonArray = (value: unknown): unknown =>
+      Array.isArray(value) ? value.map(jsonArray) : typeof value === 'string' ? json(value) : value;
+    // pg-types' TypeId enum omits PostgreSQL array OIDs.
+    const textArray = types.getTypeParser(
+      1009 as Parameters<typeof types.getTypeParser>[0],
+      'text'
+    );
     const pool = new Pool({
       host,
       port,
@@ -210,6 +219,17 @@ export class ConnectionPoolManager {
       idleTimeoutMillis: config.idleTimeoutMs,
       connectionTimeoutMillis: config.acquireTimeoutMs,
       ssl,
+      types: {
+        getTypeParser(oid: number, format) {
+          if (format !== 'binary') {
+            if (oid === 114 || oid === 3802) return json;
+            if ([1082, 1114, 1184].includes(oid)) return (text: string) => text;
+            if ([1231, 1115, 1182, 1185].includes(oid)) return textArray;
+            if (oid === 199 || oid === 3807) return (text: string) => jsonArray(textArray(text));
+          }
+          return types.getTypeParser(oid, format);
+        },
+      },
     });
 
     pool.on('error', (error) => this.log(`Idle PostgreSQL connection error: ${error.message}`));
@@ -268,6 +288,8 @@ export class ConnectionPoolManager {
       rowsAsArray: true,
       supportBigNumbers: true,
       bigNumberStrings: true,
+      jsonStrings: true,
+      dateStrings: true,
       multipleStatements: false,
       connectionLimit: config.max,
       waitForConnections: true,

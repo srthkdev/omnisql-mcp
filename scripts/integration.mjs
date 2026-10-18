@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { checkIdentifierPolicies } from './check-policy-identifiers.mjs';
+import { checkValues } from './check-values.mjs';
 import { benchmarkSessionReuse } from './benchmark-sessions.mjs';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -266,6 +267,7 @@ try {
         { mode: 0o600 }
       );
       client = await startMcp(workspace, true);
+      await checkValues({ engine, client, call, admin });
       assert.equal((await call(client, 'list_connections', {})).length, 1);
       const schema = await call(client, 'get_table_schema', {
         connectionId: 'fixture',

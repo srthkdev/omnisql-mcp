@@ -144,9 +144,10 @@ describe('oracleFetchTypeHandler', () => {
   const handle = (dbType: unknown) =>
     oracleFetchTypeHandler({ dbType } as unknown as oracledb.Metadata<unknown>);
 
-  it('fetches character LOBs inline as text', () => {
-    expect(handle(oracledb.DB_TYPE_CLOB)?.type).toBe(oracledb.DB_TYPE_LONG);
-    expect(handle(oracledb.DB_TYPE_NCLOB)?.type).toBe(oracledb.DB_TYPE_LONG);
+  it('keeps LOB locators lazy until the result budget is checked', () => {
+    expect(handle(oracledb.DB_TYPE_CLOB)?.type).toBe(oracledb.DB_TYPE_CLOB);
+    expect(handle(oracledb.DB_TYPE_NCLOB)?.type).toBe(oracledb.DB_TYPE_NCLOB);
+    expect(handle(oracledb.DB_TYPE_BLOB)?.type).toBe(oracledb.DB_TYPE_BLOB);
   });
 
   it('renders binary data as hex', () => {

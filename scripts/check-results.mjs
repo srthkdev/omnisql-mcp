@@ -59,6 +59,10 @@ try {
     connectionId: 'fixture',
     query: 'SELECT * FROM messages',
   });
+  await assert.rejects(
+    () => call('execute_query', { connectionId: 'fixture', query: "SELECT X'FF' AS binary" }),
+    /invalid UTF-8/
+  );
   assert.equal(result.storedRows, 2);
   assert.equal(result.clippedCells[0].length, 100000);
   const page = await call('read_result', { resultId: result.resultId, offset: 1, limit: 1 });
@@ -132,8 +136,14 @@ try {
   await call('append_insight', { connection: 'fixture', insight: 'Synthetic test note' });
   assert.equal((await call('list_insights', {})).length, 1);
   writeFileSync(policyFile, JSON.stringify({ version: 1, defaults: { readOnly: true } }));
-  await assert.rejects(() => call('read_result', { resultId: result.resultId }), /access policy changed/);
-  await assert.rejects(() => call('read_export', { resultId: exported.resultId }), /access policy changed/);
+  await assert.rejects(
+    () => call('read_result', { resultId: result.resultId }),
+    /access policy changed/
+  );
+  await assert.rejects(
+    () => call('read_export', { resultId: exported.resultId }),
+    /access policy changed/
+  );
   writeFileSync(policyFile, JSON.stringify({ version: 1 }));
   // Reusing an ID for another file must not expose data cached from the first one.
   const originalConfig = readFileSync(file, 'utf8');

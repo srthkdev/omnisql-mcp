@@ -1,9 +1,12 @@
 import type * as OracleTypes from 'oracledb';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-let cached: typeof import('oracledb') | undefined;
-const oracleDriver = () => (cached ??= require('oracledb') as typeof import('oracledb'));
+type OracleModule = typeof import('oracledb') & { Lob: new () => OracleTypes.Lob };
+let cached: OracleModule | undefined;
+const oracleDriver = () => (cached ??= require('oracledb') as OracleModule);
 import type { DatabaseConnection } from './types.js';
+import { parseJsonValue, type ResultCollector } from './runtime/results.js';
+import { finished } from 'node:stream/promises';
 
 /**
  * Oracle connection settings derived from a workspace connection.
@@ -137,8 +140,8 @@ const toInstant = <T>(value: T | null): string | null =>
 /**
  * Fetch every column as a JSON-friendly value.
  *
- * LOBs would otherwise come back as stream objects (not serialisable) and
- * dates as Date objects (serialised in UTC); binary data becomes hex.
+ * LOB locators stay lazy so the result collector can enforce its byte budget.
+ * Native JSON is fetched as text before any numeric conversion; binary data is hex.
  */
 export function oracleFetchTypeHandler(
   metadata: OracleTypes.Metadata<unknown>
@@ -146,11 +149,22 @@ export function oracleFetchTypeHandler(
   switch (metadata.dbType) {
     case oracleDriver().DB_TYPE_NUMBER:
       return { type: oracleDriver().DB_TYPE_VARCHAR };
+    case oracleDriver().DB_TYPE_JSON:
+      return {
+        type: oracleDriver().DB_TYPE_VARCHAR,
+        converter: (value) => {
+          if (value === null) return null;
+          if (typeof value !== 'string')
+            throw new Error(
+              'Oracle JSON text conversion failed; use JSON_SERIALIZE RETURNING CLOB'
+            );
+          return parseJsonValue(value, true);
+        },
+      };
     case oracleDriver().DB_TYPE_CLOB:
     case oracleDriver().DB_TYPE_NCLOB:
-      return { type: oracleDriver().DB_TYPE_LONG };
     case oracleDriver().DB_TYPE_BLOB:
-      return { type: oracleDriver().DB_TYPE_LONG_RAW, converter: toHex };
+      return { type: metadata.dbType, converter: (value) => value };
     case oracleDriver().DB_TYPE_RAW:
     case oracleDriver().DB_TYPE_LONG_RAW:
       return { converter: toHex };
@@ -164,6 +178,64 @@ export function oracleFetchTypeHandler(
     default:
       return undefined;
   }
+}
+
+/** Close every locator fetched in a batch, including rows skipped by the result budget. */
+export async function closeOracleLobs(rows: unknown[][]): Promise<void> {
+  for (const row of rows)
+    for (const value of row)
+      if (value instanceof oracleDriver().Lob && !value.destroyed) {
+        const closed = finished(value, { cleanup: true }).catch(() => {});
+        value.destroy();
+        await closed;
+      }
+}
+
+/** Read LOBs in bounded pieces, checking the whole-row serialized budget as we go. */
+export async function collectOracleRow(
+  row: unknown[],
+  collector: ResultCollector,
+  beforeRead: () => void
+): Promise<boolean> {
+  if (collector.rows.length >= collector.maxRows) return collector.add([]);
+  let remaining = collector.remainingBytes - row.length - 1 - (collector.rows.length ? 1 : 0);
+  const values = [...row];
+  const overBudget = () => {
+    collector.truncated = true;
+    collector.limitReason = 'bytes';
+    return false;
+  };
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (!(value instanceof oracleDriver().Lob)) {
+      remaining -= Buffer.byteLength(JSON.stringify(value) ?? 'null');
+      if (remaining < 0) return overBudget();
+      continue;
+    }
+    const binary = value.type === oracleDriver().DB_TYPE_BLOB;
+    if (
+      !binary &&
+      value.type !== oracleDriver().DB_TYPE_CLOB &&
+      value.type !== oracleDriver().DB_TYPE_NCLOB
+    )
+      throw new Error('External Oracle BFILE reads are unsupported');
+    remaining -= 2; // JSON string quotes.
+    if (value.length * (binary ? 2 : 1) > remaining) return overBudget();
+    const pieces: string[] = [];
+    let offset = 1;
+    while (offset <= value.length) {
+      beforeRead();
+      const piece = await value.getData(offset, Math.min(65536, value.length - offset + 1));
+      if (!piece?.length) throw new Error('Oracle LOB ended before its reported length');
+      offset += piece.length;
+      const text = Buffer.isBuffer(piece) ? piece.toString('hex').toUpperCase() : piece;
+      remaining -= Buffer.byteLength(JSON.stringify(text)) - 2;
+      if (remaining < 0) return overBudget();
+      pieces.push(text);
+    }
+    values[i] = pieces.join('');
+  }
+  return collector.add(values);
 }
 
 /** Statement id for EXPLAIN PLAN, so concurrent plans in PLAN_TABLE stay apart. */

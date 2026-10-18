@@ -36,6 +36,14 @@ describe.skipIf(!available)('SQLite execution', () => {
     expect(result.columns).toEqual(['id', 'id']);
     expect(result.rows).toEqual([[1, '9007199254740993']]);
   });
+  it('rejects non-UTF-8 binary output and accepts explicit hex text', async () => {
+    await expect(client.executeQuery(connection, "SELECT X'FF' AS binary")).rejects.toThrow(
+      /invalid UTF-8/
+    );
+    expect((await client.executeQuery(connection, "SELECT hex(X'FF') AS binary")).rows).toEqual([
+      ['FF'],
+    ]);
+  });
   it('reads table names and SQLite schema flags', async () => {
     expect(await client.listTables(connection)).toMatchObject([
       { name: 'notes', table_name: 'notes' },

@@ -4,7 +4,7 @@ import type { PoolConnection } from 'mysql2/promise';
 import type sql from 'mssql';
 import type { Readable } from 'node:stream';
 import type { DatabaseConnection, QueryResult } from '../types.js';
-import { ResultCollector } from './results.js';
+import { ResultCollector, parseJsonValue } from './results.js';
 export interface SessionOptions {
   connection: DatabaseConnection;
   maxRows?: number;
@@ -78,13 +78,19 @@ export async function readMysql(
   const work = async () => {
     const raw = (client as unknown as { connection: import('mysql2').PoolConnection }).connection;
     const request = raw.query({ sql: query, rowsAsArray: true });
-    request.on('fields', (fields: { name: string }[] | undefined) => {
+    let jsonColumns: number[] = [];
+    request.on('fields', (fields: import('mysql2').FieldPacket[] | undefined) => {
       collector.columns = fields?.map((f) => f.name) ?? [];
+      jsonColumns = (fields ?? []).flatMap((field, i) =>
+        field.columnType === 245 || field.type === 245 || field.extendedFormat === 'json' ? [i] : []
+      );
     });
     let affected = 0;
     stream = request.stream({ highWaterMark: 16 });
     for await (const row of stream) {
       if (Array.isArray(row)) {
+        for (const i of jsonColumns)
+          if (typeof row[i] === 'string') row[i] = parseJsonValue(row[i], true);
         if (!collector.truncated && !collector.add(row) && !options.preserveSession) {
           options.abort();
           break;

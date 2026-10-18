@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Connection responses omit raw properties and embedded credentials; debug logs omit SQL and analysis text.
+- Tool calls validate arguments without coercion, SQL guards reject stacked DDL and comment-only WHERE clauses, and read tools block known side-effect functions.
+- Saved read-only connections reject write tools. PostgreSQL, MySQL/MariaDB, and Oracle use read-only query transactions; SQLite queries have a process deadline and output safety cap.
+- SQL Server queries use an isolated pool with cleanup and configured TLS settings. Revoked SSH keys take precedence; disabled TLS is rejected for IAM authentication.
+
 ### Changed
 - Replaced Docusaurus with a custom static website, searchable documentation, and client setup commands.
 - Rewrote the database, configuration, tool, and access guides; added site link and media checks to CI.

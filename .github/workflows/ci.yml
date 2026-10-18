@@ -108,3 +108,20 @@ jobs:
       - name: Check site pages, links, and media
         run: npm test --prefix docs-site
       - run: npm audit --prefix docs-site --audit-level=high
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [postgres, mysql, mariadb, mssql, oracle]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+      - name: Exercise a seeded database through MCP
+        run: npm run test:integration -- --engines=${{ matrix.engine }}

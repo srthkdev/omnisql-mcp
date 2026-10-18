@@ -10,7 +10,7 @@ OmniSQL can access databases using the credentials in your workspace. Configure 
 }
 ```
 
-Set this in the client's environment block. Write, schema-change, and transaction tools are disabled. The server also checks queries submitted through read and export paths.
+Set this in the client's environment block. Write, schema-change, and transaction tools are disabled. Read, export, and query-plan tools validate SQL. PostgreSQL, MySQL/MariaDB, and Oracle queries also use a read-only transaction; SQLite opens its file read-only. SQL Server requires database permissions as its engine-level boundary. Saved connections marked read-only also reject write tools.
 
 The checks reject stacked statements, write CTEs, `SELECT INTO`, mutating PRAGMAs, and other recognized write operations. SQLite runs with CLI safe mode; a read-only configuration also opens its database file read-only.
 
@@ -54,7 +54,7 @@ Write and schema tools apply basic query validation. `drop_table` requires an ex
 
 ## Local files and logs
 
-Database credentials and network settings are read locally from the workspace. Connection detail responses redact recognized credential fields. Debug logs go to stderr.
+Database credentials and network settings are read locally from the workspace. Connection detail responses expose only a set of public connection fields. Raw property bags, connection strings, and SSH secrets are omitted. SQL and analysis text are omitted from debug argument logs. Debug logs go to stderr.
 
 Query results are returned to your MCP client and can become part of the assistant's context. Local analysis notes are separate from database writes; disable `append_insight` if you do not want notes stored locally.
 

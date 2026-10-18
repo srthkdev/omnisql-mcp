@@ -10,7 +10,13 @@
           "description": "Include detailed connection information",
           "default": false
         }
-      }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -26,7 +32,13 @@
       },
       "required": [
         "connectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -44,9 +56,10 @@
           "description": "The SQL query to execute (SELECT statements only)"
         },
         "maxRows": {
-          "type": "number",
+          "type": "integer",
           "description": "Maximum number of rows to return (default: 1000)",
-          "default": 1000
+          "default": 1000,
+          "minimum": 1
         },
         "database": {
           "type": "string",
@@ -58,7 +71,13 @@
       "required": [
         "connectionId",
         "query"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -79,7 +98,13 @@
       "required": [
         "connectionId",
         "query"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -100,7 +125,13 @@
       "required": [
         "connectionId",
         "query"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -121,7 +152,13 @@
       "required": [
         "connectionId",
         "query"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -147,7 +184,13 @@
         "connectionId",
         "tableName",
         "confirm"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -179,7 +222,13 @@
       "required": [
         "connectionId",
         "tableName"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -211,9 +260,10 @@
           "default": true
         },
         "maxRows": {
-          "type": "number",
+          "type": "integer",
           "description": "Maximum number of rows to export",
-          "default": 10000
+          "default": 10000,
+          "minimum": 1
         },
         "database": {
           "type": "string",
@@ -225,7 +275,13 @@
       "required": [
         "connectionId",
         "query"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -247,7 +303,13 @@
       },
       "required": [
         "connectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -269,7 +331,13 @@
       },
       "required": [
         "connectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -300,7 +368,13 @@
       },
       "required": [
         "connectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -327,7 +401,13 @@
       },
       "required": [
         "insight"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -347,7 +427,13 @@
           },
           "description": "Filter insights by tags (optional)"
         }
-      }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -363,7 +449,13 @@
       },
       "required": [
         "connectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -379,7 +471,13 @@
       },
       "required": [
         "transactionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -395,7 +493,13 @@
       },
       "required": [
         "transactionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -416,7 +520,13 @@
       "required": [
         "transactionId",
         "query"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -457,7 +567,13 @@
       "required": [
         "connectionId",
         "query"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -483,7 +599,13 @@
       "required": [
         "sourceConnectionId",
         "targetConnectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -505,7 +627,13 @@
       },
       "required": [
         "connectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   },
   {
@@ -521,7 +649,13 @@
       },
       "required": [
         "connectionId"
-      ]
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
     }
   }
 ]

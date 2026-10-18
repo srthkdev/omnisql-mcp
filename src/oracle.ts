@@ -1,4 +1,8 @@
-import oracledb from 'oracledb';
+import type * as OracleTypes from 'oracledb';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+let cached: typeof import('oracledb') | undefined;
+const oracleDriver = () => (cached ??= require('oracledb') as typeof import('oracledb'));
 import { DatabaseConnection } from './types.js';
 
 /**
@@ -51,7 +55,7 @@ export function resolveOracleConnectOptions(
 
   const role = String(props['@dbeaver-internal-logon@'] || '').toUpperCase();
   if (role && role !== 'NORMAL') {
-    const privilege = (oracledb as unknown as Record<string, unknown>)[role];
+    const privilege = (oracleDriver() as unknown as Record<string, unknown>)[role];
     if (typeof privilege !== 'number') {
       throw new Error(`Unsupported Oracle logon role "${role}"`);
     }
@@ -137,22 +141,22 @@ const toInstant = <T>(value: T | null): string | null =>
  * dates as Date objects (serialised in UTC); binary data becomes hex.
  */
 export function oracleFetchTypeHandler(
-  metadata: oracledb.Metadata<unknown>
-): oracledb.FetchTypeResponse | undefined {
+  metadata: OracleTypes.Metadata<unknown>
+): OracleTypes.FetchTypeResponse | undefined {
   switch (metadata.dbType) {
-    case oracledb.DB_TYPE_CLOB:
-    case oracledb.DB_TYPE_NCLOB:
-      return { type: oracledb.DB_TYPE_LONG };
-    case oracledb.DB_TYPE_BLOB:
-      return { type: oracledb.DB_TYPE_LONG_RAW, converter: toHex };
-    case oracledb.DB_TYPE_RAW:
-    case oracledb.DB_TYPE_LONG_RAW:
+    case oracleDriver().DB_TYPE_CLOB:
+    case oracleDriver().DB_TYPE_NCLOB:
+      return { type: oracleDriver().DB_TYPE_LONG };
+    case oracleDriver().DB_TYPE_BLOB:
+      return { type: oracleDriver().DB_TYPE_LONG_RAW, converter: toHex };
+    case oracleDriver().DB_TYPE_RAW:
+    case oracleDriver().DB_TYPE_LONG_RAW:
       return { converter: toHex };
-    case oracledb.DB_TYPE_DATE:
-    case oracledb.DB_TYPE_TIMESTAMP:
+    case oracleDriver().DB_TYPE_DATE:
+    case oracleDriver().DB_TYPE_TIMESTAMP:
       return { converter: toLocalDate };
-    case oracledb.DB_TYPE_TIMESTAMP_TZ:
-    case oracledb.DB_TYPE_TIMESTAMP_LTZ:
+    case oracleDriver().DB_TYPE_TIMESTAMP_TZ:
+    case oracleDriver().DB_TYPE_TIMESTAMP_LTZ:
       // These denote an instant, so UTC is the unambiguous rendering.
       return { converter: toInstant };
     default:

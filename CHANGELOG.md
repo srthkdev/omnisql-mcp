@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- Apply database-specific policies to configured defaults, confine cross-database SQL, and require exact declared database selections on engines with configurable name collations.
+- Bind cached result/export handles to their original connection settings and application policy revision.
+- Accept the database argument consistently on write, schema, and transaction-start tools.
 - Incomplete catalog details are marked partial; schema comparisons reject incomplete inputs. Nested warehouse types and enum literal case survive comparisons, and embedded newlines cannot escape migration-review comments.
 - CTE aliases use dialect-specific ASCII folding; differently cased physical references cannot disappear from table policy analysis.
 - Access policies resolve actual catalog identities and native case rules, cover qualified denies and selected-database scope, and recheck stored results/exports.

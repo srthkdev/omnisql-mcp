@@ -103,14 +103,19 @@ export class AccessPolicy {
     this.reload();
     return createHash('sha256').update(JSON.stringify(this.policy)).digest('hex');
   }
-  private rules(c: DatabaseConnection): AccessRule[] {
+  private databaseRules(c: DatabaseConnection): string[] {
+    this.reload();
+    const prefix = c.id.split('/')[0] + '/';
+    return Object.keys(this.policy.connections ?? {}).filter((key) => key.startsWith(prefix));
+  }
+  private rules(c: DatabaseConnection, database = c.database): AccessRule[] {
     this.reload();
     const base = c.id.split('/')[0];
+    const keys = new Set([base, ...(database === undefined ? [] : [base + '/' + database])]);
     return [
       ...(c.accessRules ?? []),
       this.policy.defaults,
-      this.policy.connections?.[base],
-      this.policy.connections?.[c.id],
+      ...[...keys].map((key) => this.policy.connections?.[key]),
     ].filter((r): r is AccessRule => r !== undefined);
   }
   rulesFor(c: DatabaseConnection): readonly AccessRule[] {
@@ -145,7 +150,16 @@ export class AccessPolicy {
     return c.readonly === true || this.rules(c).some((r) => r.readOnly === true);
   }
   allowsDatabase(c: DatabaseConnection, database = c.database ?? ''): boolean {
-    return this.rules(c).every((r) => !r.databases || includes(r.databases, database));
+    const rules = this.rules(c, database);
+    // Name aliases depend on server collation (including accents), not just ASCII case.
+    // Once per-database rules exist, require an explicit spelling on these engines.
+    if (
+      ['mysql', 'mssql'].includes(sqlDialect(c.driver)) &&
+      this.databaseRules(c).length &&
+      !this.databaseRules(c).includes(c.id.split('/')[0] + '/' + database)
+    )
+      return false;
+    return rules.every((r) => !r.databases || includes(r.databases, database));
   }
   assertConnection(c: DatabaseConnection): void {
     if (!this.allowsDatabase(c)) throw new Error('Database is not allowed by the access policy');
@@ -153,6 +167,7 @@ export class AccessPolicy {
   private isDatabaseScoped(c: DatabaseConnection): boolean {
     return (
       c.id.includes('/') ||
+      this.databaseRules(c).length > 0 ||
       this.rules(c).some(
         (r) =>
           r.databases ||

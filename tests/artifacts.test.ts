@@ -6,7 +6,12 @@ function store(ttl?: number, quota?: number) {
   stores.push(s);
   return s;
 }
-const source = { connectionId: 'fixture', query: 'SELECT * FROM public.orders' };
+const source = {
+  connectionId: 'fixture',
+  query: 'SELECT * FROM public.orders',
+  connectionFingerprint: 'private-fixture-identity',
+  policyRevision: 'private-fixture-revision',
+};
 const result = {
   columns: ['id', 'note'],
   rows: [

@@ -93,6 +93,12 @@
         "query": {
           "type": "string",
           "description": "The SQL query to execute (INSERT, UPDATE, DELETE)"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
         }
       },
       "required": [
@@ -120,6 +126,12 @@
         "query": {
           "type": "string",
           "description": "CREATE TABLE statement"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
         }
       },
       "required": [
@@ -147,6 +159,12 @@
         "query": {
           "type": "string",
           "description": "ALTER TABLE statement"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
         }
       },
       "required": [
@@ -178,6 +196,12 @@
         "confirm": {
           "type": "boolean",
           "description": "Safety confirmation flag (must be true)"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
         }
       },
       "required": [
@@ -459,6 +483,12 @@
         "connectionId": {
           "type": "string",
           "description": "The ID or name of the database connection"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
         }
       },
       "required": [

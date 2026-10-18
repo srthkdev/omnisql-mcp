@@ -13,6 +13,8 @@ export async function checkIdentifierPolicies({
   call,
 }) {
   const file = join(workspace, 'identifier-policies.json');
+  const databasePolicyFile = join(workspace, 'database-policies.json');
+  writeFileSync(databasePolicyFile, JSON.stringify({ version: 1 }), { mode: 0o600 });
   const owner =
     engine === 'postgres'
       ? 'public'
@@ -46,6 +48,7 @@ export async function checkIdentifierPolicies({
     OMNISQL_CONFIG_FILE: file,
     OMNISQL_ALLOWED_CONNECTIONS: 'scope',
     OMNISQL_INTEGRATION_PASSWORD: password,
+    OMNISQL_POLICY_FILE: databasePolicyFile,
   });
   const query = (text) => call(client, 'execute_query', { connectionId: 'scope', query: text });
   const denied = (text) =>
@@ -125,12 +128,60 @@ export async function checkIdentifierPolicies({
       configure(policy);
       await assert.rejects(
         () => call(client, 'read_result', { resultId: stored.resultId }),
-        /Table.*policy/
+        /Table.*policy|access policy changed/
       );
       await assert.rejects(
         () => call(client, 'read_export', { resultId: archive.resultId }),
-        /Table.*policy/
+        /Table.*policy|access policy changed/
       );
+    }
+    if (['postgres', 'mysql', 'mariadb', 'mssql'].includes(engine)) {
+      configure({});
+      const setDatabaseRules = (connections) =>
+        writeFileSync(databasePolicyFile, JSON.stringify({ version: 1, connections }));
+      setDatabaseRules({ ['scope/' + base.database]: { readOnly: true } });
+      await query('SELECT 1 AS value');
+      await assert.rejects(
+        () => call(client, 'write_query', {
+          connectionId: 'scope', query: 'DELETE FROM orders WHERE id=-1',
+        }),
+        /read.only/i
+      );
+      await assert.rejects(() => call(client, 'begin_transaction', { connectionId: 'scope' }), /read.only/i);
+      if (['mysql', 'mariadb', 'mssql'].includes(engine)) {
+        await assert.rejects(
+          () => call(client, 'execute_query', {
+            connectionId: 'scope', database: base.database.toUpperCase(), query: 'SELECT 1',
+          }),
+          /Database.*policy/
+        );
+        const other = engine === 'mssql' ? 'omnisql_other' : 'information_schema';
+        setDatabaseRules({
+          ['scope/' + base.database]: {},
+          ['scope/' + other]: { readOnly: true },
+        });
+        const foreignTable = engine === 'mssql' ? other + '.dbo.orders' : other + '.TABLES';
+        await assert.rejects(
+          () => call(client, 'write_query', {
+            connectionId: 'scope', query: `DELETE FROM ${foreignTable} WHERE 1=0`,
+          }),
+          /selected database/
+        );
+        await call(client, 'execute_query', { connectionId: 'scope', database: other, query: 'SELECT 1' });
+        for (const [name, args] of [
+          ['write_query', { query: 'DELETE FROM orders WHERE id=-1' }],
+          ['create_table', { query: 'CREATE TABLE policy_probe(id INTEGER)' }],
+          ['alter_table', { query: 'ALTER TABLE orders ADD policy_probe INTEGER' }],
+          ['drop_table', { tableName: 'orders', confirm: true }],
+          ['begin_transaction', {}],
+        ])
+          await assert.rejects(
+            () => call(client, name, { connectionId: 'scope', database: other, ...args }),
+            /read.only/i
+          );
+      }
+      setDatabaseRules({});
+      configure(policy);
     }
     if (['mysql', 'mariadb'].includes(engine)) {
       assert.equal(

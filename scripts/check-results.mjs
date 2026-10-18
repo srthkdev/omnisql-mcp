@@ -1,6 +1,6 @@
 import { gunzipSync, brotliDecompressSync, zstdDecompressSync } from 'node:zlib';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -15,6 +15,8 @@ try {
     "CREATE TABLE messages(id INTEGER PRIMARY KEY,body TEXT); INSERT INTO messages VALUES(1,replace(hex(zeroblob(50000)),'0','x')); INSERT INTO messages VALUES(2,'second');",
   ]);
   const file = join(dir, 'config.json');
+  const policyFile = join(dir, 'policy.json');
+  writeFileSync(policyFile, JSON.stringify({ version: 1 }), { mode: 0o600 });
   writeFileSync(
     file,
     JSON.stringify({
@@ -39,6 +41,7 @@ try {
       env: {
         ...process.env,
         OMNISQL_CONFIG_FILE: file,
+        OMNISQL_POLICY_FILE: policyFile,
         OMNISQL_WORKSPACE: dir,
         OMNISQL_ALLOWED_CONNECTIONS: 'fixture',
         OMNISQL_READ_ONLY: 'true',
@@ -128,6 +131,27 @@ try {
   await assert.rejects(() => call('read_result', { resultId: '../../etc/passwd' }));
   await call('append_insight', { connection: 'fixture', insight: 'Synthetic test note' });
   assert.equal((await call('list_insights', {})).length, 1);
+  writeFileSync(policyFile, JSON.stringify({ version: 1, defaults: { readOnly: true } }));
+  await assert.rejects(() => call('read_result', { resultId: result.resultId }), /access policy changed/);
+  await assert.rejects(() => call('read_export', { resultId: exported.resultId }), /access policy changed/);
+  writeFileSync(policyFile, JSON.stringify({ version: 1 }));
+  // Reusing an ID for another file must not expose data cached from the first one.
+  const originalConfig = readFileSync(file, 'utf8');
+  const otherDb = join(dir, 'other.db');
+  execFileSync('sqlite3', [otherDb, 'CREATE TABLE messages(id INTEGER PRIMARY KEY,body TEXT);']);
+  const repointed = JSON.parse(originalConfig);
+  repointed.connections.fixture.database = otherDb;
+  writeFileSync(file, JSON.stringify(repointed));
+  for (const [name, args] of [
+    ['read_result', { resultId: result.resultId }],
+    ['read_result_cell', { resultId: result.resultId, row: 0, column: 1 }],
+    ['read_export', { resultId: exported.resultId }],
+    ...compressedHandles.map((resultId) => ['read_export', { resultId }]),
+  ])
+    await assert.rejects(() => call(name, args), /connection or access policy changed/);
+  assert(!JSON.stringify(result).includes('connectionFingerprint'));
+  assert(!JSON.stringify(result).includes('policyRevision'));
+  writeFileSync(file, originalConfig);
   // Revoking a connection table rule also revokes existing handles.
   writeFileSync(
     file,

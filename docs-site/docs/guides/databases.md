@@ -107,9 +107,11 @@ Use `list_databases` to discover databases accessible through a PostgreSQL, MySQ
 }
 ```
 
+Write, schema-change, and `begin_transaction` calls accept the same `database` argument and enforce that database's read-only and access rules. Later transaction calls use their transaction ID, which stays pinned to the selected database.
+
 The host, user, saved credentials, TLS settings, IAM model, and SSH settings are inherited. The saved default is unchanged. Pool identities stay separate for each target database.
 
-The argument is supported by `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `test_connection`, and `get_pool_stats`.
+The argument is supported by `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `get_table_stats`, `test_connection`, `get_pool_stats`, `write_query`, `create_table`, `alter_table`, `drop_table`, and `begin_transaction`.
 
 The existing `connectionId: "my-pg-server/app_logs"` shorthand also works. Conflicting targets in the argument and shorthand are rejected. File-backed engines such as SQLite require a separate saved connection for each file.
 

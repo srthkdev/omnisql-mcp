@@ -117,3 +117,13 @@ OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin npm run demo -- --postgres
 ```
 
 That cluster uses a random password, listens on loopback, and is stopped and removed after the run.
+
+## Read a large result in pages
+
+Queries return inline results up to 64 KiB. Larger bounded results return an opaque `resultId`, a preview, and `nextOffset`. Use `read_result` with that ID and row offset to continue. `columnOffset` and `columnLimit` page wide tables. `clippedCells` identifies long values; `read_result_cell` retrieves those in chunks using its returned `nextOffset`.
+
+Handles expire after 15 minutes, belong to the current server process, and are checked against current connection rules on every read. Storage is limited to 32 artifacts and 64 MiB; old results may be evicted sooner. `truncated` means a query reached its configured fetch budget: paging reads the stored subset, not additional database rows. Narrow the query or increase an operator-controlled limit to fetch more.
+
+Large CSV and JSON exports return a handle. `read_export` returns base64 chunks with byte offsets. Concatenate the decoded bytes before decoding UTF-8 or saving the file. Exports never accept an arbitrary filesystem path. CSV respects `includeHeaders: false`. JSON uses positional columns and rows when column names repeat, preserving every value.
+
+Result files use a process-private temporary directory and are removed on shutdown. On Unix, directories use mode 0700 and files 0600. Query output may contain sensitive database values; it is still sent to your MCP client when read.

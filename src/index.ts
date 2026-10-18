@@ -1,3 +1,5 @@
+import { PrivateNotes } from './runtime/notes.js';
+import { ResultArtifacts } from './runtime/artifacts.js';
 import { AccessPolicy } from './policy/access.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -33,7 +35,6 @@ import { TransactionManager } from './managers/index.js';
 import { buildExplainQuery, parseExplainOutput } from './utils/query-analyzer.js';
 import { compareSchemas, parseTableSchema, generateMigrationScript } from './utils/schema-diff.js';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -77,6 +78,7 @@ const DEFAULT_QUERY_ROWS = 1000;
 const DEFAULT_EXPORT_ROWS = 10000;
 
 class OmniSQLMCPServer {
+  private artifacts = new ResultArtifacts();
   private accessPolicy = new AccessPolicy();
   private server: Server;
   private configParser: WorkspaceConfigParser;
@@ -85,7 +87,8 @@ class OmniSQLMCPServer {
   private transactionManager: TransactionManager;
   private debug: boolean;
   private insights: BusinessInsight[] = [];
-  private insightsFile: string;
+  private notes: PrivateNotes;
+  private notesScope: string;
   private readOnly: boolean;
   private disabledTools: string[];
   private allowedConnections: Set<string> | null; // null = allow all
@@ -107,7 +110,8 @@ class OmniSQLMCPServer {
       .filter(Boolean);
     this.allowedConnections = allowedList.length > 0 ? new Set(allowedList) : null;
 
-    this.insightsFile = path.join(os.tmpdir(), 'omnisql-mcp-insights.json');
+    this.notesScope = this.currentNotesScope();
+    this.notes = new PrivateNotes(this.notesScope);
 
     this.server = new Server(
       {
@@ -184,12 +188,29 @@ class OmniSQLMCPServer {
     }
   }
 
+  private currentNotesScope(): string {
+    const policySource = [process.env.OMNISQL_CONFIG_FILE, process.env.OMNISQL_POLICY_FILE]
+      .filter(Boolean)
+      .map((file) => fs.readFileSync(file!, 'utf8'));
+    return JSON.stringify([
+      process.env.OMNISQL_WORKSPACE ?? '',
+      process.env.OMNISQL_PROJECT ?? '',
+      process.env.OMNISQL_ALLOWED_CONNECTIONS ?? '',
+      process.env.OMNISQL_READ_ONLY ?? '',
+      policySource,
+    ]);
+  }
+  private refreshNotes() {
+    const scope = this.currentNotesScope();
+    if (scope !== this.notesScope) {
+      this.notesScope = scope;
+      this.notes = new PrivateNotes(scope);
+      this.insights = this.notes.load();
+    }
+  }
   private loadInsights() {
     try {
-      if (fs.existsSync(this.insightsFile)) {
-        const data = fs.readFileSync(this.insightsFile, 'utf-8');
-        this.insights = JSON.parse(data);
-      }
+      this.insights = this.notes.load();
     } catch (error) {
       this.log(`Failed to load insights: ${error}`, 'debug');
       this.insights = [];
@@ -202,7 +223,7 @@ class OmniSQLMCPServer {
       if (this.insights.length > MAX_INSIGHTS) {
         this.insights = this.insights.slice(-MAX_INSIGHTS);
       }
-      fs.writeFileSync(this.insightsFile, JSON.stringify(this.insights, null, 2));
+      this.insights = this.notes.save(this.insights);
     } catch (error) {
       this.log(`Failed to save insights: ${error}`, 'error');
     }
@@ -278,6 +299,7 @@ class OmniSQLMCPServer {
     // Graceful shutdown: roll back active transactions, then close pools
     const shutdown = async () => {
       this.log('Shutting down gracefully...');
+      await this.artifacts.close();
       try {
         const rolledBack = await this.transactionManager.rollbackAll();
         if (rolledBack > 0) {
@@ -818,7 +840,47 @@ class OmniSQLMCPServer {
         required: ['connectionId'],
       },
     });
+    for (const name of ['read_result', 'read_result_cell', 'read_export']) {
+      const properties: Record<string, any> = {
+        resultId: { type: 'string', minLength: 32, maxLength: 32 },
+        offset: { type: 'integer', minimum: 0 },
+        limit: { type: 'integer', minimum: 1, maximum: 1000 },
+      };
+      if (name === 'read_result') {
+        properties.columnOffset = { type: 'integer', minimum: 0 };
+        properties.columnLimit = { type: 'integer', minimum: 1, maximum: 100 };
+      }
+      if (name === 'read_result_cell') {
+        properties.row = { type: 'integer', minimum: 0 };
+        properties.column = { type: 'integer', minimum: 0 };
+        delete properties.limit;
+        properties.length = { type: 'integer', minimum: 1, maximum: 16000 };
+      }
+      if (name === 'read_export') {
+        delete properties.limit;
+        properties.length = { type: 'integer', minimum: 1, maximum: 48000 };
+      }
+      tools.push({
+        name,
+        description:
+          name === 'read_result'
+            ? 'Read a bounded page from a stored query result; follow nextOffset'
+            : name === 'read_result_cell'
+              ? 'Read a long cell in UTF-16 string chunks; follow nextOffset'
+              : 'Read a stored export in base64 byte chunks; concatenate decoded bytes',
+        inputSchema: {
+          type: 'object',
+          properties,
+          required: name === 'read_result_cell' ? ['resultId', 'row', 'column'] : ['resultId'],
+        },
+      });
+    }
     for (const tool of tools) {
+      if (['append_insight', 'list_insights'].includes(tool.name)) {
+        const props = tool.inputSchema.properties as Record<string, any>;
+        if (props.insight) props.insight.maxLength = 16384;
+        if (props.tags) props.tags.items.maxLength = 128;
+      }
       tool.inputSchema.additionalProperties = false;
       const properties = tool.inputSchema.properties as Record<string, any>;
       if (properties?.maxRows) {
@@ -903,6 +965,40 @@ class OmniSQLMCPServer {
           case 'list_databases':
             return await this.handleListDatabases(args as { connectionId: string });
 
+          case 'read_result':
+          case 'read_result_cell':
+          case 'read_export': {
+            const source = this.artifacts.source(args.resultId as string);
+            const connection = await this.getConnection(source.connectionId, source.database);
+            if (!connection) throw new Error('Result connection is no longer accessible');
+            this.accessPolicy.assertQuery(connection, source.query, true);
+            const result =
+              name === 'read_result'
+                ? await this.artifacts.page(
+                    args.resultId as string,
+                    args.offset as number | undefined,
+                    args.limit as number | undefined,
+                    args.columnOffset as number | undefined,
+                    args.columnLimit as number | undefined
+                  )
+                : name === 'read_result_cell'
+                  ? await this.artifacts.cell(
+                      args.resultId as string,
+                      args.row as number,
+                      args.column as number,
+                      args.offset as number | undefined,
+                      args.length as number | undefined
+                    )
+                  : await this.artifacts.readExport(
+                      args.resultId as string,
+                      args.offset as number | undefined,
+                      args.length as number | undefined
+                    );
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+              structuredContent: result,
+            };
+          }
           case 'list_connections':
             return await this.handleListConnections(args as { includeDetails?: boolean });
 
@@ -1172,6 +1268,24 @@ class OmniSQLMCPServer {
       readOnly: true,
     });
 
+    if (Buffer.byteLength(JSON.stringify(result)) > 65536) {
+      const stored = await this.artifacts.save(result, {
+        connectionId: args.connectionId,
+        database: args.database,
+        query,
+      });
+      const preview = await this.artifacts.page(stored.resultId, 0, 25);
+      const response = {
+        query,
+        connection: connection.name,
+        executionTime: result.executionTime,
+        ...preview,
+      };
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+        structuredContent: response,
+      };
+    }
     const response = {
       query,
       connection: connection.name,
@@ -1451,39 +1565,48 @@ class OmniSQLMCPServer {
       readOnly: true,
     });
 
-    if (format === 'csv') {
-      const csvData = convertToCSV(result.columns, result.rows);
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: csvData,
-          },
-        ],
-      };
-    } else if (format === 'json') {
-      const jsonData = result.rows.map((row) => {
-        const obj: any = {};
-        result.columns.forEach((col, idx) => {
-          obj[col] = row[idx];
-        });
-        return obj;
+    if (format !== 'csv' && format !== 'json')
+      throw new McpError(ErrorCode.InvalidParams, 'Unsupported export format; use csv or json');
+    const duplicateColumns = new Set(result.columns).size !== result.columns.length;
+    const text =
+      format === 'csv'
+        ? convertToCSV(result.columns, result.rows, args.includeHeaders !== false)
+        : JSON.stringify(
+            duplicateColumns
+              ? { columns: result.columns, rows: result.rows }
+              : result.rows.map((row) =>
+                  Object.fromEntries(result.columns.map((name, i) => [name, row[i]]))
+                )
+          );
+    if (Buffer.byteLength(text) > 65536) {
+      const stored = await this.artifacts.export(text, format, {
+        connectionId: args.connectionId,
+        database: args.database,
+        query,
       });
-
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(jsonData, null, 2),
-          },
-        ],
+      const response = {
+        ...stored,
+        truncated: result.truncated === true,
+        rowCount: result.rows.length,
+        downloadTool: 'read_export',
       };
-    } else {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unsupported export format: ${format}. Use 'csv' or 'json'`
-      );
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+        structuredContent: response,
+      };
     }
+    return {
+      content: [{ type: 'text' as const, text }],
+      ...(result.truncated
+        ? {
+            structuredContent: {
+              truncated: true,
+              rowCount: result.rows.length,
+              limitReason: result.limitReason,
+            },
+          }
+        : {}),
+    };
   }
 
   private async handleTestConnection(args: { connectionId: string; database?: string }) {
@@ -1560,12 +1683,15 @@ class OmniSQLMCPServer {
     connection?: string;
     tags?: string[];
   }) {
+    this.refreshNotes();
     if (!args.insight || args.insight.trim().length === 0) {
       throw new McpError(ErrorCode.InvalidParams, 'Insight text is required');
     }
 
+    if (args.connection && !(await this.getConnection(args.connection)))
+      throw new Error('Insight connection is not accessible');
     const newInsight: BusinessInsight = {
-      id: Date.now(),
+      id: Math.max(Date.now(), ...this.insights.map((n) => n.id)) + 1,
       insight: args.insight.trim(),
       created_at: new Date().toISOString(),
       connection: args.connection,
@@ -1594,7 +1720,11 @@ class OmniSQLMCPServer {
   }
 
   private async handleListInsights(args: { connection?: string; tags?: string[] }) {
-    let filteredInsights = [...this.insights];
+    this.refreshNotes();
+    const visible = await this.getFilteredConnections();
+    let filteredInsights = this.insights.filter(
+      (n) => !n.connection || visible.some((c) => c.id === n.connection || c.name === n.connection)
+    );
 
     if (args.connection) {
       filteredInsights = filteredInsights.filter(
@@ -1849,7 +1979,7 @@ class OmniSQLMCPServer {
   async run() {
     try {
       // Validate DB client workspace
-      if (!this.configParser.isWorkspaceValid()) {
+      if (!process.env.OMNISQL_CONFIG_FILE && !this.configParser.isWorkspaceValid()) {
         this.log(
           'Workspace not found. Please run your DB client at least once to create the workspace.',
           'error'

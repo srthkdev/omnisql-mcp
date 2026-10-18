@@ -43,7 +43,9 @@
     "demo": "node scripts/demo.mjs",
     "test:integration": "npm run build && node scripts/integration.mjs",
     "build:rust": "node scripts/build-rust.mjs",
-    "test:rust": "cargo test --locked --manifest-path native/sql-policy/Cargo.toml"
+    "test:rust": "cargo test --locked --manifest-path native/sql-policy/Cargo.toml",
+    "test:results": "npm run build && node scripts/check-results.mjs",
+    "docs:tools": "npm run build && node scripts/export-tools.mjs"
   },
   "lint-staged": {
     "*.ts": [

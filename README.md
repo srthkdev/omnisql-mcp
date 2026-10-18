@@ -128,6 +128,8 @@ Register OmniSQL once. Select `connectionId` in each tool call; select `database
 
 Set `OMNISQL_CONFIG_FILE` to your JSON configuration, or reuse discovered workspace connections. Explicit connections default to read-only. See the [multi-instance configuration guide](https://srthkdev.github.io/omnisql-mcp/docs/getting-started/configuration/) and [access policies](https://srthkdev.github.io/omnisql-mcp/docs/guides/access/).
 
+Large results use private, expiring handles with row and column pagination. Long cells and large exports can be read in bounded chunks. See [result paging](https://srthkdev.github.io/omnisql-mcp/docs/guides/usage-examples/#read-a-large-result-in-pages).
+
 ## Configuration
 
 ### Environment Variables

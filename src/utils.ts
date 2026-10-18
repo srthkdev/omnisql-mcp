@@ -798,11 +798,13 @@ export function parseVersionFromResult(result: any): string | undefined {
 /**
  * Convert query results to CSV format
  */
-export function convertToCSV(columns: string[], rows: any[][]): string {
-  if (rows.length === 0) return '';
+export function convertToCSV(columns: string[], rows: any[][], includeHeaders = true): string {
+  if (rows.length === 0 && !includeHeaders) return '';
 
   // Create CSV header row
-  let csv = columns.map((col) => `"${col.replace(/"/g, '""')}"`).join(',') + '\n';
+  let csv = includeHeaders
+    ? columns.map((col) => `"${col.replace(/"/g, '""')}"`).join(',') + '\n'
+    : '';
 
   // Add data rows
   rows.forEach((row) => {

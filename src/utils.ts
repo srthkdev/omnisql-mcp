@@ -536,7 +536,7 @@ export function getTestQuery(driver: string): string {
   } else if (driverLower.includes('oracle')) {
     // v$version is granted to PUBLIC, so any session can read it.
     return 'SELECT banner FROM v$version WHERE ROWNUM = 1';
-  } else if (driverLower.includes('duckdb')) {
+  } else if (driverLower.includes('duckdb') || driverLower.includes('clickhouse')) {
     return 'SELECT version();';
   } else if (driverLower.includes('sqlite')) {
     return 'SELECT sqlite_version();';
@@ -614,6 +614,9 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
   const safeTableName = sanitizeIdentifier(parts.at(-1)!);
   const safeSchema = parts.length === 2 ? sanitizeIdentifier(parts[0]) : null;
 
+  if (driverLower.includes('clickhouse')) {
+    return `SELECT name AS column_name,type AS data_type,(startsWith(type,'Nullable(') OR startsWith(type,'LowCardinality(Nullable(')) AS is_nullable,nullIf(default_expression,'') AS column_default FROM system.columns WHERE database=currentDatabase()${safeSchema ? ` AND database='${safeSchema}'` : ''} AND table='${safeTableName}' ORDER BY position`;
+  }
   if (driverLower.includes('duckdb')) {
     return `SELECT column_name,data_type,is_nullable,column_default,character_maximum_length,numeric_precision,numeric_scale FROM duckdb_columns() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', safeSchema ? `'${safeSchema}'` : 'current_schema()')} AND ${duckdbNameEquals('table_name', `'${safeTableName}'`)} ORDER BY column_index`;
   }
@@ -690,6 +693,9 @@ export function buildListTablesQuery(
     dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
   const safeSchema = schema ? sanitizeIdentifier(schema) : null;
 
+  if (driverLower.includes('clickhouse')) {
+    return `SELECT name AS table_name,if(engine LIKE '%View','VIEW','BASE TABLE') AS table_type,database AS table_schema FROM system.tables WHERE database=currentDatabase()${safeSchema ? ` AND database='${safeSchema}'` : ''}${includeViews ? '' : ` AND engine NOT LIKE '%View'`} ORDER BY database,name`;
+  }
   if (driverLower.includes('duckdb')) {
     const filter = safeSchema ? ` AND ${duckdbNameEquals('schema_name', `'${safeSchema}'`)}` : '';
     return `SELECT table_name,'BASE TABLE' AS table_type,schema_name AS table_schema FROM duckdb_tables() WHERE NOT internal AND database_name=current_database()${filter}${includeViews ? ` UNION ALL SELECT view_name AS table_name,'VIEW' AS table_type,schema_name AS table_schema FROM duckdb_views() WHERE NOT internal AND database_name=current_database()${filter}` : ''} ORDER BY table_schema,table_name`;

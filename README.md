@@ -31,7 +31,7 @@
 | Capability | How it helps |
 |---|---|
 | **Reuse saved connections** | Read database and SSH settings from DBeaver-compatible workspaces, including custom projects. |
-| **Query across engines** | PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle, and DuckDB. |
+| **Query across engines** | PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle, DuckDB, and ClickHouse. |
 | **Choose another database** | Discover databases and select one at call time, using the same saved server credentials. |
 | **Understand your data** | Browse tables, inspect columns, explain queries, export CSV/JSON, and compare schemas. |
 | **Control access** | Choose read-only mode, restrict connections, or disable tools. |
@@ -44,6 +44,7 @@
 - MySQL / MariaDB (via `mysql2`)
 - SQL Server / MSSQL (via `mssql`)
 - SQLite (via `sqlite3` CLI)
+- ClickHouse (HTTP/HTTPS with keep-alive and zstd/gzip; no external client)
 - DuckDB (via DuckDB CLI 1.5.6+; existing local files, locked safe mode, exact numeric output)
 - Oracle (via `oracledb`)
 
@@ -127,7 +128,7 @@ Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omn
 
 ## One server, many instances
 
-Register OmniSQL once. Select `connectionId` in each tool call; select `database` to switch databases on PostgreSQL, MySQL/MariaDB, or SQL Server. Each instance can have its own read-only setting, table policy, credentials, timeout, row/byte limits, and pool size.
+Register OmniSQL once. Select `connectionId` in each tool call; select `database` to switch databases on PostgreSQL, MySQL/MariaDB, SQL Server, or ClickHouse. Each instance can have its own read-only setting, table policy, credentials, timeout, row/byte limits, and pool size.
 
 Set `OMNISQL_CONFIG_FILE` to your JSON configuration, or reuse discovered workspace connections. Explicit connections default to read-only. See the [multi-instance configuration guide](https://srthkdev.github.io/omnisql-mcp/docs/getting-started/configuration/) and [access policies](https://srthkdev.github.io/omnisql-mcp/docs/guides/access/).
 
@@ -214,7 +215,7 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 
 ### Connection Management
 - `list_connections` - List all database connections
-- `list_databases` - Discover accessible databases on PostgreSQL, MySQL/MariaDB, and SQL Server
+- `list_databases` - Discover accessible databases on PostgreSQL, MySQL/MariaDB, SQL Server, and ClickHouse
 - `get_connection_info` - Get connection details
 - `test_connection` - Test connectivity
 
@@ -303,7 +304,7 @@ Table policies resolve real catalog names before checking access, including engi
 
 ### Querying another database on the same server
 
-Use `list_databases` with a saved `connectionId` to discover databases accessible on a PostgreSQL, MySQL/MariaDB, or SQL Server instance. Pass an optional `database` to `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `test_connection`, or `get_pool_stats`:
+Use `list_databases` with a saved `connectionId` to discover databases accessible on a PostgreSQL, MySQL/MariaDB, SQL Server, or ClickHouse instance. Pass an optional `database` to `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `test_connection`, or `get_pool_stats`:
 
 ```json
 {"connectionId": "my-pg-server", "database": "app_logs", "query": "SELECT count(*) FROM log"}

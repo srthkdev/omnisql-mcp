@@ -1,3 +1,4 @@
+import { clickhouseAdapter } from './runtime/clickhouse.js';
 import { duckdbAdapter } from './runtime/duckdb.js';
 import {
   assertQueryAccess as authorizeQuery,
@@ -46,6 +47,10 @@ export class WorkspaceClient {
   private policy = new AccessPolicy();
   private gate = new QueryGate();
   private adapters = new AdapterRegistry([
+    clickhouseAdapter({
+      timeout: () => this.timeout,
+      endpoint: (connection, port) => this.resolveEndpoint(connection, port),
+    }),
     duckdbAdapter(() => this.timeout),
     {
       id: 'postgres',
@@ -209,6 +214,7 @@ export class WorkspaceClient {
     }
   }
   async close(): Promise<void> {
+    this.adapters.close();
     await this.poolManager.closeAllPools();
   }
 
@@ -252,6 +258,8 @@ export class WorkspaceClient {
     );
     schema.indexes = details.indexes;
     schema.constraints = details.constraints;
+    if (details.physicalKeys) schema.physicalKeys = details.physicalKeys;
+    if (details.notes?.length) schema.notes = details.notes;
     if (result.truncated || details.partial) schema.partial = true;
     const primary = new Set(
       schema.constraints.filter((k) => k.type === 'PRIMARY_KEY').flatMap((k) => k.columns)
@@ -659,7 +667,8 @@ export class WorkspaceClient {
               break;
             case 'is_nullable':
             case 'nullable':
-              columnInfo.nullable = value === 'YES' || value === 'Y' || value === true;
+              columnInfo.nullable =
+                value === 'YES' || value === 'Y' || value === true || value === 1 || value === '1';
               break;
             case 'dflt_value':
             case 'data_default':
@@ -769,9 +778,11 @@ export class WorkspaceClient {
     ) {
       query =
         'SELECT name FROM sys.databases WHERE state = 0 AND HAS_DBACCESS(name) = 1 ORDER BY name';
+    } else if (driver.includes('clickhouse')) {
+      query = 'SELECT name FROM system.databases ORDER BY name';
     } else {
       throw new Error(
-        'list_databases supports PostgreSQL, MySQL/MariaDB, and SQL Server connections'
+        'list_databases supports PostgreSQL, MySQL/MariaDB, SQL Server, and ClickHouse connections'
       );
     }
     const result = await this.executeQuery(connection, query, { trustedMetadata: true });

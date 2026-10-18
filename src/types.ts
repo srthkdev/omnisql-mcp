@@ -60,6 +60,8 @@ export interface QueryResult {
 }
 
 export interface SchemaInfo {
+  notes?: string[];
+  physicalKeys?: Record<string, string>;
   partial?: boolean;
   tableName: string;
   columns: ColumnInfo[];
@@ -227,6 +229,7 @@ export interface TableDiff {
     status: 'added' | 'removed' | 'modified';
     changes?: string[];
   }[];
+  physicalKeyDiffs?: { kind: string; before?: string; after?: string }[];
 }
 
 export interface ColumnDiff {

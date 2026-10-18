@@ -19,19 +19,23 @@ export function tableParts(connection: DatabaseConnection, name: string) {
       ? `'${parts[0]}'`
       : dialect === 'postgres'
         ? 'current_schema()'
-        : dialect === 'duckdb'
-          ? 'current_schema()'
-          : dialect === 'mysql'
-            ? 'DATABASE()'
-            : dialect === 'mssql'
-              ? 'SCHEMA_NAME()'
-              : "SYS_CONTEXT('USERENV','CURRENT_SCHEMA')";
+        : dialect === 'clickhouse'
+          ? 'currentDatabase()'
+          : dialect === 'duckdb'
+            ? 'current_schema()'
+            : dialect === 'mysql'
+              ? 'DATABASE()'
+              : dialect === 'mssql'
+                ? 'SCHEMA_NAME()'
+                : "SYS_CONTEXT('USERENV','CURRENT_SCHEMA')";
   return { dialect, table, schema };
 }
 function indexQuery(c: DatabaseConnection, name: string): string | undefined {
   const { dialect, table, schema } = tableParts(c, name);
   if (dialect === 'postgres')
     return `SELECT x.relname AS index_name, pg_get_indexdef(i.indexrelid,k.ordinality::integer,true) AS column_name, k.ordinality AS ordinal_position, i.indisunique AS is_unique, i.indisprimary AS is_primary, am.amname AS index_type, pg_get_indexdef(i.indexrelid) AS definition, pg_get_expr(i.indpred,i.indrelid) AS predicate, i.indisvalid AS is_valid FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace JOIN pg_class x ON x.oid=i.indexrelid JOIN pg_am am ON am.oid=x.relam CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY k(attnum,ordinality) WHERE n.nspname=${schema} AND t.relname='${table}' AND k.ordinality<=i.indnkeyatts ORDER BY x.relname,k.ordinality`;
+  if (dialect === 'clickhouse')
+    return `SELECT name AS index_name,expr AS column_name,1 AS ordinal_position,0 AS is_unique,0 AS is_primary,type_full AS index_type,concat('INDEX ',name,' ',expr,' TYPE ',type_full,' GRANULARITY ',toString(granularity)) AS definition FROM system.data_skipping_indices WHERE database=currentDatabase() AND database=${schema} AND table='${table}' ORDER BY name`;
   if (dialect === 'duckdb')
     return `SELECT index_name,unnest(expressions::VARCHAR[]) AS column_name,generate_subscripts(expressions::VARCHAR[],1) AS ordinal_position,is_unique,is_primary,'ART' AS index_type,sql AS definition FROM duckdb_indexes() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', schema)} AND ${duckdbNameEquals('table_name', `'${table}'`)} ORDER BY index_name,ordinal_position`;
   if (dialect === 'mysql')
@@ -45,6 +49,8 @@ function constraintQuery(c: DatabaseConnection, name: string): string | undefine
   const { dialect, table, schema } = tableParts(c, name);
   if (dialect === 'postgres')
     return `SELECT k.conname AS constraint_name, CASE k.contype WHEN 'p' THEN 'PRIMARY_KEY' WHEN 'u' THEN 'UNIQUE' WHEN 'f' THEN 'FOREIGN_KEY' WHEN 'c' THEN 'CHECK' END AS constraint_type,a.attname AS column_name,rn.nspname||'.'||rt.relname AS referenced_table,ra.attname AS referenced_column,pg_get_constraintdef(k.oid) AS definition,keys.ordinality AS ordinal_position FROM pg_constraint k JOIN pg_class t ON t.oid=k.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace LEFT JOIN LATERAL unnest(k.conkey) WITH ORDINALITY keys(attnum,ordinality) ON true LEFT JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=keys.attnum LEFT JOIN pg_class rt ON rt.oid=k.confrelid LEFT JOIN pg_namespace rn ON rn.oid=rt.relnamespace LEFT JOIN pg_attribute ra ON ra.attrelid=k.confrelid AND ra.attnum=k.confkey[keys.ordinality] WHERE n.nspname=${schema} AND t.relname='${table}' AND k.contype IN ('p','u','f','c') ORDER BY k.conname,keys.ordinality`;
+  if (dialect === 'clickhouse')
+    return `SELECT name AS constraint_name,type AS constraint_type,NULL AS column_name,NULL AS referenced_table,NULL AS referenced_column,1 AS ordinal_position,expression AS definition FROM system.constraints WHERE database=currentDatabase() AND database=${schema} AND table='${table}' AND type='CHECK' ORDER BY name`;
   if (dialect === 'duckdb')
     return `SELECT k.constraint_name,replace(k.constraint_type,' ','_') AS constraint_type,col.column_name,k.referenced_table,k.referenced_column_names[col.ordinal_position] AS referenced_column,col.ordinal_position,k.constraint_text AS definition FROM duckdb_constraints() k LEFT JOIN LATERAL unnest(k.constraint_column_names) WITH ORDINALITY AS col(column_name,ordinal_position) ON true WHERE k.constraint_type IN ('PRIMARY KEY','FOREIGN KEY','UNIQUE','CHECK') AND k.database_name=current_database() AND ${duckdbNameEquals('k.schema_name', schema)} AND ${duckdbNameEquals('k.table_name', `'${table}'`)} ORDER BY k.constraint_name,col.ordinal_position`;
   if (dialect === 'mysql')
@@ -60,8 +66,27 @@ function bool(value: unknown): boolean {
 export async function indexesAndConstraints(
   c: DatabaseConnection,
   name: string,
-  query: CatalogQuery
-): Promise<{ indexes: IndexInfo[]; constraints: ConstraintInfo[]; partial?: boolean }> {
+  fetch: CatalogQuery
+): Promise<{
+  indexes: IndexInfo[];
+  constraints: ConstraintInfo[];
+  partial?: boolean;
+  physicalKeys?: Record<string, string>;
+  notes?: string[];
+}> {
+  const notes: string[] = [];
+  const query: CatalogQuery = async (sql) => {
+    try {
+      const result = await fetch(sql);
+      if (result.truncated) notes.push('Catalog details reached their result budget.');
+      return result;
+    } catch (error) {
+      notes.push(
+        'Catalog details unavailable: ' + (error instanceof Error ? error.message : String(error))
+      );
+      return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
+    }
+  };
   const dialect = sqlDialect(c.driver);
   const indexes: IndexInfo[] = [];
   const constraints: ConstraintInfo[] = [];
@@ -112,15 +137,20 @@ export async function indexesAndConstraints(
           columns: i.columns,
           nameIsGenerated: true,
         });
-    return { indexes, constraints };
+    return { indexes, constraints, partial: notes.length > 0, ...(notes.length ? { notes } : {}) };
   }
   const indexSql = indexQuery(c, name),
     constraintSql = constraintQuery(c, name);
   if (!indexSql || !constraintSql)
     throw new Error('Index and constraint metadata is unsupported for this driver');
-  const [indexResult, constraintResult] = await Promise.all([
+  const [indexResult, constraintResult, keyResult] = await Promise.all([
     query(indexSql),
     query(constraintSql),
+    dialect === 'clickhouse'
+      ? query(
+          `SELECT primary_key,sorting_key,partition_key,sampling_key FROM system.tables WHERE database=currentDatabase() AND database=${tableParts(c, name).schema} AND name='${tableParts(c, name).table}'`
+        )
+      : Promise.resolve(undefined),
   ]);
   const grouped = new Map<string, IndexInfo>();
   for (const row of records(indexResult)) {
@@ -139,7 +169,8 @@ export async function indexesAndConstraints(
       };
       grouped.set(name, index);
     }
-    index.columns.push(row.column_name === null ? '(expression)' : String(row.column_name));
+    if (row.column_name !== null || dialect !== 'clickhouse')
+      index.columns.push(row.column_name === null ? '(expression)' : String(row.column_name));
   }
   const groupedConstraints = new Map<string, ConstraintInfo>();
   for (const row of records(constraintResult)) {
@@ -164,6 +195,16 @@ export async function indexesAndConstraints(
   return {
     indexes: [...grouped.values()],
     constraints: [...groupedConstraints.values()],
-    partial: indexResult.truncated === true || constraintResult.truncated === true,
+    partial: notes.length > 0,
+    ...(notes.length ? { notes } : {}),
+    ...(keyResult
+      ? {
+          physicalKeys: Object.fromEntries(
+            Object.entries(records(keyResult)[0] ?? {})
+              .filter(([, value]) => value)
+              .map(([key, value]) => [key.replace('_key', ''), String(value)])
+          ),
+        }
+      : {}),
   };
 }

@@ -13,6 +13,7 @@ interface IdentityColumns {
 }
 
 function literal(dialect: string, value: string): string {
+  if (dialect === 'clickhouse') return `unhex('${Buffer.from(value).toString('hex')}')`;
   if (dialect === 'mysql')
     return value ? `CONVERT(0x${Buffer.from(value).toString('hex')} USING utf8mb4)` : "''";
   const text = value.replace(/'/g, "''");
@@ -120,6 +121,15 @@ function queryFor(
     where =
       `${match(schema, 'DATABASE()')} AND ${match(name, literal(d, last.value))}` +
       (kind === 'function' ? " AND ROUTINE_TYPE='FUNCTION'" : '');
+  } else if (d === 'clickhouse') {
+    schema = kind === 'table' ? 'database' : "''";
+    name = 'name';
+    database = 'currentDatabase()';
+    from = kind === 'table' ? 'system.tables' : 'system.functions';
+    where =
+      kind === 'table'
+        ? `database=currentDatabase() AND name=${literal(d, last.value)}`
+        : `name=${literal(d, last.value)} OR (case_insensitive=1 AND lowerASCII(name)=lowerASCII(${literal(d, last.value)}))`;
   } else if (d === 'duckdb') {
     schema = 'schema_name';
     name = kind === 'table' ? 'table_name' : 'function_name';

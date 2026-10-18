@@ -16,6 +16,10 @@ function load(connections: object, defaults?: object) {
   return loadConfiguredConnections(file);
 }
 describe('one server, independent database instances', () => {
+  it('unwraps IPv6 URL hosts for native clients', () => {
+    setEnv('TEST_IPV6_URL', 'postgresql://reader@[::1]:5432/reports');
+    expect(load({ reports: { driver: 'postgres', urlEnv: 'TEST_IPV6_URL' } })[0].host).toBe('::1');
+  });
   it('keeps credentials, databases, policies and limits separate', () => {
     setEnv('TEST_SALES_PASSWORD', 'sales-only');
     setEnv(

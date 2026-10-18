@@ -4,7 +4,7 @@ OmniSQL reads configuration from environment variables. The guided installer set
 
 ## One MCP server, many database instances
 
-Set `OMNISQL_CONFIG_FILE` to an absolute path to your JSON configuration. Workspace discovery can run alongside it; connection IDs must be unique across both sources. You register OmniSQL once in the MCP client. Each tool call selects a `connectionId`; PostgreSQL, MySQL/MariaDB, and SQL Server calls can also select a `database` on that instance.
+Set `OMNISQL_CONFIG_FILE` to an absolute path to your JSON configuration. Workspace discovery can run alongside it; connection IDs must be unique across both sources. You register OmniSQL once in the MCP client. Each tool call selects a `connectionId`; PostgreSQL, MySQL/MariaDB, SQL Server, and ClickHouse calls can also select a `database` on that instance.
 
 ```json
 {

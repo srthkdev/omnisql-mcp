@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import { readFileSync } from 'node:fs';
 import { gunzipSync, brotliDecompressSync, zstdDecompressSync } from 'node:zlib';
-import { compressExport } from '../dist/runtime/compression.js';
+import { compressText } from '../dist/runtime/compression.js';
 import { convertToCSV } from '../dist/utils.js';
 const columns = ['id', 'customer_id', 'amount', 'status', 'note'];
 const rows = Array.from({ length: 10000 }, (_, i) => [
@@ -31,13 +31,13 @@ for (const [name, text] of Object.entries(inputs)) {
   const source = Buffer.from(text);
   const codecs = {};
   for (const [codec, decode] of Object.entries(decoders)) {
-    for (let i = 0; i < 3; i++) decode(await compressExport(text, codec));
+    for (let i = 0; i < 3; i++) decode(await compressText(text, codec));
     const encodeMs = [],
       decodeMs = [];
     let archive;
     for (let i = 0; i < 15; i++) {
       let start = performance.now();
-      archive = await compressExport(text, codec);
+      archive = await compressText(text, codec);
       encodeMs.push(performance.now() - start);
       start = performance.now();
       const decoded = decode(archive);

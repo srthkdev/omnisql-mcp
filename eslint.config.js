@@ -5,7 +5,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['dist/**', 'node_modules/**', 'docs-site/**'],
+    ignores: ['dist/**', 'src/native/**', 'node_modules/**', 'docs-site/**'],
   },
   {
     rules: {

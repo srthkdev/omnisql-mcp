@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { readConnectionProp } from '../auth/connection-props.js';
+import { booleanSetting } from '../runtime-config.js';
 import { Pool as PgPool } from 'pg';
 import mysql, { Pool as MySqlPool } from 'mysql2/promise';
 import sql, { ConnectionPool as MssqlPool } from 'mssql';
@@ -7,8 +10,8 @@ import { sshTunnelManager } from '../net/ssh-tunnel.js';
 import { resolvePostgresSsl, resolveMysqlSsl } from '../auth/ssl.js';
 
 const DEFAULT_POOL_CONFIG: PoolConfig = {
-  min: 2,
-  max: 10,
+  min: 0,
+  max: 4,
   idleTimeoutMs: 30000,
   acquireTimeoutMs: 10000,
 };
@@ -18,6 +21,7 @@ interface PoolEntry {
   type: 'postgres' | 'mysql' | 'mssql';
   config: PoolConfig;
   createdAt: Date;
+  connectionId: string;
 }
 
 export class ConnectionPoolManager {
@@ -26,8 +30,25 @@ export class ConnectionPoolManager {
   private config: PoolConfig;
   private debug: boolean;
 
-  constructor(config?: Partial<PoolConfig>, debug = false) {
+  constructor(
+    config?: Partial<PoolConfig>,
+    debug = false,
+    private queryTimeoutMs = 30000
+  ) {
     this.config = { ...DEFAULT_POOL_CONFIG, ...config };
+    if (
+      !Number.isInteger(this.config.min) ||
+      this.config.min < 0 ||
+      !Number.isInteger(this.config.max) ||
+      this.config.max < 1 ||
+      this.config.max > 32 ||
+      this.config.min > this.config.max ||
+      !Number.isFinite(this.config.idleTimeoutMs) ||
+      this.config.idleTimeoutMs < 1 ||
+      !Number.isFinite(this.config.acquireTimeoutMs) ||
+      this.config.acquireTimeoutMs < 1
+    )
+      throw new Error('Invalid connection pool limits');
     this.debug = debug;
   }
 
@@ -38,7 +59,27 @@ export class ConnectionPoolManager {
   }
 
   async getPool(connection: DatabaseConnection): Promise<PoolEntry | null> {
-    const poolKey = connection.id;
+    const port = this.isPostgresCompatible(connection.driver)
+      ? 5432
+      : /mysql|mariadb/.test(connection.driver)
+        ? 3306
+        : 1433;
+    const endpoint = await this.resolveEndpoint(connection, port);
+    const poolKey = createHash('sha256')
+      .update(
+        JSON.stringify([
+          {
+            ...connection,
+            accessRules: undefined,
+            limits: {
+              timeoutMs: connection.limits?.timeoutMs,
+              poolMax: connection.limits?.poolMax,
+            },
+          },
+          endpoint,
+        ])
+      )
+      .digest('hex');
 
     // Return existing pool
     if (this.pools.has(poolKey)) {
@@ -53,7 +94,12 @@ export class ConnectionPoolManager {
     }
 
     // Create the pool with deduplication
-    const creationPromise = this.createPool(connection);
+    if (this.pools.size + this.pendingCreation.size >= 32)
+      throw new Error('Connection pool limit reached; close unused connections');
+    const creationPromise = this.createPool(connection).then((entry) => {
+      if (entry) this.pools.set(poolKey, entry);
+      return entry;
+    });
     this.pendingCreation.set(poolKey, creationPromise);
 
     try {
@@ -120,15 +166,15 @@ export class ConnectionPoolManager {
   }
 
   private async createPostgresPool(connection: DatabaseConnection): Promise<PoolEntry> {
+    const config = { ...this.config, max: connection.limits?.poolMax ?? this.config.max };
+    config.min = Math.min(config.min, config.max);
+    const timeout = connection.limits?.timeoutMs ?? this.queryTimeoutMs;
     this.log(`Creating PostgreSQL pool for ${connection.name}`);
 
     const { host, port } = await this.resolveEndpoint(connection, 5432);
     const iamAuth = isIamAuthConnection(connection);
     const resolvedSsl = resolvePostgresSsl(connection, iamAuth, this.debug);
-    // When a connection says nothing about TLS the resolver defers to the
-    // driver, but pooled connections have always opted into opportunistic
-    // unverified TLS here. Keep that so servers demanding TLS keep working.
-    const ssl = resolvedSsl === undefined ? { rejectUnauthorized: false } : resolvedSsl;
+    const ssl = resolvedSsl;
 
     let user = connection.user;
     let password: string | (() => Promise<string>) | undefined = connection.properties?.password;
@@ -146,28 +192,33 @@ export class ConnectionPoolManager {
     const pool = new PgPool({
       host,
       port,
-      database: connection.database,
-      user,
-      password,
-      min: this.config.min,
-      max: this.config.max,
-      idleTimeoutMillis: this.config.idleTimeoutMs,
-      connectionTimeoutMillis: this.config.acquireTimeoutMs,
+      database: connection.database || connection.properties?.database,
+      user: user || connection.properties?.user || process.env.PGUSER || 'postgres',
+      password: password || process.env.PGPASSWORD,
+      statement_timeout: timeout,
+      min: config.min,
+      max: config.max,
+      idleTimeoutMillis: config.idleTimeoutMs,
+      connectionTimeoutMillis: config.acquireTimeoutMs,
       ssl,
     });
 
+    pool.on('error', (error) => this.log(`Idle PostgreSQL connection error: ${error.message}`));
     const entry: PoolEntry = {
       pool,
       type: 'postgres',
-      config: this.config,
+      config: config,
       createdAt: new Date(),
+      connectionId: connection.id,
     };
 
-    this.pools.set(connection.id, entry);
     return entry;
   }
 
   private async createMysqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
+    const config = { ...this.config, max: connection.limits?.poolMax ?? this.config.max };
+    config.min = Math.min(config.min, config.max);
+    const timeout = connection.limits?.timeoutMs ?? this.queryTimeoutMs;
     this.log(`Creating MySQL pool for ${connection.name}`);
 
     const { host, port } = await this.resolveEndpoint(connection, 3306);
@@ -196,29 +247,38 @@ export class ConnectionPoolManager {
     const pool = mysql.createPool({
       host,
       port,
-      database: connection.database,
-      user,
-      password,
+      database: connection.database || connection.properties?.database,
+      user: user || connection.properties?.user || process.env.MYSQL_USER || 'root',
+      password: password || process.env.MYSQL_PWD || process.env.MYSQL_PASSWORD,
       ssl,
       authPlugins,
-      connectionLimit: this.config.max,
+      rowsAsArray: true,
+      supportBigNumbers: true,
+      bigNumberStrings: true,
+      multipleStatements: false,
+      connectionLimit: config.max,
       waitForConnections: true,
-      queueLimit: 0,
-      connectTimeout: this.config.acquireTimeoutMs,
+      queueLimit: 32,
+      maxIdle: config.max,
+      idleTimeout: config.idleTimeoutMs,
+      connectTimeout: Math.min(config.acquireTimeoutMs, timeout),
     });
 
     const entry: PoolEntry = {
       pool,
       type: 'mysql',
-      config: this.config,
+      config: config,
       createdAt: new Date(),
+      connectionId: connection.id,
     };
 
-    this.pools.set(connection.id, entry);
     return entry;
   }
 
   private async createMssqlPool(connection: DatabaseConnection): Promise<PoolEntry> {
+    const config = { ...this.config, max: connection.limits?.poolMax ?? this.config.max };
+    config.min = Math.min(config.min, config.max);
+    const timeout = connection.limits?.timeoutMs ?? this.queryTimeoutMs;
     this.log(`Creating MSSQL pool for ${connection.name}`);
 
     const { host, port } = await this.resolveEndpoint(connection, 1433);
@@ -229,18 +289,25 @@ export class ConnectionPoolManager {
     const pool = new sql.ConnectionPool({
       server: host,
       port,
-      database: connection.database,
+      database: connection.database || connection.properties?.database,
       user: connection.user,
       password: connection.properties?.password,
       pool: {
-        min: this.config.min,
-        max: this.config.max,
-        idleTimeoutMillis: this.config.idleTimeoutMs,
-        acquireTimeoutMillis: this.config.acquireTimeoutMs,
+        min: config.min,
+        max: config.max,
+        idleTimeoutMillis: config.idleTimeoutMs,
+        acquireTimeoutMillis: config.acquireTimeoutMs,
       },
+      connectionTimeout: config.acquireTimeoutMs,
+      requestTimeout: timeout,
+      arrayRowMode: true,
       options: {
-        encrypt: isAzure,
-        trustServerCertificate: !isAzure,
+        encrypt: booleanSetting(readConnectionProp(connection, 'encrypt'), 'encrypt', isAzure),
+        trustServerCertificate: booleanSetting(
+          readConnectionProp(connection, 'trustServerCertificate'),
+          'trustServerCertificate',
+          !isAzure
+        ),
       },
     });
 
@@ -249,16 +316,18 @@ export class ConnectionPoolManager {
     const entry: PoolEntry = {
       pool,
       type: 'mssql',
-      config: this.config,
+      config: config,
       createdAt: new Date(),
+      connectionId: connection.id,
     };
 
-    this.pools.set(connection.id, entry);
     return entry;
   }
 
   async getStats(connectionId: string): Promise<PoolStats | null> {
-    const entry = this.pools.get(connectionId);
+    const entry =
+      this.pools.get(connectionId) ??
+      [...this.pools.values()].find((e) => e.connectionId === connectionId);
     if (!entry) return null;
 
     const stats: PoolStats = {
@@ -277,7 +346,19 @@ export class ConnectionPoolManager {
       stats.waitingRequests = pgPool.waitingCount;
     } else if (entry.type === 'mysql') {
       // MySQL pool doesn't expose these stats easily
-      stats.totalConnections = this.config.max;
+      const raw = (
+        entry.pool as unknown as {
+          pool: {
+            _allConnections: { length: number };
+            _freeConnections: { length: number };
+            _connectionQueue: { length: number };
+          };
+        }
+      ).pool;
+      stats.totalConnections = raw._allConnections.length;
+      stats.idleConnections = raw._freeConnections.length;
+      stats.activeConnections = stats.totalConnections - stats.idleConnections;
+      stats.waitingRequests = raw._connectionQueue.length;
     } else if (entry.type === 'mssql') {
       const mssqlPool = entry.pool as MssqlPool;
       stats.totalConnections = mssqlPool.size;
@@ -289,7 +370,9 @@ export class ConnectionPoolManager {
   }
 
   async closePool(connectionId: string): Promise<void> {
-    const entry = this.pools.get(connectionId);
+    const entry =
+      this.pools.get(connectionId) ??
+      [...this.pools.values()].find((e) => e.connectionId === connectionId);
     if (!entry) return;
 
     this.log(`Closing pool for ${connectionId}`);
@@ -306,22 +389,25 @@ export class ConnectionPoolManager {
       this.log(`Error closing pool: ${error}`);
     }
 
-    this.pools.delete(connectionId);
+    for (const [key, value] of this.pools) if (value === entry) this.pools.delete(key);
   }
 
   async closeAllPools(): Promise<void> {
     this.log('Closing all connection pools');
+    await Promise.allSettled(this.pendingCreation.values());
     const closePromises = Array.from(this.pools.keys()).map((id) => this.closePool(id));
     await Promise.all(closePromises);
   }
 
   getPoolType(connectionId: string): 'postgres' | 'mysql' | 'mssql' | null {
-    const entry = this.pools.get(connectionId);
+    const entry =
+      this.pools.get(connectionId) ??
+      [...this.pools.values()].find((e) => e.connectionId === connectionId);
     return entry?.type || null;
   }
 
   hasPool(connectionId: string): boolean {
-    return this.pools.has(connectionId);
+    return [...this.pools.values()].some((e) => e.connectionId === connectionId);
   }
 }
 

@@ -64,14 +64,14 @@ describe.skipIf(!available)('SQLite execution', () => {
   it('blocks SQLite host file functions', async () => {
     await expect(
       client.executeQuery(connection, `SELECT writefile('/tmp/omnisql-unsafe-test', 'blocked')`)
-    ).rejects.toThrow(/SQLite error/);
+    ).rejects.toThrow(/SQLite error|single SQL statement/);
   });
   it('rejects CLI commands and never treats multiline SQL as CLI input', async () => {
     await expect(client.executeQuery(connection, '.shell echo unsafe')).rejects.toThrow(
-      /dot commands/
+      /Unsupported SQL operation|dot commands/
     );
     await expect(client.executeQuery(connection, 'SELECT 1;\n.shell echo unsafe')).rejects.toThrow(
-      /SQLite error/
+      /SQLite error|single SQL statement/
     );
   });
 });

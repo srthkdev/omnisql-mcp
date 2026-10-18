@@ -99,10 +99,7 @@ function wildcardMatches(pattern: string, host: string): boolean {
 function patternMatches(pattern: string, host: string, port: number): boolean {
   if (pattern.startsWith('|')) {
     // Non-default ports are hashed in their bracketed form.
-    return (
-      hashedPatternMatches(pattern, host) ||
-      (port !== 22 && hashedPatternMatches(pattern, `[${host}]:${port}`))
-    );
+    return hashedPatternMatches(pattern, port === 22 ? host : `[${host}]:${port}`);
   }
 
   const target = port === 22 ? host : `[${host}]:${port}`;
@@ -125,8 +122,14 @@ export function verifyHostKey(
   key: Buffer,
   entries: KnownHostEntry[]
 ): HostKeyVerdict {
-  const matching = entries.filter((entry) =>
-    entry.patterns.some((pattern) => patternMatches(pattern, host, port))
+  const matching = entries.filter(
+    (entry) =>
+      entry.patterns.some(
+        (pattern) => !pattern.startsWith('!') && patternMatches(pattern, host, port)
+      ) &&
+      !entry.patterns.some(
+        (pattern) => pattern.startsWith('!') && patternMatches(pattern.slice(1), host, port)
+      )
   );
 
   if (matching.length === 0) {

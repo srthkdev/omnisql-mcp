@@ -107,7 +107,7 @@ async function connect(engine, config) {
     close: () => c.close(),
   };
 }
-async function startMcp(workspace, readOnly) {
+async function startMcp(workspace, readOnly, extra = {}) {
   const client = new Client({ name: 'omnisql-integration', version: '1.0.0' });
   await client.connect(
     new StdioClientTransport({
@@ -122,6 +122,7 @@ async function startMcp(workspace, readOnly) {
         OMNISQL_READ_ONLY: String(readOnly),
         OMNISQL_UPDATE_NOTIFIER: 'false',
         OMNISQL_DISABLED_TOOLS: '',
+        ...extra,
       },
     })
   );
@@ -266,6 +267,27 @@ try {
       });
       assert.equal(result.rows[0][0], 'Asha Rao');
       assert.equal(Number(result.rows[0][1]), 420);
+      const capped = await call(client, 'execute_query', {
+        connectionId: 'fixture',
+        query: 'WITH subset AS (SELECT * FROM orders) SELECT * FROM subset',
+        maxRows: 1,
+      });
+      assert.equal(capped.rows.length, 1);
+      assert.equal(capped.truncated, true);
+      const exact = await call(client, 'execute_query', {
+        connectionId: 'fixture',
+        query: 'SELECT * FROM orders',
+        maxRows: 3,
+      });
+      assert.equal(exact.rows.length, 3);
+      assert.equal(exact.truncated, false);
+      const duplicates = await call(client, 'execute_query', {
+        connectionId: 'fixture',
+        query: 'SELECT id AS repeated, id AS repeated FROM orders',
+        maxRows: 1,
+      });
+      assert.equal(duplicates.columns.length, 2);
+      assert.equal(duplicates.rows[0].length, 2);
       await assert.rejects(
         () =>
           call(client, 'write_query', {
@@ -351,6 +373,108 @@ try {
         query: 'SELECT COUNT(*) AS n FROM orders',
       });
       assert.equal(Number(count.rows[0][0]), 3);
+      await client.close();
+      const instanceFile = join(workspace, 'instances.json');
+      const nativeDriver = engine === 'postgres' ? 'postgresql' : engine;
+      const owner =
+        engine === 'postgres'
+          ? 'public'
+          : engine === 'mssql'
+            ? 'dbo'
+            : engine === 'oracle'
+              ? 'OMNISQL'
+              : 'omnisql';
+      const orders = engine === 'oracle' ? 'ORDERS' : 'orders';
+      const customers = engine === 'oracle' ? 'CUSTOMERS' : 'customers';
+      const passwordEnv = 'OMNISQL_INTEGRATION_PASSWORD';
+      const base = {
+        driver: nativeDriver,
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        database: config.database,
+        passwordEnv,
+        properties: { sslmode: 'disable', encrypt: 'true', trustServerCertificate: 'true' },
+      };
+      writeFileSync(
+        instanceFile,
+        JSON.stringify({
+          version: 1,
+          connections: {
+            reports: {
+              ...base,
+              readOnly: true,
+              policy: { allowTables: [orders, owner + '.' + orders] },
+              limits: { poolMax: 1, timeoutMs: 5000, maxRows: 1 },
+            },
+            edits: {
+              ...base,
+              readOnly: false,
+              policy: {
+                allowTables: [orders, owner + '.' + orders],
+                denyTables: [customers, owner + '.' + customers],
+              },
+              limits: { poolMax: 2, timeoutMs: 5000, maxRows: 20 },
+            },
+          },
+        }),
+        { mode: 0o600 }
+      );
+      client = await startMcp(workspace, false, {
+        OMNISQL_CONFIG_FILE: instanceFile,
+        OMNISQL_ALLOWED_CONNECTIONS: 'reports,edits',
+        OMNISQL_INTEGRATION_PASSWORD: password,
+      });
+      assert.equal((await call(client, 'list_connections', {})).length, 2);
+      const concurrent = await Promise.all(
+        ['reports', 'edits', 'reports', 'edits'].map((connectionId) =>
+          call(client, 'execute_query', {
+            connectionId,
+            query: 'SELECT COUNT(*) AS count FROM ' + orders,
+          })
+        )
+      );
+      assert(concurrent.every((r) => Number(r.rows[0][0]) === 3));
+      await assert.rejects(
+        () =>
+          call(client, 'write_query', {
+            connectionId: 'reports',
+            query: 'UPDATE ' + orders + " SET status='pending' WHERE id=3",
+          }),
+        /read.only/
+      );
+      await call(client, 'write_query', {
+        connectionId: 'edits',
+        query: 'UPDATE ' + orders + " SET status='pending' WHERE id=3",
+      });
+      await assert.rejects(
+        () =>
+          call(client, 'execute_query', {
+            connectionId: 'reports',
+            query: 'SELECT * FROM ' + customers,
+          }),
+        /Table.*policy/
+      );
+      await assert.rejects(
+        () => call(client, 'get_table_schema', { connectionId: 'edits', tableName: customers }),
+        /Table.*policy/
+      );
+      const visible = await call(client, 'list_tables', { connectionId: 'reports' });
+      assert.equal(visible.length, 1);
+      assert.equal(visible[0].name.toLowerCase(), 'orders');
+      const resources = (await client.listResources()).resources;
+      assert(resources.every((r) => !r.uri.toLowerCase().includes('customers')));
+      if (resources.length) await client.readResource({ uri: resources[0].uri });
+      await assert.rejects(
+        () =>
+          client.readResource({
+            uri: 'omnisql:///connections/reports/tables/' + customers + '/schema',
+          }),
+        /Table.*policy/
+      );
+      console.log(
+        `${engine}: independent instances, concurrent pools, table policies, resources, and read-only settings passed`
+      );
       console.log(`${engine}: MCP discovery, schema, joins, and security regressions passed`);
     } finally {
       await client?.close();

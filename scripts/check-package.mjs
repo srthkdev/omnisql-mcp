@@ -23,6 +23,17 @@ try {
     join(process.cwd(), 'node_modules'),
     join(temp, 'package/node_modules'),
   ]);
+  // Exercise the Rust WASM extracted from the npm tarball, not the source tree.
+  const wasmCheck = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import {createRequire} from 'node:module';const require=createRequire(import.meta.url);const m=require(${JSON.stringify(join(temp, 'package/dist/native/omnisql_sql_policy.js'))});if(!JSON.parse(m.analyze_sql('SELECT * FROM public.orders','postgres')).relations.length)process.exit(1);`,
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.equal(wasmCheck.status, 0, wasmCheck.stderr);
   const version = spawnSync(process.execPath, [entry, '--version'], { encoding: 'utf8' });
   assert.equal(version.status, 0);
   assert.equal((version.stdout + version.stderr).trim(), manifest.version);

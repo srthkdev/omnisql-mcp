@@ -125,3 +125,30 @@ jobs:
       - run: npm ci
       - name: Exercise a seeded database through MCP
         run: npm run test:integration -- --engines=${{ matrix.engine }}
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path native/sql-policy/Cargo.toml --check
+      - run: cargo clippy --locked --manifest-path native/sql-policy/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path native/sql-policy/Cargo.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - run: cargo install wasm-pack --version 0.15.0 --locked
+      - run: npm ci
+      - run: npm run build:rust
+      - name: Check generated bindings
+        run: git diff --exit-code -- 'src/native/*.js' 'src/native/*.d.ts' src/native/package.json
+      - name: Exercise rebuilt Rust policy in Node
+        run: npx vitest run tests/access-policy.test.ts tests/security-policy.test.ts tests/connections-config.test.ts
+      - name: Upload Linux portable runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-wasm-linux
+          path: src/native/

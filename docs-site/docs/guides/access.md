@@ -36,6 +36,34 @@ A bare connection permits other databases reachable with its credentials. To all
 
 Queries targeting another database are rejected. Database permissions still decide which operations the credentials can perform.
 
+## Restrict schemas, tables, and functions
+
+Use `policy` in each configured connection, or point `OMNISQL_POLICY_FILE` to an additional JSON policy:
+
+```json
+{
+  "version": 1,
+  "defaults": { "readOnly": true },
+  "connections": {
+    "sales": {
+      "databases": ["sales", "reporting"],
+      "schemas": ["public"],
+      "allowTables": ["public.orders", "public.customers"],
+      "denyTables": ["public.customer_secrets"],
+      "denyFunctions": ["pg_sleep"]
+    }
+  }
+}
+```
+
+Rules apply to query sources in joins, subqueries, unions, and CTEs, and to exports, transactions, schema resources, and table discovery. Denies take precedence. `*` matches within one name component: `public.*` permits that schema's tables. Names are case-sensitive after database identifier folding; quoted SQL identifiers preserve case. Use schema-qualified names in both SQL and policy. A bare table rule permits only the bare SQL name, whose resolution follows database session settings. Identifiers containing literal dots are rejected under table restrictions.
+
+Restricted SQL is parsed by the bundled Rust WebAssembly analyzer. Unsupported or dynamic table references, query-level settings, locks, and unknown functions are denied. Common aggregate, string, and date functions are permitted; additional functions require exact `allowFunctions` entries. Allowing a function also trusts its database-defined behavior. The parser does not inspect view definitions, row policies, triggers, or stored functions. Use database grants and views to constrain underlying data.
+
+While table rules are active, schema and administrative changes are disabled, including renames and cascading drops that could affect other objects. INSERT, UPDATE, and DELETE remain subject to read-only settings and table rules.
+
+Table rules also filter resource discovery. Disabling `get_table_schema` blocks schema resources as well as the tool. The server does not start a GUI client when read-only access cannot be enforced for an unsupported engine.
+
 ## Turn off individual tools
 
 ```json

@@ -122,36 +122,28 @@ describe('enforceReadOnly', () => {
 });
 
 describe('sanitizeConnectionId', () => {
-  it('should allow valid connection IDs', () => {
-    expect(sanitizeConnectionId('my-connection')).toBe('my-connection');
-    expect(sanitizeConnectionId('conn_123')).toBe('conn_123');
-    expect(sanitizeConnectionId('db.local')).toBe('db.local');
+  it('preserves exact connection names and Unicode', () => {
+    for (const name of [
+      'my-connection',
+      'Sales Analytics',
+      '分析数据库',
+      'conn;DROP TABLE',
+      'test<script>',
+      'conn/analytics-v2',
+    ])
+      expect(sanitizeConnectionId(name)).toBe(name);
   });
-
-  it('should remove invalid characters', () => {
-    expect(sanitizeConnectionId('conn;DROP TABLE')).toBe('connDROPTABLE');
-    expect(sanitizeConnectionId('test<script>')).toBe('testscript');
-  });
-
-  it('should preserve "/" for the database-override suffix', () => {
-    expect(sanitizeConnectionId('my-conn/analytics')).toBe('my-conn/analytics');
-    expect(sanitizeConnectionId('postgres-jdbc-abc/orders')).toBe('postgres-jdbc-abc/orders');
-  });
-
-  it('should not let the database half carry path separators or dots', () => {
-    // The database value reaches a file path on file-backed engines, so `..`
-    // and `/` surviving sanitizing would be a traversal, not a database name.
-    expect(sanitizeConnectionId('my-conn/../../etc/passwd')).toBe('my-conn/etcpasswd');
-    expect(sanitizeConnectionId('my-conn/../secrets.db')).toBe('my-conn/secretsdb');
-  });
-
-  it('should reject a relative-path connection half outright', () => {
-    expect(() => sanitizeConnectionId('../../my-conn')).toThrow(/no valid characters/);
-    expect(() => sanitizeConnectionId('..')).toThrow(/no valid characters/);
-  });
-
-  it('should throw when the database half sanitizes away entirely', () => {
-    expect(() => sanitizeConnectionId('my-conn/../..')).toThrow(/Database override/);
+  it('rejects traversal and control characters without selecting a different target', () => {
+    for (const name of [
+      '',
+      '..',
+      '../../my-conn',
+      'conn/../../etc/passwd',
+      'conn/../secrets.db',
+      'conn/../..',
+      'conn\u0000',
+    ])
+      expect(() => sanitizeConnectionId(name)).toThrow();
   });
 });
 

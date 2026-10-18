@@ -122,6 +122,12 @@ curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
 
 Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Node.js or npm is missing, it downloads a private Node.js 22 runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 2.2.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
 
+## One server, many instances
+
+Register OmniSQL once. Select `connectionId` in each tool call; select `database` to switch databases on PostgreSQL, MySQL/MariaDB, or SQL Server. Each instance can have its own read-only setting, table policy, credentials, timeout, row/byte limits, and pool size.
+
+Set `OMNISQL_CONFIG_FILE` to your JSON configuration, or reuse discovered workspace connections. Explicit connections default to read-only. See the [multi-instance configuration guide](https://srthkdev.github.io/omnisql-mcp/docs/getting-started/configuration/) and [access policies](https://srthkdev.github.io/omnisql-mcp/docs/guides/access/).
+
 ## Configuration
 
 ### Environment Variables
@@ -129,6 +135,8 @@ Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omn
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OMNISQL_CLI_PATH` | Path to external DB client CLI (used for unsupported-driver fallback) | Unset |
+| `OMNISQL_CONFIG_FILE` | JSON configuration for multiple database instances and their settings | Unset |
+| `OMNISQL_POLICY_FILE` | Additional schema, table, function, and database access rules | Unset |
 | `OMNISQL_WORKSPACE` | Path to local DB client workspace directory | OS default |
 | `OMNISQL_PROJECT` | Restrict discovery to one DB client project/workspace folder | All projects |
 | `OMNISQL_TIMEOUT` | Query timeout (ms) | `30000` |

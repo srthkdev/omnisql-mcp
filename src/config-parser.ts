@@ -1,3 +1,5 @@
+import { sqlDialect } from './policy/analyzer.js';
+import { loadConfiguredConnections } from './connections-config.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -71,7 +73,7 @@ export function readSshTunnel(handlers: unknown): SshTunnelConfig | undefined {
     enabled: entry.enabled === true || entry.enabled === 'true',
     host,
     port: Number.isNaN(port) ? 22 : port,
-    user: read('userName', 'user', 'username'),
+    user: read('userName', 'user', 'username', 'name'),
     authType: read('authType', 'auth_type'),
     privateKeyPath: read('keyPath', 'privKeyPath', 'privateKeyPath', 'keyFile', 'privKeyFile'),
     passphrase: read('passphrase', 'keyPassphrase'),
@@ -82,6 +84,8 @@ export function readSshTunnel(handlers: unknown): SshTunnelConfig | undefined {
 export class WorkspaceConfigParser {
   private config: WorkspaceConfig;
   private isNewFormat: boolean = false;
+  private workspaceCache?: { signature: string; connections: DatabaseConnection[] };
+  private pendingWorkspace?: Promise<DatabaseConnection[]>;
 
   constructor(config: WorkspaceConfig = {}) {
     const workspacePath = config.workspacePath ?? this.getDefaultWorkspacePath();
@@ -219,6 +223,44 @@ export class WorkspaceConfigParser {
   }
 
   async parseConnections(): Promise<DatabaseConnection[]> {
+    const configured = loadConfiguredConnections();
+    const paths = this.isNewFormat
+      ? this.getProjectDirs().flatMap((dir) => [
+          path.join(dir, '.dbeaver', 'data-sources.json'),
+          path.join(dir, '.dbeaver', 'credentials-config.json'),
+        ])
+      : [this.getConnectionsFilePath(), this.getCredentialsFilePath()];
+    const signature = JSON.stringify(
+      paths.map((file) => {
+        try {
+          const stat = fs.statSync(file);
+          return [file, stat.mtimeMs, stat.ctimeMs, stat.size];
+        } catch {
+          return [file];
+        }
+      })
+    );
+    let discovered: DatabaseConnection[];
+    if (this.workspaceCache?.signature === signature) discovered = this.workspaceCache.connections;
+    else {
+      this.pendingWorkspace ??= this.parseWorkspaceConnections();
+      try {
+        discovered = await this.pendingWorkspace;
+        this.workspaceCache = { signature, connections: discovered };
+      } finally {
+        this.pendingWorkspace = undefined;
+      }
+    }
+    const ids = new Set(configured.map((c) => c.id));
+    for (const c of discovered) {
+      if (ids.has(c.id))
+        throw new Error(`Connection ID is ambiguous across configuration sources: ${c.id}`);
+      ids.add(c.id);
+    }
+    return structuredClone([...configured, ...discovered]);
+  }
+
+  private async parseWorkspaceConnections(): Promise<DatabaseConnection[]> {
     const connectionsFile = this.getConnectionsFilePath();
 
     if (!fs.existsSync(connectionsFile)) {
@@ -237,7 +279,7 @@ export class WorkspaceConfigParser {
       if (fs.existsSync(alternativeFile)) {
         // Switch to the alternative format and retry
         this.isNewFormat = alternativeFormat;
-        return this.parseConnections();
+        return this.parseWorkspaceConnections();
       }
 
       // Neither format exists - return empty array instead of throwing error
@@ -274,9 +316,10 @@ export class WorkspaceConfigParser {
         );
 
         for (const connection of projectConnections) {
-          if (seen.has(connection.id)) {
-            continue;
-          }
+          if (seen.has(connection.id))
+            throw new Error(
+              `Duplicate connection ID across projects: ${connection.id}; select OMNISQL_PROJECT or give the connection a unique ID`
+            );
           seen.add(connection.id);
           connections.push(connection);
         }
@@ -497,7 +540,11 @@ export class WorkspaceConfigParser {
     let match: DatabaseConnection | null = null;
     try {
       const connections = await this.parseConnections();
-      match = connections.find((conn) => conn.id === baseId || conn.name === baseId) || null;
+      const exact = connections.filter((conn) => conn.id === baseId);
+      const named = exact.length ? exact : connections.filter((conn) => conn.name === baseId);
+      if (named.length > 1)
+        throw new Error('Ambiguous connection name; use its unique connection ID');
+      match = named[0] ?? null;
     } catch (error) {
       if (this.config.debug) {
         console.error(`Failed to get connection ${connectionId}: ${error}`);
@@ -519,6 +566,11 @@ export class WorkspaceConfigParser {
           `override does not apply - add a separate connection for the other file instead.`
       );
     }
+
+    if (!['postgres', 'mysql', 'mssql', 'clickhouse'].includes(sqlDialect(match.driver)))
+      throw new Error(
+        `Database override is not supported for ${match.driver}; configure a separate connection for that target`
+      );
 
     // Database-override syntax "<id>/<database>": clone the matched connection
     // with the requested database swapped in. The synthetic id ensures pool

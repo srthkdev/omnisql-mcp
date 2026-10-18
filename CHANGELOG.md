@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Multiple explicitly configured database instances behind one MCP server, with separate read-only settings, credentials, access rules, timeouts, result limits, and pool sizes.
+- A portable Rust SQL analyzer for schema/table policies across query tools, exports, transactions, and resources. npm installations include WebAssembly and need no Rust compiler.
+
+### Changed
+- Ordinary PostgreSQL, MySQL/MariaDB, and SQL Server queries reuse isolated connection pools.
+- Native SQL drivers collect results within row and byte budgets rather than rewriting SQL with LIMIT/TOP.
+- Connection names retain spaces and Unicode; ambiguous workspace IDs fail instead of silently selecting one project.
+- SSH forwards track transport failures and close active sockets during shutdown.
+
+
 ### Fixed
 - Connection responses omit raw properties and embedded credentials; debug logs omit SQL and analysis text.
 - Tool calls validate arguments without coercion, SQL guards reject stacked DDL and comment-only WHERE clauses, and read tools block known side-effect functions.

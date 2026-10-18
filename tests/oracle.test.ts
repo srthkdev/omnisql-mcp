@@ -226,7 +226,7 @@ describe('Oracle execution', () => {
     expect(execute).toHaveBeenCalledWith(
       'SELECT * FROM missing',
       [],
-      expect.objectContaining({ maxRows: 10 })
+      expect.objectContaining({ resultSet: true })
     );
     expect(close).toHaveBeenCalledOnce();
   });

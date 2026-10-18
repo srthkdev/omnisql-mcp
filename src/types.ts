@@ -1,6 +1,9 @@
+import type { AccessRule } from './policy/access.js';
 export interface DatabaseConnection {
   id: string;
   name: string;
+  accessRules?: AccessRule[];
+  limits?: { maxRows?: number; maxBytes?: number; timeoutMs?: number; poolMax?: number };
   /**
    * Driver id normalized to a dialect the native routing can dispatch on.
    * Custom drivers may use an opaque id (e.g. a UUID), in which case this is
@@ -49,6 +52,8 @@ export interface QueryResult {
   rows: any[][];
   rowCount: number;
   executionTime: number;
+  truncated?: boolean;
+  limitReason?: 'rows' | 'bytes';
   error?: string;
 }
 

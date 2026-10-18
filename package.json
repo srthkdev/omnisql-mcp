@@ -41,7 +41,9 @@
     "prepack": "npm run clean && npm run build",
     "test:package": "node scripts/check-package.mjs",
     "demo": "node scripts/demo.mjs",
-    "test:integration": "npm run build && node scripts/integration.mjs"
+    "test:integration": "npm run build && node scripts/integration.mjs",
+    "build:rust": "node scripts/build-rust.mjs",
+    "test:rust": "cargo test --locked --manifest-path native/sql-policy/Cargo.toml"
   },
   "lint-staged": {
     "*.ts": [
@@ -78,9 +80,9 @@
     "csv-stringify": "^6.4.6",
     "mssql": "^12.2.0",
     "mysql2": "^3.16.0",
-    "node-sql-parser": "^5.4.0",
     "oracledb": "^6.10.0",
     "pg": "^8.13.1",
+    "pg-cursor": "^2.22.1",
     "ssh2": "^1.17.0",
     "xml2js": "^0.6.2"
   },
@@ -90,6 +92,7 @@
     "@types/node": "^20.0.0",
     "@types/oracledb": "^6.10.4",
     "@types/pg": "^8.11.6",
+    "@types/pg-cursor": "^2.7.2",
     "@types/ssh2": "^1.15.5",
     "@types/xml2js": "^0.4.14",
     "@vitest/coverage-v8": "^4.0.17",

@@ -347,7 +347,20 @@ export class WorkspaceClient {
         return;
       }
 
-      const proc = spawn('sqlite3', [dbPath, '-header', '-csv'], {
+      if (query.trimStart().startsWith('.')) {
+        reject(new Error('SQLite CLI dot commands are not SQL and are not supported'));
+        return;
+      }
+      const args = [
+        '-safe',
+        '-json',
+        '-cmd',
+        '.explain off',
+        ...(process.env.OMNISQL_READ_ONLY === 'true' ? ['-readonly'] : []),
+        dbPath,
+        query,
+      ];
+      const proc = spawn('sqlite3', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -390,24 +403,16 @@ export class WorkspaceClient {
           return;
         }
 
-        const lines = output.trim().split('\n');
-        if (lines.length === 0) {
-          resolve({ columns: [], rows: [], rowCount: 0, executionTime: 0 });
-          return;
+        try {
+          const records: Record<string, unknown>[] = output.trim() ? JSON.parse(output) : [];
+          const columns = Object.keys(records[0] ?? {});
+          const rows = records.map((record) => columns.map((column) => record[column]));
+          resolve({ columns, rows, rowCount: rows.length, executionTime: 0 });
+        } catch {
+          reject(new Error('SQLite returned invalid JSON output'));
         }
-
-        const columns = lines[0].split(',');
-        const rows = lines.slice(1).map((line) => line.split(','));
-
-        resolve({ columns, rows, rowCount: rows.length, executionTime: 0 });
       });
-
-      try {
-        proc.stdin.write(query);
-        proc.stdin.end();
-      } catch (err) {
-        fail(err as NodeJS.ErrnoException);
-      }
+      proc.stdin.end();
     });
   }
 
@@ -832,10 +837,17 @@ export class WorkspaceClient {
             case 'type':
               columnInfo.type = value || 'string';
               break;
+            case 'notnull':
+              columnInfo.nullable = Number(value) === 0;
+              break;
+            case 'pk':
+              columnInfo.isPrimaryKey = Number(value) > 0;
+              break;
             case 'is_nullable':
             case 'nullable':
               columnInfo.nullable = value === 'YES' || value === 'Y' || value === true;
               break;
+            case 'dflt_value':
             case 'data_default':
             case 'column_default':
             case 'default':
@@ -911,6 +923,30 @@ export class WorkspaceClient {
     }
   }
 
+  async listDatabases(connection: DatabaseConnection): Promise<string[]> {
+    const driver = connection.driver.toLowerCase();
+    let query: string;
+    if (this.isPostgresCompatible(driver)) {
+      query =
+        "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn AND has_database_privilege(datname, 'CONNECT') ORDER BY datname";
+    } else if (driver.includes('mysql') || driver.includes('mariadb')) {
+      query = 'SHOW DATABASES';
+    } else if (
+      driver.includes('mssql') ||
+      driver.includes('sqlserver') ||
+      driver.includes('microsoft')
+    ) {
+      query =
+        'SELECT name FROM sys.databases WHERE state = 0 AND HAS_DBACCESS(name) = 1 ORDER BY name';
+    } else {
+      throw new Error(
+        'list_databases supports PostgreSQL, MySQL/MariaDB, and SQL Server connections'
+      );
+    }
+    const result = await this.executeQuery(connection, query);
+    return result.rows.map((row) => String(row[0]));
+  }
+
   async listTables(
     connection: DatabaseConnection,
     schema?: string,
@@ -926,6 +962,7 @@ export class WorkspaceClient {
         result.columns.forEach((col, idx) => {
           tableObj[col.toLowerCase()] = row[idx];
         });
+        tableObj.name = tableObj.table_name ?? tableObj.name;
         return tableObj;
       });
     } catch (error) {

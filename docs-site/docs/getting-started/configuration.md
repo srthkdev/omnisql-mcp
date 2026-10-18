@@ -1,5 +1,7 @@
 # Configuration Guide
 
+Run `npx -y omnisql-mcp@latest install` to choose Claude Code, Codex, or OpenCode and register automatically. Use the entries below for manual setup.
+
 ## Claude Desktop Integration
 
 To use OmniSQL MCP with Claude Desktop, add the following to your configuration file:
@@ -13,7 +15,8 @@ To use OmniSQL MCP with Claude Desktop, add the following to your configuration 
 {
   "mcpServers": {
     "omnisql": {
-      "command": "omnisql-mcp",
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
       "env": {
         "OMNISQL_DEBUG": "false",
         "OMNISQL_TIMEOUT": "30000"
@@ -28,7 +31,8 @@ To use OmniSQL MCP with Claude Desktop, add the following to your configuration 
 {
   "mcpServers": {
     "omnisql": {
-      "command": "omnisql-mcp",
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
       "env": {
         "OMNISQL_DEBUG": "true",
         "OMNISQL_TIMEOUT": "60000",
@@ -44,7 +48,8 @@ To use OmniSQL MCP with Claude Desktop, add the following to your configuration 
 {
   "mcpServers": {
     "omnisql": {
-      "command": "omnisql-mcp",
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
       "env": {
         "OMNISQL_READ_ONLY": "true",
         "OMNISQL_TIMEOUT": "30000"
@@ -59,9 +64,10 @@ To use OmniSQL MCP with Claude Desktop, add the following to your configuration 
 ### Core Variables
 - `OMNISQL_CLI_PATH`: Path to external DB client CLI binary (required only for the unsupported-driver CLI fallback)
 - `OMNISQL_WORKSPACE`: Path to your local DB client workspace directory (defaults to the OS-standard location)
-- `OMNISQL_PROJECT`: Name of the DB client project/workspace folder, for custom-named or renamed DBeaver projects (default: `General`)
+- `OMNISQL_PROJECT`: Name of the DB client project/workspace folder, for custom-named or renamed DBeaver projects (default: discover all projects)
 - `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
 - `OMNISQL_DEBUG`: Set to `true` to enable debug logging
+- `OMNISQL_UPDATE_NOTIFIER`: Set to `false` to disable the daily npm version check and stderr notice
 - `OMNISQL_SSH_KNOWN_HOSTS`: known_hosts file used to verify SSH tunnel hosts (default: `~/.ssh/known_hosts`)
 - `OMNISQL_SSH_STRICT_HOST_KEY`: Set to `true` to refuse SSH tunnel hosts with no `known_hosts` entry
 
@@ -96,9 +102,10 @@ For Cursor IDE, add to your settings:
 
 ```json
 {
-  "mcp.servers": {
+  "mcpServers": {
     "omnisql": {
-      "command": "omnisql-mcp",
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
       "env": {
         "OMNISQL_DEBUG": "false",
         "OMNISQL_TIMEOUT": "30000"

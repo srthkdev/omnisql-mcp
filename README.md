@@ -1,10 +1,39 @@
-# OmniSQL MCP
+<p align="center">
+  <img src="assets/wordmark.svg" alt="OmniSQL MCP — your databases, one conversation" width="620">
+</p>
 
-Universal database MCP server — give AI assistants read/write access to your databases using connections already saved in your local DB client workspace (DBeaver-compatible).
+<p align="center">
+  Give Claude Code, Codex, and OpenCode access to the databases you already use.<br>
+  Reuse saved DBeaver connections, query with native drivers, and keep control over access.
+</p>
 
-[![npm version](https://badge.fury.io/js/omnisql-mcp.svg)](https://www.npmjs.com/package/omnisql-mcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
+<p align="center">
+  <a href="https://www.npmjs.com/package/omnisql-mcp"><img src="https://img.shields.io/npm/v/omnisql-mcp?color=75edc3&amp;label=npm" alt="npm version"></a>
+  <a href="https://github.com/srthkdev/omnisql-mcp/actions/workflows/ci.yml"><img src="https://github.com/srthkdev/omnisql-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/srthkdev/omnisql-mcp/stargazers"><img src="https://img.shields.io/github/stars/srthkdev/omnisql-mcp?style=flat&amp;color=75edc3" alt="GitHub stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a9b8cc" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-setup">quick setup</a> ·
+  <a href="#what-you-can-do">features</a> ·
+  <a href="#try-the-demo">demo</a> ·
+  <a href="https://srthkdev.github.io/omnisql-mcp/">docs</a> ·
+  <a href="CHANGELOG.md">releases</a>
+</p>
+
+<p align="center"><img src="assets/database-demo.gif" alt="Live MCP calls: discover connections, inspect schemas, query revenue, export CSV, compare schemas, and select a PostgreSQL database" width="100%"></p>
+
+## What you can do
+
+| Capability | How it helps |
+|---|---|
+| **Reuse saved connections** | Read database and SSH settings from DBeaver-compatible workspaces, including custom projects. |
+| **Query across engines** | Native PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, and Oracle drivers. |
+| **Choose another database** | Discover databases and select one at call time, using the same saved server credentials. |
+| **Understand your data** | Browse tables, inspect columns, explain queries, export CSV/JSON, and compare schemas. |
+| **Control access** | Choose read-only mode, restrict connections, or disable tools. |
+| **Set up your client** | One guided command for Claude Code, Codex, and OpenCode. |
 
 ## Database Support
 
@@ -22,76 +51,78 @@ Universal database MCP server — give AI assistants read/write access to your d
 
 **Custom drivers** wrapping any of the above are detected automatically — see [Custom and IAM-Authenticated Drivers](#custom-and-iam-authenticated-drivers).
 
-## Features
-
-- Reuses connections already configured in your local DB client workspace — no duplicate setup
-- Native query execution for PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle
-- AWS RDS IAM authentication, including custom drivers built on the AWS Advanced JDBC Wrapper
-- Connection pooling with configurable pool size and timeouts
-- Transaction support (BEGIN/COMMIT/ROLLBACK)
-- Query execution plan analysis (EXPLAIN)
-- Schema comparison between connections with migration script generation
-- Read-only mode with enforced SELECT-only on `execute_query`
-- Connection whitelist to restrict which databases are accessible
-- Tool filtering to disable specific operations
-- Query validation to block dangerous operations (DROP DATABASE, TRUNCATE, DELETE/UPDATE without WHERE)
-- Data export to CSV/JSON
-- Graceful shutdown with connection pool cleanup
-
 ## Requirements
 
 - Node.js 18+
 - A local DB client (DBeaver-compatible) with at least one configured connection
 
-## Installation
+## Quick setup
+
+Run the guided installer, choose Claude Code, Codex, or OpenCode, and OmniSQL adds itself to that client's MCP configuration:
 
 ```bash
-npm install -g omnisql-mcp
+npx -y omnisql-mcp@latest install
 ```
+
+The installer detects installed clients, asks for your DBeaver workspace, lets you choose read-only access and a connection allowlist, then registers the server. Database and SSH credentials come from your saved workspace; no OmniSQL API key is needed. Start a new client session after setup.
+
+To add it to a specific client directly:
+
+```bash
+npx -y omnisql-mcp@latest install claude
+npx -y omnisql-mcp@latest install codex
+npx -y omnisql-mcp@latest install opencode
+```
+
+Add `--read-only` to register with writes disabled, or `--dry-run` to print the registration command. Direct setup uses the default workspace and the server's normal read/write settings unless you pass `--read-only`.
+
+<p align="center"><img src="assets/setup-demo.gif" alt="Guided setup: select a client, choose read-only access, select a workspace, and register the server" width="100%"></p>
+
+### Native client commands
+
+You can also register the server using your client's own CLI:
+
+```bash
+# Claude Code — available across projects
+claude mcp add --transport stdio --scope user omnisql -- npx -y omnisql-mcp@latest
+
+# Codex
+codex mcp add omnisql -- npx -y omnisql-mcp@latest
+
+# OpenCode v2 — available across projects
+opencode mcp add omnisql --global -- npx -y omnisql-mcp@latest
+```
+
+These follow the [Claude Code](https://code.claude.com/docs/en/mcp), [Codex](https://developers.openai.com/codex/mcp), and [OpenCode v2](https://opencode.ai/v2/docs/mcp-servers) registration commands. OpenCode v1 users can add a local server through their MCP settings.
+
+### Claude Desktop and Cursor
+
+Add the following MCP entry to Claude Desktop's `claude_desktop_config.json`, or Cursor's `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "omnisql": {
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"]
+    }
+  }
+}
+```
+
+On Windows, use `"command": "cmd"` and `"args": ["/c", "npx", "-y", "omnisql-mcp@latest"]` when your client cannot launch `npx` directly.
+
+### Standalone install (macOS / Linux)
+
+For a local executable, including machines without Node.js:
+
+```bash
+curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
+```
+
+Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Node.js or npm is missing, it downloads a private Node.js 22 runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 2.2.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
 
 ## Configuration
-
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
-
-```json
-{
-  "mcpServers": {
-    "omnisql": {
-      "command": "omnisql-mcp"
-    }
-  }
-}
-```
-
-### Claude Code
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "omnisql": {
-      "command": "omnisql-mcp"
-    }
-  }
-}
-```
-
-### Cursor
-
-Add to Cursor Settings > MCP Servers:
-
-```json
-{
-  "mcpServers": {
-    "omnisql": {
-      "command": "omnisql-mcp"
-    }
-  }
-}
-```
 
 ### Environment Variables
 
@@ -99,9 +130,10 @@ Add to Cursor Settings > MCP Servers:
 |----------|-------------|---------|
 | `OMNISQL_CLI_PATH` | Path to external DB client CLI (used for unsupported-driver fallback) | Unset |
 | `OMNISQL_WORKSPACE` | Path to local DB client workspace directory | OS default |
-| `OMNISQL_PROJECT` | Name of the DB client project/workspace folder (e.g. custom-named DBeaver project) | `General` |
+| `OMNISQL_PROJECT` | Restrict discovery to one DB client project/workspace folder | All projects |
 | `OMNISQL_TIMEOUT` | Query timeout (ms) | `30000` |
 | `OMNISQL_DEBUG` | Enable debug logging | `false` |
+| `OMNISQL_UPDATE_NOTIFIER` | Check npm for updates and show notices on stderr | `true` |
 | `OMNISQL_READ_ONLY` | Disable all write operations | `false` |
 | `OMNISQL_ALLOWED_CONNECTIONS` | Comma-separated whitelist of connection IDs or names | All |
 | `OMNISQL_DISABLED_TOOLS` | Comma-separated tools to disable | None |
@@ -122,7 +154,8 @@ Blocks all write operations. The `execute_query` tool only allows SELECT, EXPLAI
 {
   "mcpServers": {
     "omnisql": {
-      "command": "omnisql-mcp",
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
       "env": {
         "OMNISQL_READ_ONLY": "true"
       }
@@ -139,7 +172,8 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 {
   "mcpServers": {
     "omnisql": {
-      "command": "omnisql-mcp",
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
       "env": {
         "OMNISQL_ALLOWED_CONNECTIONS": "dev-postgres,staging-mysql"
       }
@@ -154,7 +188,8 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 {
   "mcpServers": {
     "omnisql": {
-      "command": "omnisql-mcp",
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
       "env": {
         "OMNISQL_DISABLED_TOOLS": "drop_table,alter_table,write_query"
       }
@@ -167,6 +202,7 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 
 ### Connection Management
 - `list_connections` - List all database connections
+- `list_databases` - Discover accessible databases on PostgreSQL, MySQL/MariaDB, and SQL Server
 - `get_connection_info` - Get connection details
 - `test_connection` - Test connectivity
 
@@ -200,6 +236,7 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 
 ## Security
 
+- **Database permissions**: use a database account with read-only grants when you require a database-level permission boundary. The SQL checks are safeguards, not a full SQL sandbox.
 - **Read-only enforcement**: `execute_query` only accepts read-only statements (SELECT, EXPLAIN, SHOW, DESCRIBE, PRAGMA). Write operations must use `write_query`.
 - **Query validation**: Blocks DROP DATABASE, DROP SCHEMA, TRUNCATE, DELETE/UPDATE without WHERE, GRANT, REVOKE, and user management statements.
 - **Connection whitelist**: Restrict which connections are exposed via `OMNISQL_ALLOWED_CONNECTIONS`.
@@ -244,15 +281,14 @@ forward, and the connection's host/port are treated the way DBeaver treats them:
 
 ### Querying another database on the same server
 
-A connection id may carry a database override — `my-connection/analytics` — to run against a
-different database on the same server without adding a second connection in DBeaver. This does
-not apply to file-backed engines such as SQLite, where the "database" is a file path.
+Use `list_databases` with a saved `connectionId` to discover databases accessible on a PostgreSQL, MySQL/MariaDB, or SQL Server instance. Pass an optional `database` to `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `test_connection`, or `get_pool_stats`:
 
-With `OMNISQL_ALLOWED_CONNECTIONS` set, whitelisting a connection allows the databases its
-credentials can reach. To pin it to specific databases, list `connection/database` entries
-instead of the bare connection.
+```json
+{"connectionId": "my-pg-server", "database": "app_logs", "query": "SELECT count(*) FROM log"}
+```
 
-Credentials are automatically decrypted from the workspace `credentials-config.json`.
+The saved host, credentials, IAM, TLS, and SSH settings are reused. The saved connection is unchanged and pools remain separate for each database. The existing `connectionId: "my-pg-server/app_logs"` shorthand also works. File-backed engines such as SQLite require a separate saved connection for each file. Read-only checks and connection whitelists still apply; list a connection ID to allow its databases, or `connectionId/database` entries to restrict access to specific databases.
+
 
 ### Oracle
 
@@ -297,16 +333,61 @@ For these connections OmniSQL:
 connection's profile (`aws sso login --profile <profile>`), and network reachability to the endpoint.
 An expired SSO session produces an error naming the profile to re-authenticate.
 
+## Try the demo
+
+The feature animation renders actual MCP responses; the setup GIF records the interactive wizard with a temporary client adapter. The demo creates two SQLite databases in an isolated `.demo/` workspace. It makes real MCP calls to discover connections, inspect schemas, aggregate revenue, export CSV, explain queries, compare schemas, and verify that writes are blocked.
+
+```bash
+npm ci
+npm run build
+npm run demo
+```
+
+To also test PostgreSQL database discovery, database selection, and pool identities against a temporary local cluster:
+
+```bash
+OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin npm run demo -- --postgres
+```
+
+The PostgreSQL cluster binds to loopback on a temporary port, uses a random password, and is stopped and deleted after the run. The SQLite examples stay under `.demo/` so you can connect a client to them. Existing workspaces are untouched. [Watch the walkthrough](assets/walkthrough.mp4).
+
+## Updates
+
+Client entries use `npx -y omnisql-mcp@latest`; restart the MCP client to pick up a new version. Running servers keep their current version until restarted. OmniSQL checks npm at most once a day and writes a short update notice to stderr when a newer version is available. The check sends no database settings or credentials. Set `OMNISQL_UPDATE_NOTIFIER=false` to disable it. Standalone installs update by rerunning the curl installer.
+
 ## Development
 
 ```bash
 git clone https://github.com/srthkdev/omnisql-mcp.git
 cd omnisql-mcp
-npm install
+npm ci
 npm run build
 npm test
 npm run lint
 ```
+
+
+## Releases
+
+CI builds and tests the server, verifies the packed MCP server on Node.js 18, 20, 22, and 24, and checks dependencies. It does not publish to npm.
+
+Maintainers release from a clean checkout after CI passes:
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run test:package
+npm audit --audit-level=high
+npm login
+npm publish --access public
+git tag v2.2.0
+git push origin v2.2.0
+```
+
+Update the package version and changelog before publishing. Pushing the version tag creates the GitHub release; attach the release notes from the changelog. `npm pack` rebuilds `dist/` before packaging.
 
 ## License
 

@@ -386,33 +386,88 @@ export function validateQuery(query: string): string | null {
  * Check if a query is read-only (SELECT, EXPLAIN, WITH...SELECT, SHOW, DESCRIBE, etc.)
  * Returns null if the query is read-only, or an error message if it's a write operation.
  */
-export function enforceReadOnly(query: string): string | null {
-  if (!query || query.trim().length === 0) {
-    return 'Query cannot be empty';
-  }
-
-  const trimmed = query.trim().toLowerCase();
-
-  // Allow read-only statements
-  const readOnlyPrefixes = [
-    /^select\s/,
-    /^select$/, // bare SELECT (e.g. SELECT 1)
-    /^with\s/, // CTEs that start with WITH
-    /^explain\s/,
-    /^show\s/,
-    /^describe\s/,
-    /^desc\s/,
-    /^pragma\s/, // SQLite PRAGMA
-    /^set\s+search_path/, // PostgreSQL search_path is safe
-  ];
-
-  for (const pattern of readOnlyPrefixes) {
-    if (pattern.test(trimmed)) {
-      return null; // Query is read-only
+/** Mask SQL literals and comments so policy checks inspect executable tokens. */
+function sqlPolicyText(query: string): string | null {
+  let output = '';
+  let i = 0;
+  while (i < query.length) {
+    const char = query[i];
+    if (query.startsWith('--', i)) {
+      const end = query.indexOf('\n', i + 2);
+      i = end < 0 ? query.length : end + 1;
+      output += ' ';
+    } else if (query.startsWith('/*', i)) {
+      let depth = 1;
+      i += 2;
+      while (i < query.length && depth > 0) {
+        if (query.startsWith('/*', i)) {
+          depth++;
+          i += 2;
+        } else if (query.startsWith('*/', i)) {
+          depth--;
+          i += 2;
+        } else i++;
+      }
+      if (depth) return null;
+      output += ' ';
+    } else if (char === "'" || char === '"' || char === '`' || char === '[') {
+      const close = char === '[' ? ']' : char;
+      i++;
+      let closed = false;
+      while (i < query.length) {
+        // Backslash escapes differ between SQL dialects; refuse ambiguous input.
+        if (query.charCodeAt(i) === 92) return null;
+        if (query[i] === close) {
+          if (query[i + 1] === close) {
+            i += 2;
+            continue;
+          }
+          i++;
+          closed = true;
+          break;
+        }
+        i++;
+      }
+      if (!closed) return null;
+      output += ' literal ';
+    } else if (char === '$' && /^\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$/.test(query.slice(i))) {
+      const tag = query.slice(i).match(/^\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$/)![0];
+      const end = query.indexOf(tag, i + tag.length);
+      if (end < 0) return null;
+      i = end + tag.length;
+      output += ' literal ';
+    } else {
+      output += char;
+      i++;
     }
   }
+  return output.trim().toLowerCase();
+}
 
-  return 'Only read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE) are allowed in read-only mode. Use write_query for data modifications.';
+export function enforceReadOnly(query: string): string | null {
+  if (!query || !query.trim()) return 'Query cannot be empty';
+  const error =
+    'Only a single read-only query (SELECT, EXPLAIN, SHOW, DESCRIBE) is allowed. Use write_query for data modifications.';
+  const sql = sqlPolicyText(query);
+  if (!sql) return error;
+  const statement = sql.replace(/;\s*$/, '').trim();
+  if (statement.includes(';')) return error;
+  if (!/^(select|with|explain|show|describe|desc|pragma|set\s+search_path)\b/.test(statement))
+    return error;
+  if (
+    /\b(insert|update|delete|merge|replace|create|alter|drop|truncate|grant|revoke|call|exec|execute|copy|into|attach|detach|vacuum|reindex|load_extension|writefile)\b/.test(
+      statement
+    )
+  )
+    return error;
+  if (
+    statement.startsWith('pragma') &&
+    !/^pragma\s+(?:\w+\.)?(table_info|table_xinfo|index_list|index_info|index_xinfo|foreign_key_list|database_list|compile_options)\b/.test(
+      statement
+    )
+  )
+    return error;
+  return null;
 }
 
 /**

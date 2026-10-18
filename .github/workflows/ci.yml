@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -12,7 +20,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [22.x, 24.x]
 
     steps:
       - name: Checkout code
@@ -33,12 +41,47 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install SQLite for integration tests
+        run: command -v sqlite3 || (sudo apt-get update && sudo apt-get install -y sqlite3)
+
       - name: Run tests
         run: npm test
 
+      - name: Verify npm package
+        run: npm run test:package
+
       - name: Check for vulnerabilities
         run: npm audit --audit-level=high
-        continue-on-error: true
+
+      - name: Validate installer
+        run: bash -n scripts/install.sh && bash scripts/install.sh --help
+
+      - name: Upload compiled server
+        if: matrix.node-version == '22.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-server
+          path: dist/
+
+  runtime:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci --omit=dev --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-server
+          path: dist/
+      - name: Verify runtime compatibility
+        run: npm run test:package
 
   typecheck:
     runs-on: ubuntu-latest
@@ -51,90 +94,3 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npm run typecheck
-
-  publish:
-    needs: [build, typecheck]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    permissions:
-      contents: write
-      id-token: write
-
-    # Job level so the token-fallback step can test it in its `if`: a step's
-    # own `env` is not visible to that step's condition.
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # No registry-url on purpose: it writes an .npmrc line pinning
-      # _authToken to ${NODE_AUTH_TOKEN}, and npm then presents that empty
-      # placeholder as credentials instead of falling back to OIDC - which
-      # the registry rejects as a 404 on PUT.
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-
-      # Node 22 ships npm 10.x. OIDC trusted publishing needs npm >= 11.5.1.
-      - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Check if version already published
-        id: version_check
-        run: |
-          LOCAL_VERSION=$(node -p "require('./package.json').version")
-          echo "local_version=$LOCAL_VERSION" >> $GITHUB_OUTPUT
-
-          # Check if this version exists on npm
-          NPM_VERSION=$(npm view omnisql-mcp version 2>/dev/null || echo "0.0.0")
-          echo "npm_version=$NPM_VERSION" >> $GITHUB_OUTPUT
-
-          if [ "$LOCAL_VERSION" = "$NPM_VERSION" ]; then
-            echo "should_publish=false" >> $GITHUB_OUTPUT
-            echo "Version $LOCAL_VERSION already published, skipping"
-          else
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-            echo "Will publish $LOCAL_VERSION (npm has $NPM_VERSION)"
-          fi
-
-      # Falls back to a token when NPM_TOKEN is set, so the release still works
-      # if trusted publishing is not configured for the package.
-      - name: Configure npm token (fallback when not using OIDC)
-        if: steps.version_check.outputs.should_publish == 'true' && env.NPM_TOKEN != ''
-        run: npm config set //registry.npmjs.org/:_authToken="$NPM_TOKEN"
-
-      - name: Publish to npm
-        if: steps.version_check.outputs.should_publish == 'true'
-        run: npm publish --provenance --access public
-
-      - name: Create git tag
-        if: steps.version_check.outputs.should_publish == 'true'
-        run: |
-          VERSION=${{ steps.version_check.outputs.local_version }}
-          git tag "v${VERSION}"
-          git push origin "v${VERSION}"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Created here rather than by the Release workflow: a tag pushed with the
-      # default GITHUB_TOKEN does not start another workflow run, so waiting for
-      # the tag to trigger one would leave every automated release untagged in
-      # the UI. The Release workflow still covers tags pushed by hand.
-      - name: Create GitHub Release
-        if: steps.version_check.outputs.should_publish == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version_check.outputs.local_version }}
-          generate_release_notes: true
-          files: |
-            dist/**

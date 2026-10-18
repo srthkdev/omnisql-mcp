@@ -933,7 +933,7 @@ export class OmniSQLMCPServer {
           name === 'read_result'
             ? 'Read a bounded page from a stored query result; follow nextOffset'
             : name === 'read_result_cell'
-              ? 'Read a long cell in UTF-16 string chunks; follow nextOffset'
+              ? 'Read a long cell in UTF-16 chunks; follow nextOffset. Concatenate text; parse JSON when encoding is json'
               : 'Read a stored export in base64 byte chunks; concatenate decoded bytes',
         inputSchema: {
           type: 'object',

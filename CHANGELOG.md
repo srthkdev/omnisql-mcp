@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Private expiring result handles, row/column pagination, long-cell reads, and bounded export chunks.
+- Workspace-scoped private notes with atomic writes and a storage limit.
 - Multiple explicitly configured database instances behind one MCP server, with separate read-only settings, credentials, access rules, timeouts, result limits, and pool sizes.
 - A portable Rust SQL analyzer for schema/table policies across query tools, exports, transactions, and resources. npm installations include WebAssembly and need no Rust compiler.
 

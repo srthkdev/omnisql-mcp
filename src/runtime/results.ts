@@ -37,6 +37,8 @@ export class ResultCollector {
     return true;
   }
   result(affectedRows?: number): QueryResult {
+    if (Buffer.byteLength(JSON.stringify(this.columns)) > 65536)
+      throw new Error('Result column names exceed 64 KiB; select fewer columns or shorter aliases');
     return {
       columns: this.columns,
       rows: this.rows,

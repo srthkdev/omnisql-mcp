@@ -84,6 +84,6 @@ Write and schema tools apply basic query validation. `drop_table` requires an ex
 
 Database credentials and network settings are read locally from the workspace. Connection detail responses expose only a set of public connection fields. Raw property bags, connection strings, and SSH secrets are omitted. SQL and analysis text are omitted from debug argument logs. Debug logs go to stderr.
 
-Query results are returned to your MCP client and can become part of the assistant's context. Local analysis notes are separate from database writes; disable `append_insight` if you do not want notes stored locally.
+Query results are returned to your MCP client and can become part of the assistant's context. Local analysis notes are separate from database writes. They are stored under a private workspace and access-policy scope, limited to 1 MiB and 1,000 entries. Changing that scope starts a separate note collection. Disable `append_insight` if you do not want notes stored locally. Old shared temporary notes are not imported.
 
 The optional update check contacts npm for package version information. It sends no connection settings or credentials and can be disabled with `OMNISQL_UPDATE_NOTIFIER=false`.

@@ -385,7 +385,8 @@
       "properties": {
         "insight": {
           "type": "string",
-          "description": "The business insight or analysis note to store"
+          "description": "The business insight or analysis note to store",
+          "maxLength": 16384
         },
         "connection": {
           "type": "string",
@@ -394,7 +395,8 @@
         "tags": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 128
           },
           "description": "Optional tags to categorize the insight"
         }
@@ -423,7 +425,8 @@
         "tags": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 128
           },
           "description": "Filter insights by tags (optional)"
         }
@@ -649,6 +652,121 @@
       },
       "required": [
         "connectionId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "read_result",
+    "description": "Read a bounded page from a stored query result; follow nextOffset",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "resultId": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 32
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "columnOffset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "columnLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "resultId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "read_result_cell",
+    "description": "Read a long cell in UTF-16 string chunks; follow nextOffset",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "resultId": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 32
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "row": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16000
+        }
+      },
+      "required": [
+        "resultId",
+        "row",
+        "column"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "read_export",
+    "description": "Read a stored export in base64 byte chunks; concatenate decoded bytes",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "resultId": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 32
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 48000
+        }
+      },
+      "required": [
+        "resultId"
       ],
       "additionalProperties": false
     },

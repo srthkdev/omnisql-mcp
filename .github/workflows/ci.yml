@@ -47,6 +47,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Check result artifacts through MCP
+        run: node scripts/check-results.mjs
+
       - name: Verify npm package
         run: npm run test:package
 

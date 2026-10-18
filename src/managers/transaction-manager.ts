@@ -1,3 +1,4 @@
+import { AccessPolicy } from '../policy/access.js';
 import crypto from 'crypto';
 import { PoolClient as PgPoolClient } from 'pg';
 import { PoolConnection as MySqlPoolConnection } from 'mysql2/promise';
@@ -6,12 +7,14 @@ import { Transaction, TransactionResult, DatabaseConnection } from '../types.js'
 import { ConnectionPoolManager } from '../pools/connection-pool.js';
 
 interface ActiveTransaction {
+  connection: DatabaseConnection;
   transaction: Transaction;
   client: PgPoolClient | MySqlPoolConnection | sql.Transaction;
   type: 'postgres' | 'mysql' | 'mssql';
 }
 
 export class TransactionManager {
+  private policy = new AccessPolicy();
   private transactions: Map<string, ActiveTransaction> = new Map();
   private poolManager: ConnectionPoolManager;
   private debug: boolean;
@@ -32,6 +35,8 @@ export class TransactionManager {
   }
 
   async beginTransaction(connection: DatabaseConnection): Promise<TransactionResult> {
+    this.policy.assertConnection(connection);
+    if (this.policy.isReadOnly(connection)) throw new Error('This connection is read-only');
     const transactionId = this.generateTransactionId();
     const driver = connection.driver.toLowerCase();
 
@@ -47,7 +52,7 @@ export class TransactionManager {
       let client: PgPoolClient | MySqlPoolConnection | sql.Transaction;
       let type: 'postgres' | 'mysql' | 'mssql';
 
-      if (driver.includes('postgres')) {
+      if (poolEntry.type === 'postgres') {
         const pgPool = poolEntry.pool as import('pg').Pool;
         const pgClient = await pgPool.connect();
         await pgClient.query('BEGIN');
@@ -76,7 +81,7 @@ export class TransactionManager {
         status: 'active',
       };
 
-      this.transactions.set(transactionId, { transaction, client, type });
+      this.transactions.set(transactionId, { transaction, client, type, connection });
 
       return {
         transactionId,
@@ -103,15 +108,16 @@ export class TransactionManager {
       throw new Error(`Transaction ${transactionId} is ${active.transaction.status}`);
     }
 
+    this.policy.assertQuery(active.connection, query, false);
     this.log(`Executing query in transaction ${transactionId}`);
 
     try {
       if (active.type === 'postgres') {
         const pgClient = active.client as PgPoolClient;
-        const result = await pgClient.query(query);
+        const result = await pgClient.query({ text: query, rowMode: 'array' });
         return {
           columns: result.fields?.map((f) => f.name) || [],
-          rows: result.rows.map((row) => Object.values(row)),
+          rows: result.rows,
           rowCount: result.rowCount || 0,
         };
       } else if (active.type === 'mysql') {
@@ -239,7 +245,7 @@ export class TransactionManager {
       if (active.type === 'postgres') {
         (active.client as PgPoolClient).release(true); // true = destroy the connection
       } else if (active.type === 'mysql') {
-        (active.client as MySqlPoolConnection).release();
+        (active.client as MySqlPoolConnection).destroy();
       }
       // MSSQL transactions don't hold a separate client reference
     } catch (releaseError) {

@@ -342,15 +342,7 @@ export function enforceReadOnly(query: string): string | null {
   return validateReadStatement(query);
 }
 
-/**
- * Sanitize connection ID to prevent injection.
- *
- * Accepts the optional database-override suffix `<connectionIdOrName>/<database>`,
- * but sanitizes the two halves separately rather than widening the allowed set
- * to include '/'. Widening it would also admit `..`, and the database half
- * reaches a filesystem path on file-backed engines - `conn/../../secrets.db` is
- * a traversal, not a database name.
- */
+/** Validate target names without changing which saved connection they identify. */
 export function sanitizeConnectionId(connectionId: string): string {
   if (!connectionId || typeof connectionId !== 'string') {
     throw new Error('Connection ID must be a non-empty string');
@@ -358,28 +350,24 @@ export function sanitizeConnectionId(connectionId: string): string {
 
   const { baseId, databaseOverride } = parseConnectionId(connectionId);
 
-  // Remove potentially dangerous characters
-  const sanitizedBase = baseId.replace(/[^a-zA-Z0-9_\-.]/g, '');
-
-  if (sanitizedBase.length === 0 || /^\.+$/.test(sanitizedBase)) {
-    throw new Error('Connection ID contains no valid characters');
-  }
-
-  if (databaseOverride === null) {
-    return sanitizedBase;
-  }
-
-  // Database names are identifiers, so no path separators and no dots.
-  const sanitizedDatabase = databaseOverride.replace(/[^a-zA-Z0-9_$-]/g, '');
-
-  if (sanitizedDatabase.length === 0) {
-    throw new Error(
-      `Database override in "${connectionId}" contains no valid characters. ` +
-        `Expected "<connection>/<database>" where <database> is a database name.`
-    );
-  }
-
-  return `${sanitizedBase}/${sanitizedDatabase}`;
+  if (
+    connectionId.length > 512 ||
+    [...connectionId].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) ||
+    baseId === '.' ||
+    baseId === '..' ||
+    !baseId.trim()
+  )
+    throw new Error('Invalid connection ID');
+  if (
+    databaseOverride !== null &&
+    (!databaseOverride.trim() ||
+      /[\\/]/.test(databaseOverride) ||
+      databaseOverride === '.' ||
+      databaseOverride === '..' ||
+      databaseOverride.length > 128)
+  )
+    throw new Error('Invalid database override');
+  return connectionId;
 }
 
 /**
@@ -535,7 +523,7 @@ export function getTestQuery(driver: string): string {
 
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return 'SELECT version();';
-  } else if (driverLower.includes('mysql')) {
+  } else if (driverLower.includes('mysql') || driverLower.includes('mariadb')) {
     return 'SELECT version();';
   } else if (driverLower.includes('oracle')) {
     // v$version is granted to PUBLIC, so any session can read it.
@@ -609,7 +597,10 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
   if (driverLower.includes('oracle')) {
     return buildOracleSchemaQuery(tableName);
   }
-  const safeTableName = sanitizeIdentifier(tableName);
+  const parts = tableName.trim().split('.');
+  if (parts.length > 2) throw new Error('Expected table or schema.table');
+  const safeTableName = sanitizeIdentifier(parts.at(-1)!);
+  const safeSchema = parts.length === 2 ? sanitizeIdentifier(parts[0]) : null;
 
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return `
@@ -622,10 +613,10 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         numeric_precision,
         numeric_scale
       FROM information_schema.columns
-      WHERE table_name = '${safeTableName}'
+      WHERE table_catalog = current_database() AND table_schema = ${safeSchema ? `'${safeSchema}'` : 'current_schema()'} AND table_name = '${safeTableName}'
       ORDER BY ordinal_position;
     `;
-  } else if (driverLower.includes('mysql')) {
+  } else if (driverLower.includes('mysql') || driverLower.includes('mariadb')) {
     return `
       SELECT
         COLUMN_NAME as column_name,
@@ -638,7 +629,7 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         COLUMN_KEY as column_key,
         EXTRA as extra
       FROM information_schema.COLUMNS
-      WHERE TABLE_NAME = '${safeTableName}'
+      WHERE TABLE_SCHEMA = ${safeSchema ? `'${safeSchema}'` : 'DATABASE()'} AND TABLE_NAME = '${safeTableName}'
       ORDER BY ORDINAL_POSITION;
     `;
   } else if (driverLower.includes('sqlite')) {
@@ -654,7 +645,7 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         NUMERIC_PRECISION as numeric_precision,
         NUMERIC_SCALE as numeric_scale
       FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_NAME = '${safeTableName}'
+      WHERE TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = ${safeSchema ? `'${safeSchema}'` : 'SCHEMA_NAME()'} AND TABLE_NAME = '${safeTableName}'
       ORDER BY ORDINAL_POSITION;
     `;
   } else {
@@ -702,14 +693,14 @@ export function buildListTablesQuery(
 
     query += ` ORDER BY table_schema, table_name;`;
     return query;
-  } else if (driverLower.includes('mysql')) {
+  } else if (driverLower.includes('mysql') || driverLower.includes('mariadb')) {
     let query = `
       SELECT
         TABLE_NAME as table_name,
         TABLE_TYPE as table_type,
         TABLE_SCHEMA as table_schema
       FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+      WHERE TABLE_SCHEMA = DATABASE()
     `;
 
     if (safeSchema) {

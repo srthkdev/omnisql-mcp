@@ -1,3 +1,4 @@
+import { AccessPolicy } from './policy/access.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -9,7 +10,7 @@ import {
   ReadResourceRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { booleanSetting } from './runtime-config.js';
+import { booleanSetting, integerSetting } from './runtime-config.js';
 import { validateToolArguments } from './policy/arguments.js';
 import { validateStatement } from './policy/sql.js';
 import { checkForUpdate } from './update-check.js';
@@ -76,6 +77,7 @@ const DEFAULT_QUERY_ROWS = 1000;
 const DEFAULT_EXPORT_ROWS = 10000;
 
 class OmniSQLMCPServer {
+  private accessPolicy = new AccessPolicy();
   private server: Server;
   private configParser: WorkspaceConfigParser;
   private workspaceClient: WorkspaceClient;
@@ -122,31 +124,45 @@ class OmniSQLMCPServer {
 
     this.configParser = new WorkspaceConfigParser({
       debug: this.debug,
-      timeout: parseInt(process.env.OMNISQL_TIMEOUT || '30000'),
+      timeout: integerSetting(process.env.OMNISQL_TIMEOUT, 'OMNISQL_TIMEOUT', 30000),
       executablePath: process.env.OMNISQL_CLI_PATH,
       workspacePath: process.env.OMNISQL_WORKSPACE,
       projectName: process.env.OMNISQL_PROJECT,
     });
-
-    this.workspaceClient = new WorkspaceClient(
-      process.env.OMNISQL_CLI_PATH,
-      parseInt(process.env.OMNISQL_TIMEOUT || '30000'),
-      this.debug,
-      process.env.OMNISQL_WORKSPACE || this.configParser.getWorkspacePath()
-    );
 
     // Initialize connection pool and transaction manager
     sshTunnelManager.setDebug(this.debug);
 
     this.poolManager = new ConnectionPoolManager(
       {
-        min: parseInt(process.env.OMNISQL_POOL_MIN || '2'),
-        max: parseInt(process.env.OMNISQL_POOL_MAX || '10'),
-        idleTimeoutMs: parseInt(process.env.OMNISQL_POOL_IDLE_TIMEOUT || '30000'),
-        acquireTimeoutMs: parseInt(process.env.OMNISQL_POOL_ACQUIRE_TIMEOUT || '10000'),
+        min: integerSetting(process.env.OMNISQL_POOL_MIN, 'OMNISQL_POOL_MIN', 0, 0, 32),
+        max: integerSetting(process.env.OMNISQL_POOL_MAX, 'OMNISQL_POOL_MAX', 4, 1, 32),
+        idleTimeoutMs: integerSetting(
+          process.env.OMNISQL_POOL_IDLE_TIMEOUT,
+          'OMNISQL_POOL_IDLE_TIMEOUT',
+          30000,
+          1,
+          300000
+        ),
+        acquireTimeoutMs: integerSetting(
+          process.env.OMNISQL_POOL_ACQUIRE_TIMEOUT,
+          'OMNISQL_POOL_ACQUIRE_TIMEOUT',
+          10000,
+          1,
+          300000
+        ),
       },
-      this.debug
+      this.debug,
+      integerSetting(process.env.OMNISQL_TIMEOUT, 'OMNISQL_TIMEOUT', 30000)
     );
+    this.workspaceClient = new WorkspaceClient(
+      process.env.OMNISQL_CLI_PATH,
+      integerSetting(process.env.OMNISQL_TIMEOUT, 'OMNISQL_TIMEOUT', 30000),
+      this.debug,
+      process.env.OMNISQL_WORKSPACE || this.configParser.getWorkspacePath(),
+      this.poolManager
+    );
+
     this.transactionManager = new TransactionManager(this.poolManager, this.debug);
 
     this.loadInsights();
@@ -222,8 +238,11 @@ class OmniSQLMCPServer {
    */
   private async getFilteredConnections(): Promise<DatabaseConnection[]> {
     const connections = await this.configParser.parseConnections();
-    if (!this.allowedConnections) return connections;
-    return connections.filter((conn) => this.isConnectionAllowed(conn));
+    if (!this.allowedConnections)
+      return connections.filter((c) => this.accessPolicy.allowsDatabase(c));
+    return connections.filter(
+      (conn) => this.isConnectionAllowed(conn) && this.accessPolicy.allowsDatabase(conn)
+    );
   }
 
   /**
@@ -236,6 +255,7 @@ class OmniSQLMCPServer {
     const connection = await this.configParser.getConnection(connectionId, database);
     if (!connection) return null;
     if (!this.isConnectionAllowed(connection)) return null;
+    this.accessPolicy.assertConnection(connection);
     return connection;
   }
 
@@ -290,6 +310,11 @@ class OmniSQLMCPServer {
     // List all available database resources (table schemas)
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       try {
+        if (
+          this.disabledTools.includes('get_table_schema') ||
+          this.disabledTools.includes('list_tables')
+        )
+          return { resources: [] };
         const connections = await this.getFilteredConnections();
         const resources: any[] = [];
 
@@ -298,10 +323,15 @@ class OmniSQLMCPServer {
             const tables = await this.workspaceClient.listTables(connection, undefined, false);
 
             for (const table of tables) {
-              const tableName = typeof table === 'string' ? table : table.name || table.table_name;
+              const tableName =
+                typeof table === 'string'
+                  ? table
+                  : [table.table_schema ?? table.schema, table.name || table.table_name]
+                      .filter(Boolean)
+                      .join('.');
               if (tableName) {
                 resources.push({
-                  uri: `omnisql://${connection.id}/${tableName}/schema`,
+                  uri: `omnisql:///connections/${encodeURIComponent(connection.id)}/tables/${encodeURIComponent(tableName)}/schema`,
                   mimeType: 'application/json',
                   name: `"${tableName}" schema (${connection.name})`,
                   description: `Schema information for table ${tableName} in ${connection.name}`,
@@ -323,15 +353,23 @@ class OmniSQLMCPServer {
     // Get schema information for a specific table
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       try {
+        if (this.disabledTools.includes('get_table_schema'))
+          throw new Error('Schema access is disabled');
         const uri = new URL(request.params.uri);
-        const pathParts = uri.pathname.split('/').filter((p) => p);
-
-        if (pathParts.length < 2 || pathParts[pathParts.length - 1] !== 'schema') {
-          throw new Error('Invalid resource URI format');
-        }
-
-        const connectionId = uri.hostname;
-        const tableName = pathParts[pathParts.length - 2];
+        if (uri.protocol !== 'omnisql:') throw new Error('Invalid resource URI');
+        const parts = uri.pathname
+          .split('/')
+          .filter(Boolean)
+          .map((p) => decodeURIComponent(p));
+        const modern =
+          parts.length === 5 &&
+          parts[0] === 'connections' &&
+          parts[2] === 'tables' &&
+          parts[4] === 'schema';
+        const legacy = !!uri.hostname && parts.length === 2 && parts[1] === 'schema';
+        if (!modern && !legacy) throw new Error('Invalid resource URI format');
+        const connectionId = modern ? parts[1] : decodeURIComponent(uri.hostname);
+        const tableName = modern ? parts[3] : parts[0];
 
         const connection = await this.getConnection(connectionId);
         if (!connection) {
@@ -1035,7 +1073,12 @@ class OmniSQLMCPServer {
 
     if (args.includeDetails) {
       // Always redact credentials before returning to client
-      const redacted = connections.map((conn) => redactConnection(conn));
+      const redacted = connections.map((conn) => ({
+        ...redactConnection(conn),
+        readonly: this.readOnly || this.accessPolicy.isReadOnly(conn),
+        limits: conn.limits,
+        capabilities: this.workspaceClient.getCapabilities(conn),
+      }));
       return {
         content: [
           {
@@ -1079,7 +1122,12 @@ class OmniSQLMCPServer {
     }
 
     // Redact credentials before returning to client
-    const redacted = redactConnection(connection);
+    const redacted = {
+      ...redactConnection(connection),
+      readonly: this.readOnly || this.accessPolicy.isReadOnly(connection),
+      limits: connection.limits,
+      capabilities: this.workspaceClient.getCapabilities(connection),
+    };
 
     return {
       content: [
@@ -1119,48 +1167,20 @@ class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    // Add LIMIT/TOP clause if not present and it's a SELECT query
-    let finalQuery = query;
-    const lowerQuery = query.toLowerCase().trimStart();
-    const driver = connection.driver.toLowerCase();
-    // Oracle has no LIMIT; the driver caps the fetch instead (maxRows below).
-    const isOracle = driver.includes('oracle');
-
-    if (lowerQuery.startsWith('select') && !isOracle) {
-      const isSqlServer =
-        driver.includes('mssql') || driver.includes('sqlserver') || driver.includes('microsoft');
-
-      if (isSqlServer) {
-        if (
-          !lowerQuery.includes('top ') &&
-          !lowerQuery.includes('offset ') &&
-          !lowerQuery.includes('fetch next')
-        ) {
-          // Simple injection of TOP for SQL Server
-          finalQuery = query.replace(/^select/i, `SELECT TOP ${maxRows}`);
-        }
-      } else {
-        if (!lowerQuery.includes('limit')) {
-          // Strip trailing semicolons so we don't produce invalid SQL like `SELECT 1; LIMIT 10`
-          const withoutTrailingSemicolon = query.replace(/;+\s*$/g, '');
-          finalQuery = `${withoutTrailingSemicolon} LIMIT ${maxRows}`;
-        }
-      }
-    }
-
-    const result = await this.workspaceClient.executeQuery(connection, finalQuery, {
+    const result = await this.workspaceClient.executeQuery(connection, query, {
       maxRows,
       readOnly: true,
     });
 
     const response = {
-      query: finalQuery,
+      query,
       connection: connection.name,
       executionTime: result.executionTime,
       rowCount: result.rowCount,
       columns: result.columns,
       rows: result.rows,
-      truncated: result.rows.length >= maxRows,
+      truncated: result.truncated === true,
+      ...(result.limitReason ? { limitReason: result.limitReason } : {}),
     };
 
     return {
@@ -1203,7 +1223,7 @@ class OmniSQLMCPServer {
     }
 
     const connection = await this.getConnection(connectionId);
-    if (connection?.readonly)
+    if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1241,7 +1261,7 @@ class OmniSQLMCPServer {
     }
 
     const connection = await this.getConnection(connectionId);
-    if (connection?.readonly)
+    if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1279,7 +1299,7 @@ class OmniSQLMCPServer {
     }
 
     const connection = await this.getConnection(connectionId);
-    if (connection?.readonly)
+    if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1337,7 +1357,7 @@ class OmniSQLMCPServer {
     }
 
     const connection = await this.getConnection(connectionId);
-    if (connection?.readonly)
+    if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1389,7 +1409,7 @@ class OmniSQLMCPServer {
 
     const schema = await this.workspaceClient.getTableSchema(connection, args.tableName);
 
-    if (!args.includeIndexes) {
+    if (args.includeIndexes === false) {
       (schema as any).indexes = undefined;
     }
 
@@ -1417,11 +1437,6 @@ class OmniSQLMCPServer {
     const policyError = validateQuery(query) || enforceReadOnly(query);
     if (policyError) throw new McpError(ErrorCode.InvalidParams, policyError);
 
-    // Validate query - only SELECT queries for export
-    if (!query.toLowerCase().trimStart().startsWith('select')) {
-      throw new McpError(ErrorCode.InvalidParams, 'Only SELECT queries are allowed for export');
-    }
-
     const connection = await this.getConnection(connectionId, args.database);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1431,14 +1446,7 @@ class OmniSQLMCPServer {
     const maxRows = Math.min(Math.max(1, requestedRows), MAX_EXPORT_ROWS);
     const format = args.format || 'csv';
 
-    // Add LIMIT clause if not present (Oracle has none; its driver caps the fetch)
-    let finalQuery = query;
-    const isOracle = connection.driver.toLowerCase().includes('oracle');
-    if (!isOracle && !query.toLowerCase().includes('limit')) {
-      finalQuery = `${query} LIMIT ${maxRows}`;
-    }
-
-    const result = await this.workspaceClient.executeQuery(connection, finalQuery, {
+    const result = await this.workspaceClient.executeQuery(connection, query, {
       maxRows,
       readOnly: true,
     });
@@ -1614,7 +1622,7 @@ class OmniSQLMCPServer {
   private async handleBeginTransaction(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.getConnection(connectionId);
-    if (connection?.readonly)
+    if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
 
     if (!connection) {
@@ -1706,6 +1714,7 @@ class OmniSQLMCPServer {
     }
 
     const format = args.format || 'text';
+    this.accessPolicy.assertQuery(connection, args.query, true);
     const explainQuery = buildExplainQuery(
       connection.driver,
       args.query,

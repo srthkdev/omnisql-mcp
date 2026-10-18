@@ -1,4 +1,4 @@
-import SqlParser from 'node-sql-parser';
+import { analyzeSql } from './analyzer.js';
 
 export interface SqlToken {
   kind: 'word' | 'identifier' | 'literal' | 'symbol';
@@ -121,27 +121,17 @@ export function validateStatement(query: string, expected?: string[]): string | 
     )
       return 'Potentially dangerous query detected. Query blocked for safety.';
     if (['update', 'delete', 'with'].includes(words[0])) {
-      const parser = new SqlParser.Parser();
-      let parsed: Record<string, unknown> | undefined;
-      for (const database of ['Postgresql', 'MySQL', 'TransactSQL']) {
+      let missing: boolean | undefined;
+      for (const dialect of ['postgres', 'mysql', 'mssql', 'sqlite', 'oracle']) {
         try {
-          const ast = parser.astify(query, { database });
-          parsed = (Array.isArray(ast) ? ast[0] : ast) as unknown as Record<string, unknown>;
+          missing = analyzeSql(query, dialect).missingPredicate;
           break;
         } catch {
-          /* Try the other supported grammar. */
+          /* Try another grammar for this dialect-independent legacy helper. */
         }
       }
-      if (!parsed) return 'SQL could not be validated with a supported grammar';
-      const inspect = (node: unknown): boolean => {
-        if (!node || typeof node !== 'object') return true;
-        const object = node as Record<string, unknown>;
-        if (['update', 'delete'].includes(String(object.type)) && !object.where) return false;
-        return Object.values(object).every((value) =>
-          Array.isArray(value) ? value.every(inspect) : inspect(value)
-        );
-      };
-      if (!inspect(parsed)) return 'UPDATE and DELETE require a WHERE clause';
+      if (missing === undefined) return 'SQL could not be validated with a supported grammar';
+      if (missing) return 'UPDATE and DELETE require a WHERE clause';
     }
     return null;
   } catch (error) {

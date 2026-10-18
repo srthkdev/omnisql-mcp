@@ -19,7 +19,9 @@ describe('listDatabases', () => {
       executionTime: 0,
     });
     expect(await client.listDatabases(connection)).toEqual(['app', 'reports']);
-    expect(execute).toHaveBeenCalledWith(connection, expect.stringMatching(expected));
+    expect(execute).toHaveBeenCalledWith(connection, expect.stringMatching(expected), {
+      trustedMetadata: true,
+    });
   });
 
   it('reports unsupported engines without calling the CLI', async () => {

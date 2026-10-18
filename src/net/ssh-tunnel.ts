@@ -24,6 +24,7 @@ export interface TunnelEndpoint {
 }
 
 interface ActiveTunnel extends TunnelEndpoint {
+  alive: boolean;
   close: () => Promise<void>;
 }
 
@@ -69,6 +70,8 @@ export function buildConnectOptions(
     host: config.host,
     port: config.port,
     username: config.user,
+    keepaliveInterval: 10000,
+    keepaliveCountMax: 3,
     readyTimeout: config.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
   };
 
@@ -167,7 +170,7 @@ export class SshTunnelManager {
 
     const key = connection.id;
     const existing = this.tunnels.get(key);
-    if (existing) {
+    if (existing?.alive) {
       return { host: existing.host, port: existing.port };
     }
 
@@ -212,75 +215,86 @@ export class SshTunnelManager {
     }
 
     const client = new SshClient();
+    // Keep an error listener after authentication: late transport failures are normal.
+    client.on('error', (error) => this.log(`SSH transport failed: ${error.message}`));
     const knownHosts = loadKnownHosts();
     const strict = String(process.env.OMNISQL_SSH_STRICT_HOST_KEY ?? '').toLowerCase() === 'true';
     let hostKeyError: Error | undefined;
 
-    await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error) => {
-        client.removeListener('ready', onReady);
-        // A rejected host key closes the transport, and ssh2 reports that
-        // close rather than the reason - so prefer the reason we recorded.
-        reject(hostKeyError ?? this.decorateSshError(error, connection.name, config));
-      };
-      const onReady = () => {
-        client.removeListener('error', onError);
-        resolve();
-      };
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onError = (error: Error) => {
+          client.removeListener('ready', onReady);
+          // A rejected host key closes the transport, and ssh2 reports that
+          // close rather than the reason - so prefer the reason we recorded.
+          reject(hostKeyError ?? this.decorateSshError(error, connection.name, config));
+        };
+        const onReady = () => {
+          client.removeListener('error', onError);
+          resolve();
+        };
 
-      client.once('ready', onReady);
-      client.once('error', onError);
+        client.once('ready', onReady);
+        client.once('error', onError);
 
-      client.connect({
-        ...options,
-        hostVerifier: (key: Buffer, callback: (ok: boolean) => void) => {
-          const verdict = verifyHostKey(
-            config.host,
-            config.port,
-            detectKeyType(key),
-            key,
-            knownHosts
-          );
+        client.connect({
+          ...options,
+          hostVerifier: (key: Buffer, callback: (ok: boolean) => void) => {
+            const verdict = verifyHostKey(
+              config.host,
+              config.port,
+              detectKeyType(key),
+              key,
+              knownHosts
+            );
 
-          if (verdict.status === 'match') {
+            if (verdict.status === 'match') {
+              callback(true);
+              return;
+            }
+
+            if (verdict.status === 'mismatch') {
+              hostKeyError = new Error(
+                `Host key verification failed for SSH host ${config.host}:${config.port}. The key ` +
+                  `it presented (${keyFingerprint(key)}) does not match the ${verdict.expectedTypes.join(
+                    ', '
+                  )} entry in ${knownHostsPath()}. Refusing to tunnel database credentials ` +
+                  `through it. If the host was legitimately rekeyed, remove the stale entry.`
+              );
+              callback(false);
+              return;
+            }
+
+            if (strict) {
+              hostKeyError = new Error(
+                `SSH host ${config.host}:${config.port} is not in ${knownHostsPath()} and ` +
+                  `OMNISQL_SSH_STRICT_HOST_KEY is set. Its key is ${keyFingerprint(key)}; connect ` +
+                  `once with ssh to record it, then retry.`
+              );
+              callback(false);
+              return;
+            }
+
+            this.log(
+              `SSH host ${config.host}:${config.port} is not in known_hosts; accepting ` +
+                `${keyFingerprint(key)}. Set OMNISQL_SSH_STRICT_HOST_KEY=true to require an entry.`
+            );
             callback(true);
-            return;
-          }
+          },
+        } as Parameters<import('ssh2').Client['connect']>[0]);
+      });
+    } catch (error) {
+      client.destroy();
+      throw error;
+    }
 
-          if (verdict.status === 'mismatch') {
-            hostKeyError = new Error(
-              `Host key verification failed for SSH host ${config.host}:${config.port}. The key ` +
-                `it presented (${keyFingerprint(key)}) does not match the ${verdict.expectedTypes.join(
-                  ', '
-                )} entry in ${knownHostsPath()}. Refusing to tunnel database credentials ` +
-                `through it. If the host was legitimately rekeyed, remove the stale entry.`
-            );
-            callback(false);
-            return;
-          }
-
-          if (strict) {
-            hostKeyError = new Error(
-              `SSH host ${config.host}:${config.port} is not in ${knownHostsPath()} and ` +
-                `OMNISQL_SSH_STRICT_HOST_KEY is set. Its key is ${keyFingerprint(key)}; connect ` +
-                `once with ssh to record it, then retry.`
-            );
-            callback(false);
-            return;
-          }
-
-          this.log(
-            `SSH host ${config.host}:${config.port} is not in known_hosts; accepting ` +
-              `${keyFingerprint(key)}. Set OMNISQL_SSH_STRICT_HOST_KEY=true to require an entry.`
-          );
-          callback(true);
-        },
-      } as Parameters<import('ssh2').Client['connect']>[0]);
-    });
-
+    const sockets = new Set<net.Socket>();
     // Bind to loopback only: this forward is for this process, and anything
     // reachable on it inherits the SSH server's access to the database.
     const server = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.on('close', () => sockets.delete(socket));
+      socket.on('error', () => socket.destroy());
       client.forwardOut(
         '127.0.0.1',
         socket.remotePort ?? 0,
@@ -316,17 +330,40 @@ export class SshTunnelManager {
         `${config.host}:${config.port} -> ${destHost}:${destPort}`
     );
 
-    return {
+    const tunnel: ActiveTunnel = {
+      alive: true,
       host: '127.0.0.1',
       port: localPort,
-      close: () =>
-        new Promise<void>((resolve) => {
+      close: async () => {
+        tunnel.alive = false;
+        for (const socket of sockets) socket.destroy();
+        client.end();
+        await new Promise<void>((resolve) => {
+          const deadline = setTimeout(() => {
+            client.destroy();
+            resolve();
+          }, 500);
           server.close(() => {
-            client.end();
+            clearTimeout(deadline);
+            client.destroy();
             resolve();
           });
-        }),
+        });
+      },
     };
+    const invalidate = () => {
+      tunnel.alive = false;
+      for (const socket of sockets) socket.destroy();
+      if (server.listening) server.close();
+    };
+    client.once('close', invalidate);
+    client.once('end', invalidate);
+    server.on('error', (error) => {
+      this.log(`SSH forward failed: ${error.message}`);
+      invalidate();
+      client.destroy();
+    });
+    return tunnel;
   }
 
   /**
@@ -364,6 +401,7 @@ export class SshTunnelManager {
   }
 
   async closeAll(): Promise<void> {
+    await Promise.allSettled(this.pending.values());
     await Promise.all(Array.from(this.tunnels.keys()).map((id) => this.close(id)));
   }
 

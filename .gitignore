@@ -51,3 +51,6 @@ test-results/
 database-mcp/
 # Isolated sample databases and demo workspace
 .demo/
+
+# Rust compilation output (portable runtime assets are tracked)
+native/**/target/

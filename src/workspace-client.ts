@@ -1,3 +1,9 @@
+import { QueryGate } from './runtime/concurrency.js';
+import { AdapterRegistry } from './runtime/adapter.js';
+import { sqlDialect } from './policy/analyzer.js';
+import Cursor from 'pg-cursor';
+import { ResultCollector, SQLiteRowStream } from './runtime/results.js';
+import { AccessPolicy } from './policy/access.js';
 import { booleanSetting } from './runtime-config.js';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
@@ -5,7 +11,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import csv from 'csv-parser';
-import { Client } from 'pg';
+import { Pool as PgPool } from 'pg';
+import { ConnectionPoolManager } from './pools/connection-pool.js';
 import sql from 'mssql';
 import mysql from 'mysql2/promise';
 import {
@@ -23,10 +30,7 @@ import {
   buildSchemaQuery,
   buildListTablesQuery,
 } from './utils.js';
-import { isIamAuthConnection, resolveIamCredentials } from './auth/iam-auth.js';
 import { sshTunnelManager } from './net/ssh-tunnel.js';
-import { readConnectionProp } from './auth/connection-props.js';
-import { resolvePostgresSsl, resolveMysqlSsl } from './auth/ssl.js';
 import oracledb from 'oracledb';
 import {
   resolveOracleConnectOptions,
@@ -36,6 +40,38 @@ import {
 } from './oracle.js';
 
 export class WorkspaceClient {
+  private policy = new AccessPolicy();
+  private gate = new QueryGate();
+  private adapters = new AdapterRegistry([
+    {
+      id: 'postgres',
+      capabilities: { databaseOverride: true, readOnly: 'transaction', transactions: true },
+      execute: (c, q, o) => this.executePostgreSQLQuery(c, q, o.readOnly, o.maxRows),
+    },
+    {
+      id: 'mysql',
+      capabilities: { databaseOverride: true, readOnly: 'transaction', transactions: true },
+      execute: (c, q, o) => this.executeMySQLQuery(c, q, o.readOnly, o.maxRows),
+    },
+    {
+      id: 'mssql',
+      capabilities: { databaseOverride: true, readOnly: 'permissions', transactions: true },
+      execute: (c, q, o) => this.executeSQLServerQuery(c, q, o.maxRows),
+    },
+    {
+      id: 'sqlite',
+      capabilities: { databaseOverride: false, readOnly: 'file', transactions: false },
+      execute: (c, q, o) => this.executeSQLiteQuery(c, q, o.readOnly, o.maxRows),
+    },
+    {
+      id: 'oracle',
+      capabilities: { databaseOverride: false, readOnly: 'transaction', transactions: false },
+      execute: (c, q, o) => this.executeOracleQuery(c, q, o.maxRows, o.readOnly),
+    },
+  ]);
+  getCapabilities(connection: DatabaseConnection) {
+    return this.adapters.get(sqlDialect(connection.driver))?.capabilities ?? null;
+  }
   private executablePath: string;
   private timeout: number;
   private debug: boolean;
@@ -45,7 +81,12 @@ export class WorkspaceClient {
     executablePath?: string,
     timeout: number = 30000,
     debug: boolean = false,
-    workspacePath?: string
+    workspacePath?: string,
+    private poolManager = new ConnectionPoolManager(
+      { min: 0, max: 4, acquireTimeoutMs: timeout },
+      false,
+      timeout
+    )
   ) {
     this.executablePath = executablePath || findCliExecutable();
     this.timeout = timeout;
@@ -62,17 +103,56 @@ export class WorkspaceClient {
   async executeQuery(
     connection: DatabaseConnection,
     query: string,
-    options: { maxRows?: number; readOnly?: boolean } = {}
+    options: { maxRows?: number; readOnly?: boolean; trustedMetadata?: boolean } = {}
   ): Promise<QueryResult> {
     const startTime = Date.now();
+    const release = await this.gate.acquire(connection.limits?.timeoutMs ?? this.timeout);
 
     try {
       // Use native database drivers; fall back to the CLI for unsupported drivers
       const readOnly =
         options.readOnly === true ||
-        connection.readonly === true ||
+        this.policy.isReadOnly(connection) ||
         booleanSetting(process.env.OMNISQL_READ_ONLY, 'OMNISQL_READ_ONLY');
-      const result = await this.executeWithNativeTool(connection, query, options.maxRows, readOnly);
+      if (!options.trustedMetadata) this.policy.assertQuery(connection, query, readOnly);
+      else this.policy.assertConnection(connection);
+      const target = options.trustedMetadata
+        ? {
+            ...connection,
+            limits: { ...connection.limits, maxRows: 10000, maxBytes: 8 * 1024 * 1024 },
+          }
+        : connection;
+      const result = await this.executeWithNativeTool(
+        target,
+        query,
+        options.trustedMetadata ? 10000 : options.maxRows,
+        readOnly
+      );
+      const rowLimit = options.trustedMetadata
+        ? 10000
+        : Math.min(options.maxRows ?? 1000, connection.limits?.maxRows ?? 100000);
+      const byteLimit = options.trustedMetadata
+        ? 8 * 1024 * 1024
+        : (connection.limits?.maxBytes ?? 1024 * 1024);
+      let bytes = Buffer.byteLength(JSON.stringify(result.columns));
+      const retained: unknown[][] = [];
+      for (const row of result.rows) {
+        if (retained.length >= rowLimit) {
+          result.truncated = true;
+          result.limitReason = 'rows';
+          break;
+        }
+        const size = Buffer.byteLength(JSON.stringify(row));
+        if (bytes + size > byteLimit) {
+          result.truncated = true;
+          result.limitReason = 'bytes';
+          break;
+        }
+        retained.push(row);
+        bytes += size;
+      }
+      result.rows = retained;
+      if (result.columns.length) result.rowCount = retained.length;
       result.executionTime = Date.now() - startTime;
       return result;
     } catch (error) {
@@ -99,7 +179,13 @@ export class WorkspaceClient {
         });
       }
       throw new Error(`Query execution failed: ${message}`);
+    } finally {
+      release();
     }
+  }
+
+  async close(): Promise<void> {
+    await this.poolManager.closeAllPools();
   }
 
   async testConnection(connection: DatabaseConnection): Promise<ConnectionTest> {
@@ -127,8 +213,9 @@ export class WorkspaceClient {
   }
 
   async getTableSchema(connection: DatabaseConnection, tableName: string): Promise<SchemaInfo> {
+    this.policy.assertTable(connection, tableName);
     const schemaQuery = this.buildSchemaQuery(connection.driver, tableName);
-    const result = await this.executeQuery(connection, schemaQuery);
+    const result = await this.executeQuery(connection, schemaQuery, { trustedMetadata: true });
 
     return this.parseSchemaResult(result, tableName);
   }
@@ -208,21 +295,9 @@ export class WorkspaceClient {
   ): Promise<QueryResult> {
     const driver = connection.driver.toLowerCase();
 
-    if (driver.includes('oracle')) {
-      return this.executeOracleQuery(connection, query, maxRows, readOnly);
-    } else if (driver.includes('sqlite')) {
-      return this.executeSQLiteQuery(connection, query, readOnly);
-    } else if (this.isPostgresCompatible(driver)) {
-      return this.executePostgreSQLQuery(connection, query, readOnly);
-    } else if (
-      driver.includes('mssql') ||
-      driver.includes('sqlserver') ||
-      driver.includes('microsoft')
-    ) {
-      return this.executeSQLServerQuery(connection, query);
-    } else if (driver.includes('mysql') || driver.includes('mariadb')) {
-      return this.executeMySQLQuery(connection, query, readOnly);
-    } else {
+    const adapter = this.adapters.get(sqlDialect(driver));
+    if (adapter) return adapter.execute(connection, query, { maxRows, readOnly });
+    {
       if (readOnly) throw new Error('CLI fallback cannot enforce read-only access for this driver');
       // Unsupported driver – try the CLI as a best-effort fallback, but
       // wrap with a clear error message listing the natively supported drivers.
@@ -347,8 +422,10 @@ export class WorkspaceClient {
   private async executeSQLiteQuery(
     connection: DatabaseConnection,
     query: string,
-    readOnly = false
+    readOnly = false,
+    maxRows?: number
   ): Promise<QueryResult> {
+    const timeout = connection.limits?.timeoutMs ?? this.timeout;
     return new Promise((resolve, reject) => {
       const dbPath = connection.properties?.database || connection.database;
       if (!dbPath) {
@@ -382,8 +459,8 @@ export class WorkspaceClient {
         if (settled) return;
         settled = true;
         proc.kill('SIGKILL');
-        reject(new Error(`SQLite query timed out after ${this.timeout}ms`));
-      }, this.timeout);
+        reject(new Error(`SQLite query timed out after ${timeout}ms`));
+      }, timeout);
       const fail = (err: NodeJS.ErrnoException) => {
         if (settled) return;
         settled = true;
@@ -400,19 +477,26 @@ export class WorkspaceClient {
       proc.on('error', fail);
       proc.stdin.on('error', fail);
 
-      let output = '';
+      const collector = new ResultCollector(connection, maxRows);
+      const stream = new SQLiteRowStream(collector);
       let error = '';
-
-      proc.stdout.on('data', (data) => {
-        output += data.toString();
-        if (Buffer.byteLength(output) > 8 * 1024 * 1024 && !settled) {
+      proc.stdout.setEncoding('utf8');
+      proc.stdout.on('data', (data: string) => {
+        if (settled) return;
+        try {
+          if (!stream.write(data)) {
+            settled = true;
+            clearTimeout(deadline);
+            proc.kill('SIGTERM');
+            resolve(collector.result());
+          }
+        } catch (error) {
           settled = true;
           clearTimeout(deadline);
           proc.kill('SIGKILL');
-          reject(new Error('SQLite result exceeds the 8 MiB safety limit; narrow the query'));
+          reject(error);
         }
       });
-
       proc.stderr.on('data', (data) => {
         if (error.length < 65536) error += data.toString();
       });
@@ -426,14 +510,7 @@ export class WorkspaceClient {
           return;
         }
 
-        try {
-          const records: Record<string, unknown>[] = output.trim() ? JSON.parse(output) : [];
-          const columns = Object.keys(records[0] ?? {});
-          const rows = records.map((record) => columns.map((column) => record[column]));
-          resolve({ columns, rows, rowCount: rows.length, executionTime: 0 });
-        } catch {
-          reject(new Error('SQLite returned invalid JSON output'));
-        }
+        resolve(collector.result());
       });
       proc.stdin.end();
     });
@@ -442,235 +519,168 @@ export class WorkspaceClient {
   private async executePostgreSQLQuery(
     connection: DatabaseConnection,
     query: string,
-    readOnly = false
+    readOnly = false,
+    maxRows?: number
   ): Promise<QueryResult> {
-    const { host, port } = await this.resolveEndpoint(connection, 5432);
-    const database = connection.database || connection.properties?.database || 'postgres';
-
-    // IAM-authenticated connections store no credential, so mint a short-lived
-    // token and authenticate with that. This also resolves the username, which
-    // such connections frequently omit.
-    const iamAuth = isIamAuthConnection(connection);
-    const iamCreds = iamAuth
-      ? await resolveIamCredentials(connection, 5432, { debug: this.debug })
-      : undefined;
-
-    const user =
-      iamCreds?.user ||
-      connection.user ||
-      connection.properties?.user ||
-      process.env.PGUSER ||
-      'postgres';
-    const password =
-      iamCreds?.password || connection.properties?.password || process.env.PGPASSWORD;
-
-    const ssl = resolvePostgresSsl(connection, iamAuth, this.debug);
-
-    const client = new Client({
-      host,
-      port,
-      database,
-      user,
-      password,
-      ssl,
-      connectionTimeoutMillis: this.timeout,
-      statement_timeout: this.timeout,
-    });
+    const entry = await this.poolManager.getPool(connection);
+    const client = await (entry!.pool as PgPool).connect();
+    let broken = false,
+      released = false,
+      timedOut = false;
     try {
-      await client.connect();
       if (readOnly) await client.query('BEGIN READ ONLY');
-      const res = await client.query({ text: query, rowMode: 'array' });
-      const columns: string[] = (res.fields || []).map((f: any) => f.name as string);
-      const rows: any[][] = res.rows || [];
-      return {
-        columns,
-        rows,
-        rowCount: typeof res.rowCount === 'number' ? res.rowCount : rows.length,
-        executionTime: 0,
-      };
-    } finally {
+      const collector = new ResultCollector(connection, maxRows);
+      const cursor = client.query(new Cursor(query, [], { rowMode: 'array' }));
+      const deadline = setTimeout(() => {
+        broken = true;
+        timedOut = true;
+        released = true;
+        client.release(true);
+      }, connection.limits?.timeoutMs ?? this.timeout);
       try {
-        if (readOnly) await client.query('ROLLBACK').catch(() => {});
-        await client.end();
-      } catch (closeError) {
-        // ALWAYS log connection cleanup failures - they indicate resource leaks
-        console.error('Failed to close PostgreSQL connection:', {
-          error: closeError instanceof Error ? closeError.message : String(closeError),
-          host,
-          database,
-        });
+        let done = false;
+        while (!done) {
+          const rows = await cursor.read(Math.min(64, collector.maxRows + 1));
+          for (const row of rows)
+            if (!collector.add(row)) {
+              done = true;
+              break;
+            }
+          if (rows.length === 0) done = true;
+        }
+        const metadata = (
+          cursor as unknown as { _result: { fields: { name: string }[]; rowCount: number } }
+        )._result;
+        collector.columns = metadata.fields.map((f) => f.name);
+        return collector.result(metadata.rowCount);
+      } finally {
+        clearTimeout(deadline);
+        if (!broken) await cursor.close();
       }
+    } catch (error) {
+      broken = true;
+      if (timedOut)
+        throw new Error(
+          `PostgreSQL query timed out after ${connection.limits?.timeoutMs ?? this.timeout}ms`
+        );
+      throw error;
+    } finally {
+      if (readOnly && !broken) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          broken = true;
+        }
+      }
+      if (!released) client.release(broken);
     }
   }
 
   private async executeSQLServerQuery(
     connection: DatabaseConnection,
-    query: string
+    query: string,
+    maxRows?: number
   ): Promise<QueryResult> {
-    const { host, port } = await this.resolveEndpoint(connection, 1433);
-    const database = connection.database || connection.properties?.database || 'master';
-    const user = connection.user || connection.properties?.user;
-    const password = connection.properties?.password;
-
-    if (!user || !password) {
-      throw new Error('User and password are required for SQL Server connection');
-    }
-
-    // Judge Azure from the configured host: through a tunnel `host` is a
-    // loopback address and would read as an ordinary on-prem server.
-    const isAzure = (connection.host || host).includes('.database.windows.net');
-    const booleanProp = (name: string, fallback: boolean) => {
-      const value = readConnectionProp(connection, name);
-      if (value === undefined) return fallback;
-      if (!['true', 'false'].includes(value.toLowerCase()))
-        throw new Error(`Invalid boolean connection setting: ${name}`);
-      return value.toLowerCase() === 'true';
-    };
-    const config = {
-      user,
-      password,
-      server: host,
-      port,
-      database,
-      connectionTimeout: this.timeout,
-      requestTimeout: this.timeout,
-      options: {
-        encrypt: booleanProp('encrypt', isAzure),
-        trustServerCertificate: booleanProp('trustServerCertificate', !isAzure),
-      },
-    };
-
-    const pool = new sql.ConnectionPool(config);
+    const entry = await this.poolManager.getPool(connection);
+    const pool = entry!.pool as sql.ConnectionPool;
+    const request = pool.request();
+    request.stream = true;
+    // The promise reports request failures; streaming also emits error events.
+    request.on('error', () => {});
+    const collector = new ResultCollector(connection, maxRows);
+    request.on('recordset', (columns: { name: string }[]) => {
+      collector.columns = columns.map((c) => c.name);
+    });
+    request.on('row', (row: unknown[]) => {
+      if (!collector.truncated && !collector.add(row)) request.cancel();
+    });
+    const timer = setTimeout(() => request.cancel(), connection.limits?.timeoutMs ?? this.timeout);
     try {
-      await pool.connect();
-      const result = await pool.request().query(query);
-
-      const columns: string[] = [];
-      const rows: any[][] = [];
-      let rowCount = 0;
-
-      if (result.recordset) {
-        if (result.recordset.length > 0) {
-          columns.push(...Object.keys(result.recordset[0]));
-          rows.push(...result.recordset.map((row) => Object.values(row)));
-        } else if (result.recordset.columns) {
-          Object.values(result.recordset.columns).forEach((col: any) => {
-            columns.push(col.name);
-          });
-        }
-        rowCount = result.rowsAffected[0] || result.recordset.length;
-      } else {
-        rowCount = result.rowsAffected[0] || 0;
-      }
-
-      return {
-        columns,
-        rows,
-        rowCount,
-        executionTime: 0,
-      };
+      const result = await request.query(query);
+      return collector.result(result.rowsAffected?.[0]);
     } catch (error) {
-      throw new Error(
-        `SQL Server error: ${error instanceof Error ? error.message : String(error)}`
-      );
+      if (collector.truncated && (error as { code?: string }).code === 'ECANCEL')
+        return collector.result();
+      throw error;
     } finally {
-      await pool.close();
+      clearTimeout(timer);
     }
   }
 
   private async executeMySQLQuery(
     connection: DatabaseConnection,
     query: string,
-    readOnly = false
+    readOnly = false,
+    maxRows?: number
   ): Promise<QueryResult> {
-    const { host, port } = await this.resolveEndpoint(connection, 3306);
-    const database = connection.database || connection.properties?.database;
-
-    // IAM-authenticated connections store no credential, so mint a short-lived
-    // token and authenticate with that. mysql2 answers RDS's auth-plugin switch
-    // with mysql_clear_password out of the box, safe over the TLS we force below.
-    const iamAuth = isIamAuthConnection(connection);
-    const iamCreds = iamAuth
-      ? await resolveIamCredentials(connection, 3306, { debug: this.debug })
-      : undefined;
-
-    const user =
-      iamCreds?.user ||
-      connection.user ||
-      connection.properties?.user ||
-      process.env.MYSQL_USER ||
-      'root';
-    const password =
-      iamCreds?.password ||
-      connection.properties?.password ||
-      process.env.MYSQL_PWD ||
-      process.env.MYSQL_PASSWORD;
-
-    const ssl = resolveMysqlSsl(connection, iamAuth);
-
-    const connectTimeout = Math.max(1000, this.timeout);
-    const connectionConfig: mysql.ConnectionOptions = {
-      host,
-      port,
-      user,
-      password,
-      database,
-      ssl,
-      connectTimeout,
-      // Important: avoid multi-statement execution for safety
-      multipleStatements: false,
-    };
-
-    const withTimeout = async <T>(promise: Promise<T>, label: string): Promise<T> => {
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<T>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          conn?.destroy();
-          reject(new Error(`${label} timed out after ${this.timeout}ms`));
-        }, this.timeout);
-      });
-      try {
-        return await Promise.race([promise, timeoutPromise]);
-      } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-      }
-    };
-
-    let conn: mysql.Connection | undefined;
+    const timeout = connection.limits?.timeoutMs ?? this.timeout;
+    const entry = await this.poolManager.getPool(connection);
+    const pending = (entry!.pool as mysql.Pool).getConnection();
+    let abandoned = false;
+    void pending.then(
+      (c) => {
+        if (abandoned) c.release();
+      },
+      () => {}
+    );
+    const acquireTimer = setTimeout(() => {
+      abandoned = true;
+    }, timeout);
+    let conn: mysql.PoolConnection;
     try {
-      conn = await withTimeout(mysql.createConnection(connectionConfig), 'MySQL connect');
-      if (readOnly)
-        await withTimeout(conn.query('START TRANSACTION READ ONLY'), 'MySQL read-only transaction');
-      const [rows, fields] = await withTimeout(conn.query(query), 'MySQL query');
-
-      // SELECT/SHOW/DESCRIBE return rows as array of objects; fields includes column metadata
-      if (Array.isArray(rows)) {
-        const columns: string[] = Array.isArray(fields)
-          ? (fields as any[]).map((f: any) => String(f.name))
-          : rows.length > 0 && typeof rows[0] === 'object' && rows[0] !== null
-            ? Object.keys(rows[0] as any)
-            : [];
-        const dataRows: any[][] = rows.map((r: any) => columns.map((c: string) => (r as any)[c]));
-        return { columns, rows: dataRows, rowCount: rows.length, executionTime: 0 };
-      }
-
-      // Non-SELECT returns OkPacket-like object
-      const ok: any = rows;
-      const affected = typeof ok?.affectedRows === 'number' ? ok.affectedRows : 0;
-      return { columns: [], rows: [], rowCount: affected, executionTime: 0 };
+      conn = await Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          const t = setTimeout(
+            () => reject(new Error('MySQL connection acquisition timed out')),
+            timeout
+          );
+          pending.finally(() => clearTimeout(t)).catch(() => {});
+        }),
+      ]);
     } finally {
-      if (conn) {
+      clearTimeout(acquireTimer);
+    }
+    let broken = false;
+    const timer = setTimeout(() => {
+      broken = true;
+      conn.destroy();
+    }, timeout);
+    try {
+      if (readOnly) await conn.query('START TRANSACTION READ ONLY');
+      const collector = new ResultCollector(connection, maxRows);
+      const raw = (conn as unknown as { connection: import('mysql2').PoolConnection }).connection;
+      const request = raw.query({ sql: query, rowsAsArray: true });
+      request.on('fields', (fields: { name: string }[]) => {
+        collector.columns = fields?.map((f) => f.name) ?? [];
+      });
+      let affected = 0;
+      const stream = request.stream({ highWaterMark: 16 });
+      for await (const row of stream) {
+        if (Array.isArray(row)) {
+          if (!collector.add(row)) {
+            broken = true;
+            conn.destroy();
+            break;
+          }
+        } else affected = (row as mysql.ResultSetHeader).affectedRows ?? 0;
+      }
+      return collector.result(affected);
+    } catch (error) {
+      broken = true;
+      conn.destroy();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      if (!broken && readOnly) {
         try {
-          if (readOnly) await conn.rollback().catch(() => {});
-          await conn.end();
-        } catch (closeError) {
-          console.error('Failed to close MySQL connection:', {
-            error: closeError instanceof Error ? closeError.message : String(closeError),
-            host,
-            database,
-          });
+          await conn.rollback();
+        } catch {
+          broken = true;
+          conn.destroy();
         }
       }
+      if (!broken) conn.release();
     }
   }
 
@@ -681,6 +691,7 @@ export class WorkspaceClient {
     connection: DatabaseConnection,
     work: (conn: oracledb.Connection) => Promise<T>
   ): Promise<T> {
+    const timeout = connection.limits?.timeoutMs ?? this.timeout;
     const { host, port } = await this.resolveEndpoint(connection, 1521);
     const options = resolveOracleConnectOptions(connection, host, port);
     const user = connection.user || connection.properties?.user;
@@ -696,11 +707,11 @@ export class WorkspaceClient {
       connectString: options.connectString,
       configDir: options.configDir,
       privilege: options.privilege,
-      connectTimeout: Math.max(1, Math.ceil(this.timeout / 1000)),
+      connectTimeout: Math.max(1, Math.ceil(timeout / 1000)),
     });
     try {
       // Bounds every round trip, so a slow query fails instead of hanging.
-      conn.callTimeout = this.timeout;
+      conn.callTimeout = timeout;
       return await work(conn);
     } finally {
       try {
@@ -725,16 +736,31 @@ export class WorkspaceClient {
       if (readOnly) await conn.execute('SET TRANSACTION READ ONLY');
       const res = await conn.execute<unknown[]>(normalizeOracleStatement(query), [], {
         outFormat: oracledb.OUT_FORMAT_ARRAY,
-        autoCommit: true,
-        maxRows: maxRows ?? 0,
+        autoCommit: !readOnly,
+        resultSet: true,
         fetchTypeHandler: oracleFetchTypeHandler,
       });
-
-      if (res.rows) {
-        const columns = (res.metaData || []).map((m) => m.name);
-        return { columns, rows: res.rows, rowCount: res.rows.length, executionTime: 0 };
+      const collector = new ResultCollector(connection, maxRows);
+      collector.columns = (res.metaData ?? []).map((m) => m.name);
+      if (!res.resultSet) return collector.result(res.rowsAffected);
+      const started = Date.now();
+      try {
+        let done = false;
+        while (!done) {
+          if (Date.now() - started > (connection.limits?.timeoutMs ?? this.timeout))
+            throw new Error('Oracle query deadline exceeded');
+          const rows = await res.resultSet.getRows(Math.min(64, collector.maxRows + 1));
+          for (const row of rows)
+            if (!collector.add(row)) {
+              done = true;
+              break;
+            }
+          if (rows.length === 0) done = true;
+        }
+        return collector.result();
+      } finally {
+        await res.resultSet.close();
       }
-      return { columns: [], rows: [], rowCount: res.rowsAffected ?? 0, executionTime: 0 };
     });
   }
 
@@ -994,8 +1020,10 @@ export class WorkspaceClient {
         'list_databases supports PostgreSQL, MySQL/MariaDB, and SQL Server connections'
       );
     }
-    const result = await this.executeQuery(connection, query);
-    return result.rows.map((row) => String(row[0]));
+    const result = await this.executeQuery(connection, query, { trustedMetadata: true });
+    return result.rows
+      .map((row) => String(row[0]))
+      .filter((database) => this.policy.allowsDatabase(connection, database));
   }
 
   async listTables(
@@ -1005,23 +1033,28 @@ export class WorkspaceClient {
   ): Promise<any[]> {
     try {
       const query = buildListTablesQuery(connection.driver, schema, includeViews);
-      const result = await this.executeQuery(connection, query);
+      const result = await this.executeQuery(connection, query, { trustedMetadata: true });
 
       // Convert result to table objects
-      return result.rows.map((row) => {
-        const tableObj: any = {};
-        result.columns.forEach((col, idx) => {
-          tableObj[col.toLowerCase()] = row[idx];
-        });
-        tableObj.name = tableObj.table_name ?? tableObj.name;
-        return tableObj;
-      });
+      return result.rows
+        .map((row) => {
+          const tableObj: any = {};
+          result.columns.forEach((col, idx) => {
+            tableObj[col.toLowerCase()] = row[idx];
+          });
+          tableObj.name = tableObj.table_name ?? tableObj.name;
+          return tableObj;
+        })
+        .filter((table) =>
+          this.policy.allowsTable(
+            connection,
+            [table.table_schema ?? table.schema, table.name].filter(Boolean).join('.')
+          )
+        );
     } catch (error) {
-      if (this.debug) {
-        console.error(`Failed to list tables: ${error}`);
-      }
-      // Return empty array instead of crashing
-      return [];
+      throw new Error(
+        `Failed to list tables: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 }

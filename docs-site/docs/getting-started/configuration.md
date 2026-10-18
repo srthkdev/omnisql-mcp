@@ -2,6 +2,70 @@
 
 OmniSQL reads configuration from environment variables. The guided installer sets the workspace, read-only mode, and optional connection allowlist for your client.
 
+## One MCP server, many database instances
+
+Set `OMNISQL_CONFIG_FILE` to an absolute path to your JSON configuration. Workspace discovery can run alongside it; connection IDs must be unique across both sources. You register OmniSQL once in the MCP client. Each tool call selects a `connectionId`; PostgreSQL, MySQL/MariaDB, and SQL Server calls can also select a `database` on that instance.
+
+```json
+{
+  "version": 1,
+  "defaults": { "readOnly": true },
+  "connections": {
+    "sales": {
+      "driver": "postgresql",
+      "host": "localhost",
+      "port": 5432,
+      "database": "sales",
+      "user": "report_reader",
+      "passwordEnv": "SALES_DB_PASSWORD",
+      "policy": {
+        "databases": ["sales", "reporting"],
+        "allowTables": ["public.orders", "public.customers"],
+        "denyTables": ["public.customer_secrets"]
+      },
+      "limits": { "maxRows": 1000, "maxBytes": 1048576, "timeoutMs": 15000, "poolMax": 4 }
+    },
+    "warehouse": {
+      "driver": "mysql",
+      "urlEnv": "WAREHOUSE_DATABASE_URL",
+      "policy": { "allowTables": ["warehouse.inventory"] },
+      "limits": { "maxRows": 200, "timeoutMs": 5000, "poolMax": 2 }
+    },
+    "local-notes": {
+      "driver": "sqlite",
+      "database": "/absolute/path/notes.db"
+    }
+  }
+}
+```
+
+Credentials come from named environment variables in the server process. `urlEnv` accepts a database URL; `passwordEnv` supplies or overrides its password. SQL connection URL query parameters, such as `sslmode`, become driver properties. Store this file outside your repository and restrict its permissions. Connection responses omit URLs, passwords, and raw properties.
+
+For example, one Codex registration can supply the file and credential variables:
+
+```toml
+[mcp_servers.omnisql]
+command = "npx"
+args = ["-y", "omnisql-mcp@latest"]
+
+[mcp_servers.omnisql.env]
+OMNISQL_CONFIG_FILE = "/absolute/path/omnisql.json"
+SALES_DB_PASSWORD = "replace-locally"
+WAREHOUSE_DATABASE_URL = "mysql://reader:replace-locally@localhost:3306/warehouse"
+```
+
+Avoid committing the client configuration if it contains credentials. Use your client's environment or secret storage where available.
+
+Then call `execute_query` with:
+
+```json
+{ "connectionId": "sales", "database": "reporting", "query": "SELECT count(*) FROM public.orders" }
+```
+
+Explicitly configured connections default to read-only. Set `readOnly: false` on a connection to enable its write tools when the process permits writes. Process-wide read-only mode and policy restrictions always take precedence. Default and connection table rules are intersected; a connection cannot widen a default allowlist. Empty allowlists allow nothing. Unknown settings and invalid booleans fail at load time.
+
+Connection configuration is reloaded when resolving a call. Workspace data is cached until its connection or credential files change. Running transactions retain the connection and access rules under which they started; restart the server to revoke an active session immediately.
+
 ## Workspace discovery
 
 By default, OmniSQL looks for the standard DBeaver workspace for your operating system and discovers connections across its project directories.
@@ -36,6 +100,8 @@ Use absolute paths in client configuration. The path is the workspace directory,
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
+| `OMNISQL_CONFIG_FILE` | JSON file containing explicit database instances and per-instance settings | Unset |
+| `OMNISQL_POLICY_FILE` | Additional operator access policy applied across configuration sources | Unset |
 | `OMNISQL_WORKSPACE` | Directory containing the DB client workspace | OS default |
 | `OMNISQL_PROJECT` | Read only this workspace project | All projects |
 | `OMNISQL_READ_ONLY` | Disable write and transaction tools | `false` |
@@ -45,8 +111,8 @@ Use absolute paths in client configuration. The path is the workspace directory,
 | `OMNISQL_DEBUG` | Write diagnostic logs to stderr | `false` |
 | `OMNISQL_UPDATE_NOTIFIER` | Enable the daily npm version check and update notice | `true` |
 | `OMNISQL_CLI_PATH` | External client CLI for unsupported-driver fallback | Unset |
-| `OMNISQL_POOL_MIN` | Minimum pooled connections | `2` |
-| `OMNISQL_POOL_MAX` | Maximum pooled connections | `10` |
+| `OMNISQL_POOL_MIN` | Minimum pooled connections | `0` |
+| `OMNISQL_POOL_MAX` | Maximum pooled connections | `4` |
 | `OMNISQL_POOL_IDLE_TIMEOUT` | Idle connection timeout, milliseconds | `30000` |
 | `OMNISQL_POOL_ACQUIRE_TIMEOUT` | Connection acquisition timeout, milliseconds | `10000` |
 | `OMNISQL_AWS_CLI_PATH` | AWS CLI executable used for IAM authentication | `aws` |

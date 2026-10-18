@@ -49,7 +49,7 @@
 **Postgres-compatible** (routed through `pg` driver automatically):
 - CockroachDB, TimescaleDB, Amazon Redshift, YugabyteDB, AlloyDB, Supabase, Neon, Citus
 
-**Other databases**: Fall back to an external CLI configured via `OMNISQL_CLI_PATH`. Results vary by CLI.
+**Other databases**: Unsupported drivers return an explicit error. External GUI/CLI query fallback has been removed so access and output policies remain enforceable.
 
 **Custom drivers** wrapping any of the above are detected automatically — see [Custom and IAM-Authenticated Drivers](#custom-and-iam-authenticated-drivers).
 
@@ -136,7 +136,6 @@ Large results use private, expiring handles with row and column pagination. Long
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OMNISQL_CLI_PATH` | Path to external DB client CLI (used for unsupported-driver fallback) | Unset |
 | `OMNISQL_CONFIG_FILE` | JSON configuration for multiple database instances and their settings | Unset |
 | `OMNISQL_POLICY_FILE` | Additional schema, table, function, and database access rules | Unset |
 | `OMNISQL_WORKSPACE` | Path to local DB client workspace directory | OS default |

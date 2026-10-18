@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Ordered index and key metadata, catalog table/storage estimates, and a `get_table_stats` tool.
+- Lazy connection-to-table-to-schema resources.
 - Private expiring result handles, row/column pagination, long-cell reads, and bounded export chunks.
 - Workspace-scoped private notes with atomic writes and a storage limit.
 - Multiple explicitly configured database instances behind one MCP server, with separate read-only settings, credentials, access rules, timeouts, result limits, and pool sizes.
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- Schema comparisons now preserve qualified names, case, type dimensions, indexes, and constraints. Migration previews are explicitly commented review outlines.
 - Connection responses omit raw properties and embedded credentials; debug logs omit SQL and analysis text.
 - Tool calls validate arguments without coercion, SQL guards reject stacked DDL and comment-only WHERE clauses, and read tools block known side-effect functions.
 - Saved read-only connections reject write tools. PostgreSQL, MySQL/MariaDB, and Oracle use read-only query transactions; SQLite queries have a process deadline and output safety cap.

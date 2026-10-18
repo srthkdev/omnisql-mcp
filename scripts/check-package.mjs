@@ -116,6 +116,9 @@ try {
   }
   assert(tools.some((tool) => tool.name === 'list_databases'));
   assert(!tools.some((tool) => tool.name === 'write_query'));
+  const resources = await client.listResources(undefined, { timeout: 2000 });
+  assert.equal(resources.resources.length, 2);
+  assert(resources.resources.every((r) => r.uri.startsWith('omnisql:///connections/')));
   const connections = await client.callTool({ name: 'list_connections', arguments: {} });
   assert.match(JSON.stringify(connections), /pg-1/);
   await assert.rejects(

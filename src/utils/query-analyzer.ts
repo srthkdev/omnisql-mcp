@@ -1,3 +1,5 @@
+import { parseString } from 'xml2js';
+import { sqlDialect } from '../policy/analyzer.js';
 import { ExplainResult, QueryPlanNode } from '../types.js';
 
 /**
@@ -9,7 +11,9 @@ export function buildExplainQuery(
   analyze = false,
   format: 'text' | 'json' = 'text'
 ): string {
-  const driverLower = driver.toLowerCase();
+  const dialect = sqlDialect(driver);
+  const driverLower =
+    dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
 
   if (driverLower.includes('postgres')) {
     const options = [];
@@ -17,17 +21,17 @@ export function buildExplainQuery(
     if (format === 'json') options.push('FORMAT JSON');
     const optionStr = options.length > 0 ? `(${options.join(', ')})` : '';
     return `EXPLAIN ${optionStr} ${query}`;
-  } else if (driverLower.includes('mysql') || driverLower.includes('mariadb')) {
+  } else if (driverLower.includes('mariadb')) {
+    return `${analyze ? 'ANALYZE' : 'EXPLAIN'}${format === 'json' ? ' FORMAT=JSON' : ''} ${query}`;
+  } else if (driverLower.includes('mysql')) {
+    if (analyze && format === 'json')
+      throw new Error('MySQL EXPLAIN ANALYZE uses text output; choose format text');
     if (format === 'json') {
       return `EXPLAIN FORMAT=JSON ${query}`;
     }
     return analyze ? `EXPLAIN ANALYZE ${query}` : `EXPLAIN ${query}`;
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
-    // SQL Server uses SET statements for execution plans
-    if (format === 'json') {
-      return `SET STATISTICS XML ON; ${query}; SET STATISTICS XML OFF;`;
-    }
-    return `SET SHOWPLAN_TEXT ON; ${query}; SET SHOWPLAN_TEXT OFF;`;
+    throw new Error('SQL Server plans require the dedicated pinned-session execution path');
   } else if (driverLower.includes('sqlite')) {
     return `EXPLAIN QUERY PLAN ${query}`;
   } else {
@@ -45,12 +49,31 @@ export function parseExplainOutput(
   query: string,
   format: 'text' | 'json'
 ): ExplainResult {
-  const driverLower = driver.toLowerCase();
+  const dialect = sqlDialect(driver);
+  const driverLower =
+    dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
 
   if (driverLower.includes('postgres')) {
     return parsePostgresExplain(output, query, format);
   } else if (driverLower.includes('mysql') || driverLower.includes('mariadb')) {
     return parseMysqlExplain(output, query, format);
+  } else if (driverLower.includes('mssql') && format === 'json') {
+    let document: Record<string, unknown> = {};
+    let error: Error | undefined;
+    parseString(
+      String(output[0]?.[0] ?? ''),
+      { explicitArray: false },
+      (e: Error | null, result: Record<string, unknown>) => {
+        error = e ?? undefined;
+        document = result;
+      }
+    );
+    if (error) throw new Error('SQL Server returned an invalid XML execution plan');
+    return {
+      query,
+      format: 'json',
+      plan: [{ operation: 'SQL Server estimated plan', details: document }],
+    };
   } else if (driverLower.includes('sqlite')) {
     return parseSqliteExplain(output, query);
   } else {

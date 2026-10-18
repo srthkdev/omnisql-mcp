@@ -1,3 +1,4 @@
+import { sqlDialect } from './policy/analyzer.js';
 import { validateReadStatement, validateStatement } from './policy/sql.js';
 /**
  * Resolve the DB client CLI executable path.
@@ -519,7 +520,9 @@ export function formatError(error: unknown): string {
  * Get test query based on database driver
  */
 export function getTestQuery(driver: string): string {
-  const driverLower = driver.toLowerCase();
+  const dialect = sqlDialect(driver);
+  const driverLower =
+    dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
 
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return 'SELECT version();';
@@ -593,7 +596,9 @@ function buildOracleSchemaQuery(tableName: string): string {
  * Build schema query based on database driver
  */
 export function buildSchemaQuery(driver: string, tableName: string): string {
-  const driverLower = driver.toLowerCase();
+  const dialect = sqlDialect(driver);
+  const driverLower =
+    dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
   if (driverLower.includes('oracle')) {
     return buildOracleSchemaQuery(tableName);
   }
@@ -670,7 +675,9 @@ export function buildListTablesQuery(
   schema?: string,
   includeViews: boolean = false
 ): string {
-  const driverLower = driver.toLowerCase();
+  const dialect = sqlDialect(driver);
+  const driverLower =
+    dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
   const safeSchema = schema ? sanitizeIdentifier(schema) : null;
 
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
@@ -815,8 +822,13 @@ export function convertToCSV(columns: string[], rows: any[][], includeHeaders = 
       }
 
       // Convert to string and escape quotes
-      const strVal = String(val);
-      if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+      const strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+      if (
+        strVal.includes(',') ||
+        strVal.includes('"') ||
+        strVal.includes('\n') ||
+        strVal.includes('\r')
+      ) {
         return `"${strVal.replace(/"/g, '""')}"`;
       }
       return strVal;

@@ -31,6 +31,11 @@ describe.skipIf(!available)('SQLite execution', () => {
     const result = await client.executeQuery(connection, 'SELECT * FROM notes');
     expect(result.rows).toEqual([[1, 'Comma, newline\nand "quotes"', null]]);
   });
+  it('preserves large integers and repeated column names in real CLI output', async () => {
+    const result = await client.executeQuery(connection, 'SELECT 1 AS id, 9007199254740993 AS id');
+    expect(result.columns).toEqual(['id', 'id']);
+    expect(result.rows).toEqual([[1, '9007199254740993']]);
+  });
   it('reads table names and SQLite schema flags', async () => {
     expect(await client.listTables(connection)).toMatchObject([
       { name: 'notes', table_name: 'notes' },

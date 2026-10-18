@@ -595,7 +595,7 @@
         },
         "includeMigrationScript": {
           "type": "boolean",
-          "description": "Generate SQL migration script",
+          "description": "Include a commented migration review outline; never executed",
           "default": false
         }
       },
@@ -652,6 +652,37 @@
       },
       "required": [
         "connectionId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_table_stats",
+    "description": "Get catalog row estimates and data/index storage without scanning the table; unavailable values are null",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "tableName": {
+          "type": "string"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId",
+        "tableName"
       ],
       "additionalProperties": false
     },

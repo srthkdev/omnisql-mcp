@@ -110,7 +110,6 @@ Use absolute paths in client configuration. The path is the workspace directory,
 | `OMNISQL_TIMEOUT` | Query timeout in milliseconds, where supported by the driver | `30000` |
 | `OMNISQL_DEBUG` | Write diagnostic logs to stderr | `false` |
 | `OMNISQL_UPDATE_NOTIFIER` | Enable the daily npm version check and update notice | `true` |
-| `OMNISQL_CLI_PATH` | External client CLI for unsupported-driver fallback | Unset |
 | `OMNISQL_POOL_MIN` | Minimum pooled connections | `0` |
 | `OMNISQL_POOL_MAX` | Maximum pooled connections | `4` |
 | `OMNISQL_POOL_IDLE_TIMEOUT` | Idle connection timeout, milliseconds | `30000` |

@@ -58,6 +58,7 @@ export interface QueryResult {
 }
 
 export interface SchemaInfo {
+  partial?: boolean;
   tableName: string;
   columns: ColumnInfo[];
   indexes: IndexInfo[];
@@ -77,6 +78,10 @@ export interface ColumnInfo {
 }
 
 export interface IndexInfo {
+  primary?: boolean;
+  definition?: string;
+  predicate?: string;
+  valid?: boolean;
   name: string;
   columns: string[];
   unique: boolean;
@@ -84,6 +89,8 @@ export interface IndexInfo {
 }
 
 export interface ConstraintInfo {
+  definition?: string;
+  nameIsGenerated?: boolean;
   name: string;
   type: 'PRIMARY_KEY' | 'FOREIGN_KEY' | 'UNIQUE' | 'CHECK';
   columns: string[];
@@ -120,6 +127,11 @@ export interface ConnectionTest {
 }
 
 export interface DatabaseStats {
+  totalSizeBytes?: string | null;
+  sizeScope?: string;
+  sizeComplete?: boolean;
+  estimated?: boolean;
+  notes?: string[];
   connectionId: string;
   tableCount: number;
   totalSize: string;
@@ -208,6 +220,11 @@ export interface TableDiff {
   status: 'added' | 'removed' | 'modified' | 'unchanged';
   columnDiffs?: ColumnDiff[];
   indexDiffs?: IndexDiff[];
+  constraintDiffs?: {
+    constraintName: string;
+    status: 'added' | 'removed' | 'modified';
+    changes?: string[];
+  }[];
 }
 
 export interface ColumnDiff {

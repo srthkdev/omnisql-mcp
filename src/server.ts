@@ -7,6 +7,7 @@ import {
   CallToolRequestSchema,
   ErrorCode,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   McpError,
   ReadResourceRequestSchema,
@@ -33,7 +34,7 @@ import { ConnectionPoolManager } from './pools/index.js';
 import { sshTunnelManager } from './net/ssh-tunnel.js';
 import { TransactionManager } from './managers/index.js';
 import { buildExplainQuery, parseExplainOutput } from './utils/query-analyzer.js';
-import { compareSchemas, parseTableSchema, generateMigrationScript } from './utils/schema-diff.js';
+import { compareSchemas, comparableSchema, generateMigrationScript } from './utils/schema-diff.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -65,6 +66,7 @@ const DATABASE_TOOLS = new Set([
   'list_tables',
   'get_table_schema',
   'get_database_stats',
+  'get_table_stats',
   'test_connection',
   'get_pool_stats',
 ]);
@@ -333,37 +335,17 @@ export class OmniSQLMCPServer {
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       try {
         if (
-          this.disabledTools.includes('get_table_schema') ||
+          this.disabledTools.includes('list_connections') ||
           this.disabledTools.includes('list_tables')
         )
           return { resources: [] };
         const connections = await this.getFilteredConnections();
-        const resources: any[] = [];
-
-        for (const connection of connections) {
-          try {
-            const tables = await this.workspaceClient.listTables(connection, undefined, false);
-
-            for (const table of tables) {
-              const tableName =
-                typeof table === 'string'
-                  ? table
-                  : [table.table_schema ?? table.schema, table.name || table.table_name]
-                      .filter(Boolean)
-                      .join('.');
-              if (tableName) {
-                resources.push({
-                  uri: `omnisql:///connections/${encodeURIComponent(connection.id)}/tables/${encodeURIComponent(tableName)}/schema`,
-                  mimeType: 'application/json',
-                  name: `"${tableName}" schema (${connection.name})`,
-                  description: `Schema information for table ${tableName} in ${connection.name}`,
-                });
-              }
-            }
-          } catch (error) {
-            this.log(`Failed to list tables for connection ${connection.name}: ${error}`, 'debug');
-          }
-        }
+        const resources = connections.map((connection) => ({
+          uri: `omnisql:///connections/${encodeURIComponent(connection.id)}`,
+          mimeType: 'application/json',
+          name: connection.name,
+          description: `${connection.driver} connection; browse tables on demand`,
+        }));
 
         return { resources };
       } catch (error) {
@@ -372,17 +354,69 @@ export class OmniSQLMCPServer {
       }
     });
 
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+      resourceTemplates: this.disabledTools.includes('get_table_schema')
+        ? []
+        : [
+            {
+              uriTemplate: 'omnisql:///connections/{connectionId}/tables/{tableName}/schema',
+              name: 'Table schema',
+              mimeType: 'application/json',
+              description: 'Read a table schema after choosing a connection and an allowed table',
+            },
+          ],
+    }));
+
     // Get schema information for a specific table
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       try {
-        if (this.disabledTools.includes('get_table_schema'))
-          throw new Error('Schema access is disabled');
         const uri = new URL(request.params.uri);
         if (uri.protocol !== 'omnisql:') throw new Error('Invalid resource URI');
         const parts = uri.pathname
           .split('/')
           .filter(Boolean)
           .map((p) => decodeURIComponent(p));
+        if (
+          parts[0] === 'connections' &&
+          (parts.length === 2 || (parts.length === 3 && parts[2] === 'tables'))
+        ) {
+          const connection = await this.getConnection(parts[1]);
+          if (!connection) throw new Error('Connection not found');
+          if (parts.length === 2) {
+            if (this.disabledTools.includes('get_connection_info'))
+              throw new Error('Connection detail access is disabled');
+            return {
+              contents: [
+                {
+                  uri: request.params.uri,
+                  mimeType: 'application/json',
+                  text: JSON.stringify({
+                    ...redactConnection(connection),
+                    tablesUri: `omnisql:///connections/${encodeURIComponent(connection.id)}/tables`,
+                  }),
+                },
+              ],
+            };
+          }
+          if (this.disabledTools.includes('list_tables'))
+            throw new Error('Table listing is disabled');
+          const tables = await this.workspaceClient.listTables(connection, undefined, true);
+          const result = tables.map((t) => ({
+            ...t,
+            schemaUri: `omnisql:///connections/${encodeURIComponent(connection.id)}/tables/${encodeURIComponent([t.table_schema, t.name].filter(Boolean).join('.'))}/schema`,
+          }));
+          return {
+            contents: [
+              {
+                uri: request.params.uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(result),
+              },
+            ],
+          };
+        }
+        if (this.disabledTools.includes('get_table_schema'))
+          throw new Error('Schema access is disabled');
         const modern =
           parts.length === 5 &&
           parts[0] === 'connections' &&
@@ -804,7 +838,7 @@ export class OmniSQLMCPServer {
             },
             includeMigrationScript: {
               type: 'boolean',
-              description: 'Generate SQL migration script',
+              description: 'Include a commented migration review outline; never executed',
               default: false,
             },
           },
@@ -838,6 +872,16 @@ export class OmniSQLMCPServer {
           connectionId: { type: 'string', description: 'Saved connection ID or name' },
         },
         required: ['connectionId'],
+      },
+    });
+    tools.push({
+      name: 'get_table_stats',
+      description:
+        'Get catalog row estimates and data/index storage without scanning the table; unavailable values are null',
+      inputSchema: {
+        type: 'object',
+        properties: { connectionId: { type: 'string' }, tableName: { type: 'string' } },
+        required: ['connectionId', 'tableName'],
       },
     });
     for (const name of ['read_result', 'read_result_cell', 'read_export']) {
@@ -965,6 +1009,21 @@ export class OmniSQLMCPServer {
           case 'list_databases':
             return await this.handleListDatabases(args as { connectionId: string });
 
+          case 'get_table_stats': {
+            const connection = await this.getConnection(
+              args.connectionId as string,
+              args.database as string | undefined
+            );
+            if (!connection) throw new Error('Connection not found');
+            const result = await this.workspaceClient.getTableStats(
+              connection,
+              args.tableName as string
+            );
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+              structuredContent: result,
+            };
+          }
           case 'read_result':
           case 'read_result_cell':
           case 'read_export': {
@@ -1845,17 +1904,22 @@ export class OmniSQLMCPServer {
 
     const format = args.format || 'text';
     this.accessPolicy.assertQuery(connection, args.query, true);
-    const explainQuery = buildExplainQuery(
-      connection.driver,
-      args.query,
-      args.analyze || false,
-      format
-    );
-
-    // Oracle needs two statements in one session (EXPLAIN PLAN, then DBMS_XPLAN).
-    const result = connection.driver.toLowerCase().includes('oracle')
-      ? await this.workspaceClient.explainOracleQuery(connection, args.query)
-      : await this.workspaceClient.executeQuery(connection, explainQuery, { readOnly: true });
+    const dialect = connection.driver.toLowerCase();
+    const isSqlServer = /mssql|sqlserver|microsoft/.test(dialect);
+    if (isSqlServer && args.analyze)
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'SQL Server supports estimated plans here; analyze is unavailable'
+      );
+    const result = isSqlServer
+      ? await this.workspaceClient.explainSqlServerQuery(connection, args.query, format)
+      : dialect.includes('oracle')
+        ? await this.workspaceClient.explainOracleQuery(connection, args.query)
+        : await this.workspaceClient.executeQuery(
+            connection,
+            buildExplainQuery(connection.driver, args.query, args.analyze || false, format),
+            { readOnly: true, trustedMetadata: true }
+          );
     const explainResult = parseExplainOutput(connection.driver, result.rows, args.query, format);
 
     return {
@@ -1891,35 +1955,21 @@ export class OmniSQLMCPServer {
     const sourceTables = await this.workspaceClient.listTables(sourceConn);
     const targetTables = await this.workspaceClient.listTables(targetConn);
 
-    // Get schema for each table and convert to comparable format
-    const sourceSchemas = await Promise.all(
-      sourceTables.map(async (table) => {
-        const schema = await this.workspaceClient.getTableSchema(sourceConn, table.name);
-        // Convert SchemaInfo columns to the format expected by parseTableSchema
-        const rows = schema.columns.map((col) => [
-          col.name,
-          col.type,
-          col.nullable ? 'YES' : 'NO',
-          col.defaultValue || null,
-        ]);
-        const columns = ['column_name', 'data_type', 'is_nullable', 'column_default'];
-        return parseTableSchema(table.name, rows, columns);
-      })
-    );
-
-    const targetSchemas = await Promise.all(
-      targetTables.map(async (table) => {
-        const schema = await this.workspaceClient.getTableSchema(targetConn, table.name);
-        const rows = schema.columns.map((col) => [
-          col.name,
-          col.type,
-          col.nullable ? 'YES' : 'NO',
-          col.defaultValue || null,
-        ]);
-        const columns = ['column_name', 'data_type', 'is_nullable', 'column_default'];
-        return parseTableSchema(table.name, rows, columns);
-      })
-    );
+    const load = async (connection: DatabaseConnection, tables: any[]) => {
+      const schemas = [];
+      for (let offset = 0; offset < tables.length; offset += 4) {
+        const batch = await Promise.all(
+          tables.slice(offset, offset + 4).map(async (table) => {
+            const name = [table.table_schema, table.name].filter(Boolean).join('.');
+            return comparableSchema(await this.workspaceClient.getTableSchema(connection, name));
+          })
+        );
+        schemas.push(...batch);
+      }
+      return schemas;
+    };
+    const sourceSchemas = await load(sourceConn, sourceTables);
+    const targetSchemas = await load(targetConn, targetTables);
 
     const diff = await compareSchemas(sourceSchemas, targetSchemas, sourceConnId, targetConnId);
 

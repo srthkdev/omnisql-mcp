@@ -1,0 +1,527 @@
+[
+  {
+    "name": "list_connections",
+    "description": "List all available database connections",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "includeDetails": {
+          "type": "boolean",
+          "description": "Include detailed connection information",
+          "default": false
+        }
+      }
+    }
+  },
+  {
+    "name": "get_connection_info",
+    "description": "Get detailed information about a specific database connection",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    }
+  },
+  {
+    "name": "execute_query",
+    "description": "Execute a SQL query on a specific database connection (read-only queries)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection to use"
+        },
+        "query": {
+          "type": "string",
+          "description": "The SQL query to execute (SELECT statements only)"
+        },
+        "maxRows": {
+          "type": "number",
+          "description": "Maximum number of rows to return (default: 1000)",
+          "default": 1000
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "write_query",
+    "description": "Execute INSERT, UPDATE, or DELETE queries on a specific database connection",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection to use"
+        },
+        "query": {
+          "type": "string",
+          "description": "The SQL query to execute (INSERT, UPDATE, DELETE)"
+        }
+      },
+      "required": [
+        "connectionId",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "create_table",
+    "description": "Create new tables in the database",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "query": {
+          "type": "string",
+          "description": "CREATE TABLE statement"
+        }
+      },
+      "required": [
+        "connectionId",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "alter_table",
+    "description": "Modify existing table schema (add columns, rename tables, etc.)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "query": {
+          "type": "string",
+          "description": "ALTER TABLE statement"
+        }
+      },
+      "required": [
+        "connectionId",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "drop_table",
+    "description": "Remove a table from the database with safety confirmation",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "tableName": {
+          "type": "string",
+          "description": "Name of the table to drop"
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "Safety confirmation flag (must be true)"
+        }
+      },
+      "required": [
+        "connectionId",
+        "tableName",
+        "confirm"
+      ]
+    }
+  },
+  {
+    "name": "get_table_schema",
+    "description": "Get schema information for a specific table",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "tableName": {
+          "type": "string",
+          "description": "The name of the table to describe"
+        },
+        "includeIndexes": {
+          "type": "boolean",
+          "description": "Include index information",
+          "default": true
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId",
+        "tableName"
+      ]
+    }
+  },
+  {
+    "name": "export_data",
+    "description": "Export query results to various formats (CSV, JSON, etc.)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "query": {
+          "type": "string",
+          "description": "The SQL query to execute for export (SELECT only)"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "csv",
+            "json"
+          ],
+          "description": "Export format (csv or json)",
+          "default": "csv"
+        },
+        "includeHeaders": {
+          "type": "boolean",
+          "description": "Include column headers in export",
+          "default": true
+        },
+        "maxRows": {
+          "type": "number",
+          "description": "Maximum number of rows to export",
+          "default": 10000
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "test_connection",
+    "description": "Test connectivity to a database connection",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection to test"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    }
+  },
+  {
+    "name": "get_database_stats",
+    "description": "Get statistics and information about a database",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    }
+  },
+  {
+    "name": "list_tables",
+    "description": "List all tables in a database",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "schema": {
+          "type": "string",
+          "description": "Specific schema to list tables from (optional)"
+        },
+        "includeViews": {
+          "type": "boolean",
+          "description": "Include views in the results",
+          "default": false
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    }
+  },
+  {
+    "name": "append_insight",
+    "description": "Add a business insight or analysis note to the memo",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "insight": {
+          "type": "string",
+          "description": "The business insight or analysis note to store"
+        },
+        "connection": {
+          "type": "string",
+          "description": "Optional connection ID to associate with this insight"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional tags to categorize the insight"
+        }
+      },
+      "required": [
+        "insight"
+      ]
+    }
+  },
+  {
+    "name": "list_insights",
+    "description": "List all stored business insights and analysis notes",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "description": "Filter insights by connection ID (optional)"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Filter insights by tags (optional)"
+        }
+      }
+    }
+  },
+  {
+    "name": "begin_transaction",
+    "description": "Start a new database transaction",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    }
+  },
+  {
+    "name": "commit_transaction",
+    "description": "Commit an active transaction",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "description": "The transaction ID returned by begin_transaction"
+        }
+      },
+      "required": [
+        "transactionId"
+      ]
+    }
+  },
+  {
+    "name": "rollback_transaction",
+    "description": "Rollback an active transaction",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "description": "The transaction ID returned by begin_transaction"
+        }
+      },
+      "required": [
+        "transactionId"
+      ]
+    }
+  },
+  {
+    "name": "execute_in_transaction",
+    "description": "Execute a query within an active transaction",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "description": "The transaction ID returned by begin_transaction"
+        },
+        "query": {
+          "type": "string",
+          "description": "The SQL query to execute"
+        }
+      },
+      "required": [
+        "transactionId",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "explain_query",
+    "description": "Get the execution plan for a SQL query",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "query": {
+          "type": "string",
+          "description": "The SQL query to analyze"
+        },
+        "analyze": {
+          "type": "boolean",
+          "description": "Run EXPLAIN ANALYZE for actual execution stats",
+          "default": false
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "text",
+            "json"
+          ],
+          "description": "Output format for the execution plan",
+          "default": "text"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId",
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "compare_schemas",
+    "description": "Compare schemas between two database connections",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sourceConnectionId": {
+          "type": "string",
+          "description": "The source connection ID to compare from"
+        },
+        "targetConnectionId": {
+          "type": "string",
+          "description": "The target connection ID to compare to"
+        },
+        "includeMigrationScript": {
+          "type": "boolean",
+          "description": "Generate SQL migration script",
+          "default": false
+        }
+      },
+      "required": [
+        "sourceConnectionId",
+        "targetConnectionId"
+      ]
+    }
+  },
+  {
+    "name": "get_pool_stats",
+    "description": "Get connection pool statistics for a connection",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "The ID or name of the database connection"
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Optional database on the same server; reuses saved credentials and settings"
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    }
+  },
+  {
+    "name": "list_databases",
+    "description": "List databases accessible through a saved PostgreSQL, MySQL/MariaDB, or SQL Server connection",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string",
+          "description": "Saved connection ID or name"
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    }
+  }
+]

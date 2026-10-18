@@ -1,95 +1,119 @@
-# Usage Examples
+# Queries & workflows
 
-## Connection Management
+These examples use MCP tool names and JSON arguments. Ask your assistant to call the tool, or use the arguments in your MCP client's tool inspector.
 
-```
-"Show me all my database connections"
-"Test the connection to my PostgreSQL database"
-"Tell me about my connection named 'prod-db'"
-```
+## Inspect before querying
 
-## Running Queries
+Begin with `list_connections`. Then list tables on the connection you intend to use:
 
-### SELECT (safe)
-```sql
-"Run on my sales database: SELECT COUNT(*) FROM orders WHERE date > '2024-01-01'"
-
-"Execute on warehouse:
-SELECT
-    DATE_TRUNC('month', order_date) as month,
-    SUM(total_amount) as revenue
-FROM orders
-WHERE order_date >= '2024-01-01'
-GROUP BY 1"
+```json
+{
+  "connectionId": "analytics",
+  "includeViews": true
+}
 ```
 
-### INSERT/UPDATE/DELETE
-```sql
-"Insert into customers:
-INSERT INTO customers (name, email) VALUES ('John Doe', 'john@example.com')"
+Call `get_table_schema` before writing a query against an unfamiliar table:
 
-"Update email for customer 123:
-UPDATE customers SET email = 'new@example.com' WHERE customer_id = 123"
-
-"Delete test records:
-DELETE FROM test_orders WHERE created_date < '2024-01-01'"
+```json
+{
+  "connectionId": "analytics",
+  "tableName": "customers"
+}
 ```
 
-## Schema Operations
+## Read a result
 
-### Create tables
-```sql
-"Create a products table:
-CREATE TABLE products (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    price DECIMAL(10,2),
-    created_at TIMESTAMP DEFAULT NOW()
-)"
+Call `execute_query` with a small row limit:
+
+```json
+{
+  "connectionId": "sales",
+  "query": "SELECT name, city FROM customers ORDER BY name",
+  "maxRows": 20
+}
 ```
 
-### Modify tables
-```sql
-"Add a description column:
-ALTER TABLE products ADD COLUMN description TEXT"
+The response includes columns, rows, row count, timing, and a truncation indicator. Use an explicit limit or pagination for large queries rather than relying on the default cap for every SQL form.
+
+## Query another database
+
+A saved PostgreSQL connection pointing at `postgres` can discover other accessible databases through `list_databases`:
+
+```json
+{
+  "connectionId": "my-pg-server"
+}
 ```
 
-### Drop tables
-```
-"Drop the test_products table - confirm this action"
-```
+Then call `execute_query` with the chosen database:
 
-## Schema Inspection
-
-```
-"What's the schema of the users table?"
-"List all tables in my database"
-"Show me columns in the orders table"
+```json
+{
+  "connectionId": "my-pg-server",
+  "database": "app_logs",
+  "query": "SELECT level, count(*) FROM events GROUP BY level"
+}
 ```
 
-## Data Export
+This opens the target database with the saved settings. It does not edit your DBeaver connection.
 
-```
-"Export customer data to CSV:
-SELECT customer_id, name, email FROM customers"
+## Export a result
 
-"Export products as JSON:
-SELECT id, name, price FROM products WHERE active = true"
-```
+Call `export_data` with a read-only query:
 
-## Storing Notes
-
-```
-"Save this insight: Q4 showed 23% increase in mobile orders. Tag as 'quarterly'"
-"Show me all insights tagged 'quarterly'"
+```json
+{
+  "connectionId": "sales",
+  "query": "SELECT name, city FROM customers",
+  "format": "csv",
+  "maxRows": 1000
+}
 ```
 
-## Safety Features
+Choose `json` for an array of objects. Review exported data before sharing it with other services.
 
-Dangerous operations are blocked or require confirmation:
+## Explain a query
 
+```json
+{
+  "connectionId": "analytics",
+  "query": "SELECT * FROM orders WHERE customer_id = 42",
+  "analyze": false,
+  "format": "text"
+}
 ```
-"DROP DATABASE production"  -- blocked
-"DELETE FROM users"         -- warns about missing WHERE
-"Drop the test_table"       -- requires confirmation
+
+Call `explain_query` with these arguments. `analyze` can execute the query on engines that support it. Oracle provides an estimated plan only and rejects `analyze`.
+
+## Compare two schemas
+
+```json
+{
+  "sourceConnectionId": "sales",
+  "targetConnectionId": "sales-v2",
+  "includeMigrationScript": true
+}
 ```
+
+`compare_schemas` returns a diff and an optional SQL migration preview. Review the script and driver limitations before applying it yourself.
+
+## Try the isolated workspace
+
+From a repository checkout:
+
+```bash
+npm ci
+npm run build
+npm run demo
+```
+
+The demo creates two SQLite files under `.demo/` and exercises the MCP tools against synthetic customers and orders. It leaves your saved workspaces untouched.
+
+To also test a temporary PostgreSQL cluster, provide the directory containing `initdb` and `pg_ctl`:
+
+```bash
+OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin npm run demo -- --postgres
+```
+
+That cluster uses a random password, listens on loopback, and is stopped and removed after the run.

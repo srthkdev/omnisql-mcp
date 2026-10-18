@@ -5,11 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Replaced Docusaurus with a custom static website, searchable documentation, and client setup commands.
+- Rewrote the database, configuration, tool, and access guides; added site link and media checks to CI.
+- Replaced the illustrated walkthrough with a real Codex CLI session and included its terminal capture.
+- Updated the logo, README, and site colors.
+
 ## [2.2.0] - 2026-10-18
 
 ### Added
 - Update notices check npm once a day, write only to stderr, and support `OMNISQL_UPDATE_NOTIFIER=false`.
-- Original logo, setup GIF, and a recorded walkthrough using isolated SQLite and PostgreSQL fixtures.
+- Integration demo using isolated SQLite and PostgreSQL fixtures, with README media.
 - Guided `npx omnisql-mcp install` setup for Claude Code, Codex, and OpenCode, with workspace, read-only, and connection allowlist prompts.
 - **Native Oracle support** via `oracledb` in Thin mode. Oracle connections previously fell through to the CLI fallback and failed.
 

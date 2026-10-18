@@ -776,7 +776,7 @@
   },
   {
     "name": "read_result_cell",
-    "description": "Read a long cell in UTF-16 string chunks; follow nextOffset",
+    "description": "Read a long cell in UTF-16 chunks; follow nextOffset. Concatenate text; parse JSON when encoding is json",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -5,6 +5,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { QueryResult } from '../types.js';
+import { QueryGate } from './concurrency.js';
+
+function previewText(text: string, budget: number): string {
+  let low = 0,
+    high = Math.min(text.length, budget);
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(JSON.stringify(text.slice(0, middle) + '…')) <= budget) low = middle;
+    else high = middle - 1;
+  }
+  return text.slice(0, low) + '…';
+}
+interface ClippedCell {
+  row: number;
+  column: number;
+  length: number;
+  encoding: 'text' | 'json';
+}
 
 interface Entry extends ArtifactSource {
   id: string;
@@ -26,6 +44,9 @@ export interface ArtifactSource {
 export class ResultArtifacts {
   private directory = mkdtempSync(join(tmpdir(), 'omnisql-results-'));
   private waitingWrites = 0;
+  private closed = false;
+  private readGate = new QueryGate(2, 8);
+  private reads = new Set<Promise<unknown>>();
   private entries = new Map<string, Entry>();
   private writes: Promise<void> = Promise.resolve();
   private sweep: ReturnType<typeof setInterval>;
@@ -38,6 +59,24 @@ export class ResultArtifacts {
       void this.expire();
     }, 60000);
     this.sweep.unref();
+  }
+  private read<T>(work: () => Promise<T>): Promise<T> {
+    if (this.closed) return Promise.reject(new Error('Result storage is closed'));
+    const pending = (async () => {
+      const release = await this.readGate.acquire(30000);
+      try {
+        if (this.closed) throw new Error('Result storage is closed');
+        return await work();
+      } finally {
+        release();
+      }
+    })();
+    this.reads.add(pending);
+    void pending.then(
+      () => this.reads.delete(pending),
+      () => this.reads.delete(pending)
+    );
+    return pending;
   }
   private async expire() {
     for (const entry of this.entries.values())
@@ -58,6 +97,7 @@ export class ResultArtifacts {
     }
   }
   async save(result: QueryResult, source: ArtifactSource) {
+    if (this.closed) throw new Error('Result storage is closed');
     const buffers: Buffer[] = [];
     const offsets = [0];
     let bytes = 0;
@@ -76,6 +116,7 @@ export class ResultArtifacts {
     });
   }
   async export(text: string | Buffer, format: string, source: ArtifactSource) {
+    if (this.closed) throw new Error('Result storage is closed');
     return this.write(typeof text === 'string' ? Buffer.from(text) : text, {
       ...source,
       offsets: [],
@@ -85,6 +126,7 @@ export class ResultArtifacts {
     });
   }
   private write(data: Buffer, details: Omit<Entry, 'id' | 'file' | 'bytes' | 'expiresAt'>) {
+    if (this.closed) throw new Error('Result storage is closed');
     if (this.waitingWrites >= 8) throw new Error('Result storage queue is full; retry later');
     this.waitingWrites++;
     const pending = this.writes
@@ -158,104 +200,148 @@ export class ResultArtifacts {
       const b = Buffer.alloc(end - start);
       const read = await handle.read(b, 0, b.length, start);
       if (read.bytesRead !== b.length) throw new Error('Result artifact is incomplete');
-      return b.toString('utf8');
+      return b;
     } finally {
       await handle.close();
     }
   }
-  async page(id: string, offset = 0, limit = 100, columnOffset = 0, columnLimit = 50) {
+  page(id: string, offset = 0, limit = 100, columnOffset = 0, columnLimit = 50) {
+    return this.read(() => this.pageNow(id, offset, limit, columnOffset, columnLimit));
+  }
+  private async pageNow(
+    id: string,
+    offset: number,
+    limit: number,
+    columnOffset: number,
+    columnLimit: number
+  ) {
     const e = this.get(id);
     if (e.format !== 'jsonl') throw new Error('Use read_export to read this export');
     const total = e.offsets.length - 1;
     if (offset > total) throw new Error('Row offset exceeds stored result');
-    const columns = e.columns.slice(columnOffset, columnOffset + Math.min(columnLimit, 100));
-    const rows: unknown[][] = [];
-    const clippedCells: { row: number; column: number; length: number }[] = [];
-    let bytes = 0;
-    let cursor = offset;
-    while (cursor < total && rows.length < Math.min(limit, 1000)) {
-      const row = JSON.parse(
-        await this.bytes(e, e.offsets[cursor], e.offsets[cursor + 1])
-      ) as unknown[];
-      const preview = row
-        .slice(columnOffset, columnOffset + Math.min(columnLimit, 100))
-        .map((v, index) => {
-          const column = columnOffset + index;
-          const text = typeof v === 'string' ? v : JSON.stringify(v);
-          if (
-            text &&
-            text.length > Math.min(4000, Math.floor(12000 / Math.max(1, columns.length)))
-          ) {
-            clippedCells.push({ row: cursor, column, length: text.length });
-            return (
-              text.slice(0, Math.min(4000, Math.floor(12000 / Math.max(1, columns.length)))) + '…'
-            );
-          }
-          return v;
-        });
-      const size = Buffer.byteLength(JSON.stringify(preview));
-      if (bytes + size > 65536 && rows.length) break;
-      if (size > 65536)
-        throw new Error('Row has too many columns for a page; select fewer columns');
-      rows.push(preview);
-      bytes += size;
-      cursor++;
+    const columns: string[] = [];
+    let columnBytes = 2;
+    for (const column of e.columns.slice(columnOffset, columnOffset + Math.min(columnLimit, 100))) {
+      const size = Buffer.byteLength(JSON.stringify(column)) + 1;
+      if (columnBytes + size > 16384) break;
+      columns.push(column);
+      columnBytes += size;
     }
-    return {
+    if (!columns.length && columnOffset < e.columns.length)
+      throw new Error('Result column name is too long to page; use a shorter SQL alias');
+    const rows: unknown[][] = [];
+    const clippedCells: ClippedCell[] = [];
+    const metadata = {
       ...this.describe(e),
       columns,
       columnOffset,
       nextColumnOffset:
         columnOffset + columns.length < e.columns.length ? columnOffset + columns.length : null,
       offset,
+    };
+    let bytes = Buffer.byteLength(
+      JSON.stringify({ ...metadata, rows, clippedCells, nextOffset: offset })
+    );
+    let cursor = offset;
+    while (cursor < total && rows.length < Math.min(limit, 1000)) {
+      const row = JSON.parse(
+        (await this.bytes(e, e.offsets[cursor], e.offsets[cursor + 1])).toString('utf8')
+      ) as unknown[];
+      const rowClipped: ClippedCell[] = [];
+      const budget = Math.min(4000, Math.floor(12000 / Math.max(1, columns.length)));
+      const preview = row.slice(columnOffset, columnOffset + columns.length).map((value, index) => {
+        const serialized =
+          typeof value === 'string' && value.length > budget ? undefined : JSON.stringify(value);
+        if (serialized !== undefined && Buffer.byteLength(serialized) <= budget) return value;
+        const text = typeof value === 'string' ? value : serialized!;
+        rowClipped.push({
+          row: cursor,
+          column: columnOffset + index,
+          length: text.length,
+          encoding: typeof value === 'string' ? 'text' : 'json',
+        });
+        return previewText(text, budget);
+      });
+      const size =
+        Buffer.byteLength(JSON.stringify(preview)) +
+        (rows.length ? 1 : 0) +
+        Buffer.byteLength(JSON.stringify(rowClipped)) -
+        2 +
+        (clippedCells.length && rowClipped.length ? 1 : 0);
+      if (bytes + size > 65500 && rows.length) break;
+      if (bytes + size > 65500)
+        throw new Error('Row has too many columns for a page; select fewer columns');
+      rows.push(preview);
+      clippedCells.push(...rowClipped);
+      bytes += size;
+      cursor++;
+    }
+    return {
+      ...metadata,
       rows,
       clippedCells,
       nextOffset: cursor < total ? cursor : null,
     };
   }
-  async cell(id: string, row: number, column: number, offset = 0, length = 16000) {
+  cell(id: string, row: number, column: number, offset = 0, length = 16000) {
+    return this.read(() => this.cellNow(id, row, column, offset, length));
+  }
+  private async cellNow(id: string, row: number, column: number, offset: number, length: number) {
     const e = this.get(id);
     if (e.format !== 'jsonl' || row >= e.offsets.length - 1 || column >= e.columns.length)
       throw new Error('Result cell does not exist');
-    const values = JSON.parse(await this.bytes(e, e.offsets[row], e.offsets[row + 1]));
+    const values = JSON.parse(
+      (await this.bytes(e, e.offsets[row], e.offsets[row + 1])).toString('utf8')
+    );
     const value = values[column];
     const text = typeof value === 'string' ? value : JSON.stringify(value);
     if (offset > text.length) throw new Error('Cell offset exceeds its length');
-    const end = Math.min(offset + Math.min(length, 16000), text.length);
+    let end = Math.min(offset + Math.min(length, 16000), text.length);
+    if (Buffer.byteLength(JSON.stringify(text.slice(offset, end))) > 48000) {
+      let low = offset,
+        high = end;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (Buffer.byteLength(JSON.stringify(text.slice(offset, middle))) <= 48000) low = middle;
+        else high = middle - 1;
+      }
+      end = low;
+    }
     return {
       resultId: id,
       row,
       column,
       offset,
+      encoding: typeof value === 'string' ? ('text' as const) : ('json' as const),
       text: text.slice(offset, end),
       length: text.length,
       nextOffset: end < text.length ? end : null,
     };
   }
-  async readExport(id: string, offset = 0, length = 16000) {
+  readExport(id: string, offset = 0, length = 16000) {
+    return this.read(() => this.readExportNow(id, offset, length));
+  }
+  private async readExportNow(id: string, offset: number, length: number) {
     const e = this.get(id);
     if (e.format === 'jsonl') throw new Error('Use read_result to read rows');
     if (offset > e.bytes) throw new Error('Export offset exceeds its length');
     // Base64 chunks use byte offsets; UTF-8 characters may cross chunk boundaries.
-    const end = Math.min(offset + Math.min(length, 48000), e.bytes);
-    const handle = await fs.open(e.file, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const b = Buffer.alloc(end - offset);
-      await handle.read(b, 0, b.length, offset);
-      return {
-        ...this.describe(e),
-        offset,
-        encoding: 'base64',
-        data: b.toString('base64'),
-        nextOffset: end < e.bytes ? end : null,
-      };
-    } finally {
-      await handle.close();
-    }
+    const end = Math.min(offset + Math.min(length, 45000), e.bytes);
+    const b = await this.bytes(e, offset, end);
+    return {
+      ...this.describe(e),
+      offset,
+      encoding: 'base64',
+      data: b.toString('base64'),
+      nextOffset: end < e.bytes ? end : null,
+    };
   }
+
   async close() {
+    this.closed = true;
     clearInterval(this.sweep);
     await this.writes;
+    await Promise.allSettled([...this.reads]);
     this.entries.clear();
     await fs.rm(this.directory, { recursive: true, force: true });
   }

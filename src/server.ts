@@ -5,6 +5,7 @@ import {
 } from './runtime/compression.js';
 import { PrivateNotes } from './runtime/notes.js';
 import { ResultArtifacts, type ArtifactSource } from './runtime/artifacts.js';
+import { connectionFingerprint } from './runtime/connection-identity.js';
 import { AccessPolicy } from './policy/access.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -65,6 +66,11 @@ const WRITE_TOOLS = [
 ];
 
 const DATABASE_TOOLS = new Set([
+  'write_query',
+  'create_table',
+  'alter_table',
+  'drop_table',
+  'begin_transaction',
   'execute_query',
   'export_data',
   'explain_query',
@@ -1045,8 +1051,7 @@ export class OmniSQLMCPServer {
           case 'read_result_cell':
           case 'read_export': {
             const source = this.artifacts.source(args.resultId as string);
-            const connection = await this.getConnection(source.connectionId, source.database);
-            if (!connection) throw new Error('Result connection is no longer accessible');
+            const connection = await this.resultConnection(source);
             await this.workspaceClient.assertQueryAccess(connection, source.query, false);
             const result =
               name === 'read_result'
@@ -1070,6 +1075,7 @@ export class OmniSQLMCPServer {
                       args.offset as number | undefined,
                       args.length as number | undefined
                     );
+            await this.resultConnection(source);
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(result) }],
               structuredContent: result,
@@ -1339,16 +1345,33 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
+    const source = this.artifactSource(connection, query);
     const result = await this.workspaceClient.executeQuery(connection, query, {
       maxRows,
       readOnly: true,
     });
 
-    return this.presentResult(
-      result,
-      { connectionId, database: args.database, query },
-      { query, connection: connection.name }
-    );
+    return this.presentResult(result, source, { query, connection: connection.name });
+  }
+
+  private artifactSource(connection: DatabaseConnection, query: string): ArtifactSource {
+    return {
+      connectionId: connection.id,
+      query,
+      connectionFingerprint: connectionFingerprint(connection),
+      policyRevision: this.accessPolicy.revision(),
+    };
+  }
+
+  private async resultConnection(source: ArtifactSource): Promise<DatabaseConnection> {
+    const connection = await this.getConnection(source.connectionId, source.database);
+    if (!connection) throw new Error('Result connection is no longer accessible');
+    if (
+      connectionFingerprint(connection) !== source.connectionFingerprint ||
+      this.accessPolicy.revision() !== source.policyRevision
+    )
+      throw new Error('Result connection or access policy changed; run the query again');
+    return connection;
   }
 
   private async presentResult(
@@ -1371,7 +1394,7 @@ export class OmniSQLMCPServer {
     };
   }
 
-  private async handleWriteQuery(args: { connectionId: string; query: string }) {
+  private async handleWriteQuery(args: { connectionId: string; database?: string; query: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
 
@@ -1400,7 +1423,7 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, validationError);
     }
 
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
     if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
@@ -1427,7 +1450,11 @@ export class OmniSQLMCPServer {
     };
   }
 
-  private async handleCreateTable(args: { connectionId: string; query: string }) {
+  private async handleCreateTable(args: {
+    connectionId: string;
+    database?: string;
+    query: string;
+  }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
 
@@ -1438,7 +1465,7 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Only CREATE TABLE statements are allowed');
     }
 
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
     if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
@@ -1465,7 +1492,7 @@ export class OmniSQLMCPServer {
     };
   }
 
-  private async handleAlterTable(args: { connectionId: string; query: string }) {
+  private async handleAlterTable(args: { connectionId: string; database?: string; query: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
 
@@ -1476,7 +1503,7 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Only ALTER TABLE statements are allowed');
     }
 
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
     if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
@@ -1505,6 +1532,7 @@ export class OmniSQLMCPServer {
 
   private async handleDropTable(args: {
     connectionId: string;
+    database?: string;
     tableName: string;
     confirm: boolean;
   }) {
@@ -1534,7 +1562,7 @@ export class OmniSQLMCPServer {
       };
     }
 
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
     if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
@@ -1625,6 +1653,7 @@ export class OmniSQLMCPServer {
     const maxRows = Math.min(Math.max(1, requestedRows), MAX_EXPORT_ROWS);
     const format = args.format || 'csv';
 
+    const source = this.artifactSource(connection, query);
     const result = await this.workspaceClient.executeQuery(connection, query, {
       maxRows,
       readOnly: true,
@@ -1650,11 +1679,11 @@ export class OmniSQLMCPServer {
         compression === 'none'
           ? text
           : await compressText(text, compression, connection.limits?.timeoutMs);
-      const stored = await this.artifacts.export(data, format + compressionExtension[compression], {
-        connectionId: args.connectionId,
-        database: args.database,
-        query,
-      });
+      const stored = await this.artifacts.export(
+        data,
+        format + compressionExtension[compression],
+        source
+      );
       const response = {
         ...stored,
         compression,
@@ -1822,9 +1851,9 @@ export class OmniSQLMCPServer {
   }
 
   // Transaction handlers
-  private async handleBeginTransaction(args: { connectionId: string }) {
+  private async handleBeginTransaction(args: { connectionId: string; database?: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
     if (connection && this.accessPolicy.isReadOnly(connection))
       throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
 
@@ -1878,15 +1907,16 @@ export class OmniSQLMCPServer {
 
     const transaction = this.transactionManager.getTransaction(args.transactionId);
     if (!transaction) throw new Error('Transaction not found or expired');
+    const scope = this.transactionManager.resultScope(args.transactionId);
+    const source = {
+      ...this.artifactSource(scope.connection, args.query),
+      policyRevision: scope.policyRevision,
+    };
     const result = await this.transactionManager.executeInTransaction(
       args.transactionId,
       args.query
     );
-    return this.presentResult(
-      result,
-      { connectionId: transaction.connectionId, query: args.query },
-      { transactionId: args.transactionId }
-    );
+    return this.presentResult(result, source, { transactionId: args.transactionId });
   }
 
   // Query analysis handlers

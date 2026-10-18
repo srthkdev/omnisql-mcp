@@ -24,6 +24,36 @@ function policy(rule: object, connections?: object): AccessPolicy {
   return new AccessPolicy(file);
 }
 describe('access policies', () => {
+  it('applies a database-qualified rule to the configured default and only once', () => {
+    const p = policy({}, { 'sales/app': { readOnly: true, denyTables: ['public.secrets'] } });
+    expect(p.isReadOnly(c)).toBe(true);
+    expect(p.allowsTable(c, 'public.secrets')).toBe(false);
+    expect(() => p.assertQuery(c, 'DELETE FROM public.orders WHERE id=1', false)).toThrow();
+    const base = policy({}, { sales: { readOnly: true } });
+    expect(base.rulesFor(c)).toHaveLength(2);
+  });
+  it('confines default connections when another database has its own policy', () => {
+    for (const driver of ['mysql', 'mssql', 'clickhouse']) {
+      const p = policy({}, { 'sales/prod': { readOnly: true }, 'sales/app': {} });
+      const connection = { ...c, driver };
+      const table = driver === 'mssql' ? 'prod.dbo.orders' : 'prod.orders';
+      expect(() => p.assertQuery(connection, `UPDATE ${table} SET id=2 WHERE id=1`, false)).toThrow(
+        /selected database/
+      );
+      expect(() => p.assertQuery(connection, 'SELECT 1', true)).not.toThrow();
+    }
+  });
+  it('requires exact declared database selections on engines with configurable name collations', () => {
+    for (const driver of ['mysql', 'mssql']) {
+      const p = policy({}, { 'sales/app': { readOnly: true }, 'sales/dev': {} });
+      expect(p.allowsDatabase({ ...c, driver })).toBe(true);
+      expect(p.allowsDatabase({ ...c, driver, database: 'APP' })).toBe(false);
+      expect(p.allowsDatabase({ ...c, driver, database: 'ápp' })).toBe(false);
+      expect(p.allowsDatabase({ ...c, driver }, 'unlisted')).toBe(false);
+      expect(p.allowsDatabase({ ...c, driver }, 'dev')).toBe(true);
+      expect(() => p.assertConnection({ ...c, driver, database: 'APP' })).toThrow(/policy/);
+    }
+  });
   it('reloads changed policies and fails closed for malformed or removed files', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnisql-policy-reload-'));
     directories.push(dir);

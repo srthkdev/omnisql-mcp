@@ -6,16 +6,13 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { QueryResult } from '../types.js';
 
-interface Entry {
+interface Entry extends ArtifactSource {
   id: string;
   file: string;
   bytes: number;
   offsets: number[];
   columns: string[];
   expiresAt: number;
-  connectionId: string;
-  database?: string;
-  query: string;
   truncated: boolean;
   format: string;
 }
@@ -23,6 +20,8 @@ export interface ArtifactSource {
   connectionId: string;
   database?: string;
   query: string;
+  connectionFingerprint: string;
+  policyRevision: string;
 }
 export class ResultArtifacts {
   private directory = mkdtempSync(join(tmpdir(), 'omnisql-results-'));
@@ -138,7 +137,13 @@ export class ResultArtifacts {
   }
   source(id: string): ArtifactSource {
     const e = this.get(id);
-    return { connectionId: e.connectionId, database: e.database, query: e.query };
+    return {
+      connectionId: e.connectionId,
+      database: e.database,
+      query: e.query,
+      connectionFingerprint: e.connectionFingerprint,
+      policyRevision: e.policyRevision,
+    };
   }
   private get(id: string) {
     if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid result ID');

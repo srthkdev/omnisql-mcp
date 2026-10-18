@@ -1,7 +1,8 @@
 import { assertQueryAccess } from '../policy/identities.js';
 import { validateStatement } from '../policy/sql.js';
 import { AccessPolicy } from '../policy/access.js';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { connectionFingerprint as fingerprint } from '../runtime/connection-identity.js';
 import type { PoolClient as PgPoolClient } from 'pg';
 import type { PoolConnection as MySqlPoolConnection } from 'mysql2/promise';
 import type sql from 'mssql';
@@ -20,9 +21,6 @@ interface ActiveTransaction {
   fingerprint: string;
   policyRevision: string;
 }
-const fingerprint = (c: DatabaseConnection) =>
-  createHash('sha256').update(JSON.stringify(c)).digest('hex');
-
 export class TransactionManager {
   private transactions = new Map<string, ActiveTransaction>();
   private pending = 0;
@@ -256,6 +254,12 @@ export class TransactionManager {
   getTransaction(id: string): Transaction | null {
     const active = this.transactions.get(id);
     return active ? { ...active.transaction } : null;
+  }
+
+  resultScope(id: string): { connection: DatabaseConnection; policyRevision: string } {
+    const active = this.transactions.get(id);
+    if (!active) throw new Error(`Transaction ${id} not found or expired`);
+    return { connection: active.connection, policyRevision: active.policyRevision };
   }
 
   getActiveTransactions(): Transaction[] {

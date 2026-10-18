@@ -60,9 +60,24 @@ Rules apply to query sources in joins, subqueries, unions, and CTEs, and to expo
 
 Use schema-qualified names in SQL and policy. A bare allow rule permits only a bare SQL reference; qualified denies also protect that reference after catalog resolution. All configured allowlists intersect, and a deny on any spelling of the resolved identity wins. Restricted queries need catalog visibility and support at most 64 distinct object references. Missing, ambiguous, or unsupported identities fail closed. Oracle synonyms and non-ASCII Oracle identifiers currently require database grants without application table rules; they are not resolved by this policy layer. Identifiers containing literal dots are rejected under restrictions.
 
-With database/table/function restrictions or a `connectionId/database` target, SQL references must stay inside the selected database. Choose another database using the tool's `database` argument, even if both names appear in a policy's `databases` list. Cross-database joins, SQL Server linked-server names, Oracle database links, and attached SQLite databases are rejected in this scope. Each selected database keeps its own settings and pool.
+With database/table/function restrictions, any database-qualified policy for an instance, or a `connectionId/database` target, SQL references must stay inside the selected database. Choose another database using the tool's `database` argument, even if both names appear in a policy's `databases` list. Cross-database joins, SQL Server linked-server names, Oracle database links, and attached SQLite databases are rejected in this scope. Each selected database keeps its own settings and pool.
 
-Stored result and export handles recheck these resolved identities on every read. Transaction authorization uses the transaction's existing lease, so a pool size of one does not deadlock while checking metadata.
+Database-qualified policy keys also apply when that database is the connection's configured default. Base and database rules intersect:
+
+```json
+{
+  "version": 1,
+  "connections": {
+    "server": { "denyTables": ["private.*"] },
+    "server/prod": { "readOnly": true },
+    "server/dev": {}
+  }
+}
+```
+
+On MySQL/MariaDB and SQL Server, once database-qualified rules exist for an instance, list every selectable database with its exact spelling, using `{}` when no additional restrictions are needed. Unlisted spellings are denied, including case or accent aliases that the server might otherwise resolve to the same database. This keeps database selection independent of the server's configurable name collation. Use separate configured instance IDs when different database defaults or credentials are needed.
+
+Stored result and export handles recheck these resolved identities on every read. Handles also bind to the original connection configuration and application policy revision, captured before execution. Changing the target, credentials, limits, or application policy requires running the query again; repointing an instance ID cannot expose its previous results. This concerns application configuration and does not retroactively retract data already delivered to the client. Transaction authorization uses the transaction's existing lease, so a pool size of one does not deadlock while checking metadata.
 
 Restricted SQL is parsed by the bundled Rust WebAssembly analyzer. PostgreSQL folds only ASCII letters in unquoted CTE aliases; quoted PostgreSQL aliases preserve case. SQLite and DuckDB fold ASCII alias letters even when quoted. On MySQL/MariaDB and SQL Server, spell CTE aliases identically in their definition and references: the parser cannot infer the live catalog collation and keeps differently spelled names as physical references to check. Unsupported or dynamic table references, query-level settings, locks, and unknown functions are denied. Common aggregate, string, and date functions are permitted; additional functions require exact `allowFunctions` entries. Allowing a function also trusts its database-defined behavior. The parser does not inspect view definitions, row policies, triggers, or stored functions. Use database grants and views to constrain underlying data.
 

@@ -9,6 +9,7 @@ import {
   ReadResourceRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import { checkForUpdate } from './update-check.js';
 import { WorkspaceConfigParser } from './config-parser.js';
 import { WorkspaceClient } from './workspace-client.js';
 import { BusinessInsight, DatabaseConnection, SchemaDiff } from './types.js';
@@ -1370,6 +1371,9 @@ class OmniSQLMCPServer {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
 
+    const policyError = validateQuery(query) || enforceReadOnly(query);
+    if (policyError) throw new McpError(ErrorCode.InvalidParams, policyError);
+
     // Validate query - only SELECT queries for export
     if (!query.toLowerCase().trimStart().startsWith('select')) {
       throw new McpError(ErrorCode.InvalidParams, 'Only SELECT queries are allowed for export');
@@ -1636,6 +1640,9 @@ class OmniSQLMCPServer {
     analyze?: boolean;
     format?: 'text' | 'json';
   }) {
+    const policyError =
+      validateQuery(args.query) || (this.readOnly ? enforceReadOnly(args.query) : null);
+    if (policyError) throw new McpError(ErrorCode.InvalidParams, policyError);
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.getConnection(connectionId, args.database);
 
@@ -1801,6 +1808,7 @@ class OmniSQLMCPServer {
       await this.server.connect(transport);
 
       this.log('OmniSQL MCP server started successfully');
+      void checkForUpdate(VERSION);
 
       // Periodic cleanup of stale transactions (leaked transactions older than 1 hour)
       this.staleCleanupInterval = setInterval(async () => {
@@ -1869,6 +1877,7 @@ Environment Variables:
   OMNISQL_PROJECT              Name of the DB client project/workspace folder (default: "General")
   OMNISQL_TIMEOUT              Query timeout in milliseconds (default: 30000)
   OMNISQL_DEBUG                Enable debug logging (true/false)
+  OMNISQL_UPDATE_NOTIFIER      Check npm for updates (default: true; set false to disable)
   OMNISQL_READ_ONLY            Disable all write operations (true/false)
   OMNISQL_ALLOWED_CONNECTIONS  Comma-separated whitelist of connection IDs or names
   OMNISQL_DISABLED_TOOLS       Comma-separated list of tools to disable

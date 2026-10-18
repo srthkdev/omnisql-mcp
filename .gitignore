@@ -51,3 +51,6 @@ test-results/
 database-mcp/
 # Copied from scripts/install.sh by the docs build
 docs-site/static/install.sh
+
+# Isolated sample databases and demo workspace
+.demo/

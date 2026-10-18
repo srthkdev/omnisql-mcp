@@ -261,3 +261,23 @@ describe('getTestQuery', () => {
     expect(getTestQuery('unknown')).toContain('SELECT');
   });
 });
+
+describe('read-only bypass prevention', () => {
+  it.each([
+    'SELECT 1; DELETE FROM users WHERE id=1',
+    'WITH deleted AS (DELETE FROM users RETURNING *) SELECT * FROM deleted',
+    'WITH c AS (SELECT 1) UPDATE users SET name=1 WHERE id=1',
+    'EXPLAIN ANALYZE DELETE FROM users WHERE id=1',
+    "SELECT * INTO OUTFILE '/tmp/output' FROM users",
+    'PRAGMA query_only=OFF',
+    "SELECT writefile('/tmp/test','content')",
+  ])('rejects %s', (query) => expect(enforceReadOnly(query)).not.toBeNull());
+  it.each([
+    "SELECT 'a; DELETE FROM users' AS value;",
+    'SELECT $$a; UPDATE users$$ AS value;',
+    '/* leading comment */ SELECT 1; -- tail',
+    'WITH c AS (SELECT 1) SELECT * FROM c',
+  ])('allows a single read with quoted text or comments', (query) =>
+    expect(enforceReadOnly(query)).toBeNull()
+  );
+});

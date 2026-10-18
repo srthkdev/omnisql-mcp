@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.2.0] - 2026-10-18
 
 ### Added
+- Update notices check npm once a day, write only to stderr, and support `OMNISQL_UPDATE_NOTIFIER=false`.
+- Original logo, setup GIF, and a recorded walkthrough using isolated SQLite and PostgreSQL fixtures.
 - Guided `npx omnisql-mcp install` setup for Claude Code, Codex, and OpenCode, with workspace, read-only, and connection allowlist prompts.
 - **Native Oracle support** via `oracledb` in Thin mode. Oracle connections previously fell through to the CLI fallback and failed.
 
@@ -16,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - MySQL TLS settings now honor DBeaver's enabled SSL handler, certificate paths, and verification choice while preserving explicit driver properties (#31).
+- Read-only checks reject stacked statements, write CTEs, SELECT INTO, and mutating PRAGMAs; export and read-only EXPLAIN calls use the same checks. SQLite runs in CLI safe mode.
+- SQLite result parsing preserves commas, newlines, numbers, and nulls; schema flags and query plans are read correctly. SQL is passed as an argument so CLI dot commands cannot run through multiline input.
+- Table listings expose a consistent name for schema comparison.
 - Oracle SQL delimiters and metadata parsing; TNS aliases reject SSH configurations they cannot honor.
 - Release packaging rebuilds compiled files before packing; CI exercises the packed server, custom workspace projects (#30), read-only checks, and whitelists.
 - Updated dependencies to clear reported vulnerabilities and removed the shell helper from the build.

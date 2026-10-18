@@ -87,3 +87,9 @@ Database credentials and network settings are read locally from the workspace. C
 Query results are returned to your MCP client and can become part of the assistant's context. Local analysis notes are separate from database writes. They are stored under a private workspace and access-policy scope, limited to 1 MiB and 1,000 entries. Changing that scope starts a separate note collection. Disable `append_insight` if you do not want notes stored locally. Old shared temporary notes are not imported.
 
 The optional update check contacts npm for package version information. It sends no connection settings or credentials and can be disabled with `OMNISQL_UPDATE_NOTIFIER=false`.
+
+## Verify encrypted connections
+
+Certificate-verification modes check the database hostname through SSH as well as on direct connections. An explicitly configured certificate or key path must be readable; OmniSQL fails instead of silently choosing another trust store. PostgreSQL SSL handler certificate properties are supported alongside driver properties. MySQL `VERIFY_IDENTITY` performs both chain and hostname checks; `VERIFY_CA` checks the chain only.
+
+IAM connections without an explicit TLS mode default to verified TLS. Configure the database CA bundle when the issuing CA is absent from the system trust store. Explicit mode choices retain their documented driver semantics; disabling TLS is incompatible with IAM authentication. `ssl.serverName` can select the certificate hostname when it differs from the database host recorded for an SSH target.

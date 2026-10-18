@@ -30,6 +30,20 @@ describe('resolvePostgresSsl', () => {
     });
   });
 
+  it('rejects missing explicitly configured certificate material', () => {
+    expect(() =>
+      resolvePostgresSsl(
+        connection({ sslmode: 'verify-full', sslrootcert: '/omnisql-missing-test-ca.pem' })
+      )
+    ).toThrow(/Cannot read configured TLS/);
+  });
+  it('does not enable a handler whose stored flag is false', () => {
+    expect(
+      resolvePostgresSsl(
+        connection({ handlers: { postgre_ssl: { enabled: 'false', properties: {} } } })
+      )
+    ).toBeUndefined();
+  });
   it('honours an explicit disable', () => {
     expect(resolvePostgresSsl(connection({ sslmode: 'disable' }))).toBe(false);
   });
@@ -39,7 +53,7 @@ describe('resolvePostgresSsl', () => {
   });
 
   it('forces TLS for IAM auth, which RDS requires', () => {
-    expect(resolvePostgresSsl(connection({}), true)).toEqual({ rejectUnauthorized: false });
+    expect(resolvePostgresSsl(connection({}), true)).toEqual({ rejectUnauthorized: true });
   });
 
   it('rejects disabled TLS for IAM auth', () => {
@@ -68,6 +82,7 @@ describe('resolveMysqlSsl', () => {
   it('verifies for VERIFY_IDENTITY', () => {
     expect(resolveMysqlSsl(connection({ properties: { sslMode: 'VERIFY_IDENTITY' } }))).toEqual({
       rejectUnauthorized: true,
+      verifyIdentity: true,
     });
   });
 
@@ -80,7 +95,10 @@ describe('resolveMysqlSsl', () => {
   });
 
   it('forces TLS for IAM auth, which RDS requires', () => {
-    expect(resolveMysqlSsl(connection({}), true)).toEqual({ rejectUnauthorized: false });
+    expect(resolveMysqlSsl(connection({}), true)).toEqual({
+      rejectUnauthorized: true,
+      verifyIdentity: true,
+    });
   });
 
   it('reads the enabled DBeaver mysql_ssl handler', () => {
@@ -117,7 +135,7 @@ describe('resolveMysqlSsl', () => {
           },
         })
       )
-    ).toEqual({ rejectUnauthorized: true });
+    ).toEqual({ rejectUnauthorized: true, verifyIdentity: true });
   });
 
   it('lets an explicit disabled mode override an enabled DBeaver handler', () => {

@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- Certificate hostname verification survives SSH forwarding for PostgreSQL, MySQL, and SQL Server; unreadable explicit TLS material fails closed.
+- IAM authentication defaults to verified TLS when no mode is specified.
 - Schema comparisons now preserve qualified names, case, type dimensions, indexes, and constraints. Migration previews are explicitly commented review outlines.
 - Connection responses omit raw properties and embedded credentials; debug logs omit SQL and analysis text.
 - Tool calls validate arguments without coercion, SQL guards reject stacked DDL and comment-only WHERE clauses, and read tools block known side-effect functions.

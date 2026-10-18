@@ -28,19 +28,14 @@ const MYSQL_REQUIRE_MODES = [
 const PG_DISABLE_MODES = ['disable', 'disabled', 'false', '0'];
 const MYSQL_DISABLE_MODES = ['disable', 'disabled', 'false', '0', 'none', 'off', 'no'];
 
-/** Read a PEM file, returning undefined when it is missing or unreadable. */
+/** Explicit certificate paths fail closed instead of falling back to other trust. */
 function readPem(pathValue: string | undefined): string | undefined {
-  if (!pathValue) {
-    return undefined;
-  }
+  if (!pathValue) return;
   try {
-    if (fs.existsSync(pathValue)) {
-      return fs.readFileSync(pathValue).toString();
-    }
+    return fs.readFileSync(pathValue, 'utf8');
   } catch {
-    // Unreadable cert material falls back to the default trust store.
+    throw new Error('Cannot read configured TLS certificate or key file');
   }
-  return undefined;
 }
 
 function buildSslMaterial(
@@ -74,7 +69,7 @@ function postgresSslMode(connection: DatabaseConnection): string {
     | Record<string, unknown>
     | undefined;
   const sslHandler = handlers?.['postgre_ssl'] as Record<string, unknown> | undefined;
-  if (sslHandler?.enabled) {
+  if (sslHandler?.enabled === true || sslHandler?.enabled === 'true') {
     const handlerMode = (sslHandler.properties as Record<string, unknown> | undefined)?.['sslMode'];
     return String(handlerMode ?? 'require').toLowerCase();
   }
@@ -106,7 +101,7 @@ function mysqlSslMode(connection: DatabaseConnection): string {
   }
 
   const handler = mysqlSslHandler(connection);
-  if (!handler?.enabled) {
+  if (handler?.enabled !== true && handler?.enabled !== 'true') {
     return '';
   }
 
@@ -149,14 +144,22 @@ export function resolvePostgresSsl(
     return undefined;
   }
 
+  const handler = (connection.properties?.handlers as unknown as Record<string, any> | undefined)
+    ?.postgre_ssl?.properties as Record<string, string> | undefined;
   const material = buildSslMaterial(
-    readConnectionProp(connection, 'sslrootcert', 'ssl.root.cert', 'sslRootCert'),
-    readConnectionProp(connection, 'sslcert', 'ssl.cert', 'sslCert'),
-    readConnectionProp(connection, 'sslkey', 'ssl.key', 'sslKey')
+    readConnectionProp(connection, 'sslrootcert', 'ssl.root.cert', 'sslRootCert') ??
+      handler?.['ssl.root.cert'] ??
+      handler?.['ssl.ca.cert'],
+    readConnectionProp(connection, 'sslcert', 'ssl.cert', 'sslCert') ??
+      handler?.['ssl.cert'] ??
+      handler?.['ssl.client.cert'],
+    readConnectionProp(connection, 'sslkey', 'ssl.key', 'sslKey') ??
+      handler?.['ssl.key'] ??
+      handler?.['ssl.client.key']
   );
 
   const hasCa = typeof material.ca === 'string' && material.ca.length > 0;
-  const verify = PG_VERIFY_MODES.includes(sslMode);
+  const verify = PG_VERIFY_MODES.includes(sslMode) || (iamAuth && !sslMode);
 
   if (verify && !hasCa && debug) {
     console.warn(
@@ -204,6 +207,11 @@ export function resolveMysqlSsl(
 
   return {
     ...material,
-    rejectUnauthorized: MYSQL_VERIFY_MODES.includes(sslMode) || hasCa,
+    rejectUnauthorized: MYSQL_VERIFY_MODES.includes(sslMode) || hasCa || (iamAuth && !sslMode),
+    ...((iamAuth && !sslMode) ||
+    ['verify-full', 'verify_identity'].includes(sslMode) ||
+    (hasCa && !['verify-ca', 'verify_ca'].includes(sslMode))
+      ? { verifyIdentity: true }
+      : {}),
   };
 }

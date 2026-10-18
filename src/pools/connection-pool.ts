@@ -1,3 +1,4 @@
+import net from 'node:net';
 import { sqlDialect } from '../policy/analyzer.js';
 import { createHash } from 'node:crypto';
 import { readConnectionProp } from '../auth/connection-props.js';
@@ -165,7 +166,14 @@ export class ConnectionPoolManager {
     const { host, port } = await this.resolveEndpoint(connection, 5432);
     const iamAuth = isIamAuthConnection(connection);
     const resolvedSsl = resolvePostgresSsl(connection, iamAuth, this.debug);
-    const ssl = resolvedSsl;
+    const ssl =
+      resolvedSsl && connection.sshTunnel?.enabled
+        ? {
+            ...resolvedSsl,
+            servername:
+              readConnectionProp(connection, 'ssl.serverName', 'sslServerName') ?? connection.host,
+          }
+        : resolvedSsl;
 
     let user = connection.user;
     let password: string | (() => Promise<string>) | undefined = connection.properties?.password;
@@ -238,7 +246,10 @@ export class ConnectionPoolManager {
 
     const { default: mysql } = await import('mysql2/promise');
     const pool = mysql.createPool({
-      host,
+      host: connection.sshTunnel?.enabled
+        ? (readConnectionProp(connection, 'ssl.serverName', 'sslServerName') ?? connection.host)
+        : host,
+      ...(connection.sshTunnel?.enabled ? { stream: () => net.connect({ host, port }) } : {}),
       port,
       database: connection.database || connection.properties?.database,
       user: user || connection.properties?.user || process.env.MYSQL_USER || 'root',
@@ -296,6 +307,9 @@ export class ConnectionPoolManager {
       requestTimeout: timeout,
       arrayRowMode: true,
       options: {
+        serverName: connection.sshTunnel?.enabled
+          ? (readConnectionProp(connection, 'ssl.serverName', 'sslServerName') ?? connection.host)
+          : undefined,
         encrypt: booleanSetting(readConnectionProp(connection, 'encrypt'), 'encrypt', isAzure),
         trustServerCertificate: booleanSetting(
           readConnectionProp(connection, 'trustServerCertificate'),

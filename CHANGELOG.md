@@ -5,10 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - 2026-10-18
 
 ### Added
+- Guided `npx omnisql-mcp install` setup for Claude Code, Codex, and OpenCode, with workspace, read-only, and connection allowlist prompts.
 - **Native Oracle support** via `oracledb` in Thin mode. Oracle connections previously fell through to the CLI fallback and failed.
+
+- Optional `database` argument on query, export, explain, metadata, connection test, and pool statistics tools; `list_databases` discovers accessible databases on PostgreSQL, MySQL/MariaDB, and SQL Server (#33).
+- One-command macOS/Linux installer at `https://srthkdev.github.io/omnisql-mcp/install.sh`, with a private Node.js runtime when needed.
+
+### Fixed
+- MySQL TLS settings now honor DBeaver's enabled SSL handler, certificate paths, and verification choice while preserving explicit driver properties (#31).
+- Oracle SQL delimiters and metadata parsing; TNS aliases reject SSH configurations they cannot honor.
+- Release packaging rebuilds compiled files before packing; CI exercises the packed server, custom workspace projects (#30), read-only checks, and whitelists.
+- Updated dependencies to clear reported vulnerabilities and removed the shell helper from the build.
+- npm publishing is manual; CI validates builds, tests, packaged runtime compatibility, the installer, and dependency audits.
 
 ## [2.1.0] - 2026-08-29
 

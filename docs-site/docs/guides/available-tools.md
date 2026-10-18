@@ -120,3 +120,7 @@ Parameters:
 - **Modifies data**: Changes data, not schema
 - **Schema changes**: Modifies database structure
 - **Destructive**: Permanently removes data/objects (requires confirmation)
+
+## Database discovery and selection
+
+`list_databases` takes `connectionId` and returns database names accessible to that user on PostgreSQL, MySQL/MariaDB, or SQL Server. An optional `database` argument selects a different database for `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `test_connection`, and `get_pool_stats`. Credentials, TLS, IAM, and SSH settings are inherited from the saved connection; read-only checks and whitelists still apply. Omit `database` to use the saved default. SQLite and other file-backed engines require separate saved connections.

@@ -1,7 +1,7 @@
 {
   "name": "omnisql-mcp",
-  "version": "2.1.0",
-  "description": "Universal database MCP server — native drivers for PostgreSQL, MySQL, SQLite, SQL Server with CLI fallback, reading connections from your local DB client workspace",
+  "version": "2.2.0",
+  "description": "Universal database MCP server with native PostgreSQL, MySQL, SQLite, SQL Server and Oracle support, reusing saved DB client connections",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -14,12 +14,11 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && echo '#!/usr/bin/env node' > dist/index.js.tmp && cat dist/index.js >> dist/index.js.tmp && mv dist/index.js.tmp dist/index.js && shx chmod +x dist/index.js",
+    "build": "tsc && node scripts/finalize-build.mjs",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "clean": "rimraf dist",
     "prepare": "husky",
-    "prepublish": "npm run clean && npm run build",
     "watch": "tsc --watch",
     "example": "node examples/example.js",
     "bump": "bumpp",
@@ -30,7 +29,7 @@
     "publish:minor": "npm version minor && npm publish",
     "publish:major": "npm version major && npm publish",
     "publish": "echo 'Use ./scripts/publish.sh or npm run publish:patch/minor/major instead'",
-    "prepublishOnly": "npm run clean && npm run build",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -38,7 +37,9 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run clean && npm run build",
+    "test:package": "node scripts/check-package.mjs"
   },
   "lint-staged": {
     "*.ts": [
@@ -69,6 +70,7 @@
   "author": "Sarthak Jain",
   "license": "MIT",
   "dependencies": {
+    "@clack/prompts": "^0.11.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "csv-parser": "^3.0.0",
     "csv-stringify": "^6.4.6",
@@ -93,7 +95,6 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "rimraf": "^5.0.5",
-    "shx": "^0.4.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.53.0",
     "vitest": "^4.0.17"

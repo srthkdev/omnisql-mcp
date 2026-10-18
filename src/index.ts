@@ -52,6 +52,17 @@ const WRITE_TOOLS = [
   'execute_in_transaction',
 ];
 
+const DATABASE_TOOLS = new Set([
+  'execute_query',
+  'export_data',
+  'explain_query',
+  'list_tables',
+  'get_table_schema',
+  'get_database_stats',
+  'test_connection',
+  'get_pool_stats',
+]);
+
 // Limits
 const MAX_INSIGHTS = 1000;
 const STALE_TRANSACTION_CHECK_MS = 5 * 60 * 1000; // 5 minutes
@@ -214,8 +225,11 @@ class OmniSQLMCPServer {
   /**
    * Get a single connection by ID/name, respecting the whitelist.
    */
-  private async getConnection(connectionId: string): Promise<DatabaseConnection | null> {
-    const connection = await this.configParser.getConnection(connectionId);
+  private async getConnection(
+    connectionId: string,
+    database?: string
+  ): Promise<DatabaseConnection | null> {
+    const connection = await this.configParser.getConnection(connectionId, database);
     if (!connection) return null;
     if (!this.isConnectionAllowed(connection)) return null;
     return connection;
@@ -752,6 +766,33 @@ class OmniSQLMCPServer {
         },
       ];
 
+      tools.push({
+        name: 'list_databases',
+        description:
+          'List databases accessible through a saved PostgreSQL, MySQL/MariaDB, or SQL Server connection',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: { type: 'string', description: 'Saved connection ID or name' },
+          },
+          required: ['connectionId'],
+        },
+      });
+      for (const tool of tools) {
+        if (DATABASE_TOOLS.has(tool.name)) {
+          tool.inputSchema.properties = {
+            ...tool.inputSchema.properties,
+            database: {
+              type: 'string',
+              minLength: 1,
+              maxLength: 128,
+              description:
+                'Optional database on the same server; reuses saved credentials and settings',
+            },
+          };
+        }
+      }
+
       // Filter tools based on read-only mode and disabled tools
       let filteredTools = tools;
 
@@ -794,6 +835,9 @@ class OmniSQLMCPServer {
         );
 
         switch (name) {
+          case 'list_databases':
+            return await this.handleListDatabases(args as { connectionId: string });
+
           case 'list_connections':
             return await this.handleListConnections(args as { includeDetails?: boolean });
 
@@ -949,6 +993,16 @@ class OmniSQLMCPServer {
     });
   }
 
+  private async handleListDatabases(args: { connectionId: string }) {
+    const connectionId = sanitizeConnectionId(args.connectionId);
+    const connection = await this.getConnection(connectionId);
+    if (!connection) {
+      throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
+    }
+    const databases = await this.workspaceClient.listDatabases(connection);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(databases, null, 2) }] };
+  }
+
   private async handleListConnections(args: { includeDetails?: boolean }) {
     const connections = await this.getFilteredConnections();
 
@@ -1012,6 +1066,7 @@ class OmniSQLMCPServer {
 
   private async handleExecuteQuery(args: {
     connectionId: string;
+    database?: string;
     query: string;
     maxRows?: number;
   }) {
@@ -1032,7 +1087,7 @@ class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, readOnlyError);
     }
 
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1277,11 +1332,12 @@ class OmniSQLMCPServer {
 
   private async handleGetTableSchema(args: {
     connectionId: string;
+    database?: string;
     tableName: string;
     includeIndexes?: boolean;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1305,6 +1361,7 @@ class OmniSQLMCPServer {
 
   private async handleExportData(args: {
     connectionId: string;
+    database?: string;
     query: string;
     format?: string;
     includeHeaders?: boolean;
@@ -1318,7 +1375,7 @@ class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Only SELECT queries are allowed for export');
     }
 
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1371,9 +1428,9 @@ class OmniSQLMCPServer {
     }
   }
 
-  private async handleTestConnection(args: { connectionId: string }) {
+  private async handleTestConnection(args: { connectionId: string; database?: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1391,9 +1448,9 @@ class OmniSQLMCPServer {
     };
   }
 
-  private async handleGetDatabaseStats(args: { connectionId: string }) {
+  private async handleGetDatabaseStats(args: { connectionId: string; database?: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1413,11 +1470,12 @@ class OmniSQLMCPServer {
 
   private async handleListTables(args: {
     connectionId: string;
+    database?: string;
     schema?: string;
     includeViews?: boolean;
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1573,12 +1631,13 @@ class OmniSQLMCPServer {
   // Query analysis handlers
   private async handleExplainQuery(args: {
     connectionId: string;
+    database?: string;
     query: string;
     analyze?: boolean;
     format?: 'text' | 'json';
   }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1688,9 +1747,9 @@ class OmniSQLMCPServer {
   }
 
   // Pool management handlers
-  private async handleGetPoolStats(args: { connectionId: string }) {
+  private async handleGetPoolStats(args: { connectionId: string; database?: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
-    const connection = await this.getConnection(connectionId);
+    const connection = await this.getConnection(connectionId, args.database);
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1698,7 +1757,7 @@ class OmniSQLMCPServer {
 
     // Initialize pool if needed
     await this.poolManager.getPool(connection);
-    const stats = await this.poolManager.getStats(connectionId);
+    const stats = await this.poolManager.getStats(connection.id);
 
     if (!stats) {
       return {
@@ -1775,11 +1834,29 @@ class OmniSQLMCPServer {
 }
 
 // Handle CLI arguments
+if (process.argv[2] === 'install') {
+  try {
+    const { runInstall } = await import('./install.js');
+    await runInstall(process.argv.slice(3));
+  } catch (error) {
+    console.error(formatError(error));
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.error(`
 OmniSQL MCP Server v${VERSION}
 
 Usage: omnisql-mcp [options]
+       omnisql-mcp install [claude|codex|opencode] [--read-only] [--dry-run]
+
+Quick setup:
+  npx -y omnisql-mcp@latest install
+  npx -y omnisql-mcp@latest install claude
+  npx -y omnisql-mcp@latest install codex
+  npx -y omnisql-mcp@latest install opencode
 
 Options:
   -h, --help     Show this help message

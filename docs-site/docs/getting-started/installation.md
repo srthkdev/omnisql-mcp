@@ -1,130 +1,60 @@
 # Installation Guide
 
-## System Requirements
+## Requirements
 
-- **Node.js**: Version 18.0.0 or higher
-- **A local DB client** (DBeaver-compatible) with at least one saved connection
-- **Operating System**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 18.04+)
+- Node.js 18+ with npm, and Claude Code, Codex, or OpenCode installed
+- DBeaver-compatible workspace with saved, tested database connections
 
-## Pre-Installation Steps
+## Guided setup
 
-### 1. Configure Workspace Connections
-- Open your local DB client
-- Create and test at least one database connection
-- Ensure connections are saved with credentials
-
-## Installation Methods
-
-### Method 1: Global npm Installation (Recommended)
 ```bash
-# Install from npm registry
-npm install -g omnisql-mcp
-
-# Verify installation
-omnisql-mcp --help
+npx -y omnisql-mcp@latest install
 ```
 
-### Method 2: Local Development Installation
+Choose a client, your workspace directory, read-only or read/write access, and an optional connection allowlist. The installer registers OmniSQL in the selected client for your user account. It reuses saved database and SSH credentials. Start a new client session after setup.
+
+For direct setup:
+
+```bash
+npx -y omnisql-mcp@latest install claude
+npx -y omnisql-mcp@latest install codex
+npx -y omnisql-mcp@latest install opencode
+```
+
+Add `--read-only` to disable writes. Add `--dry-run` to preview the native registration command without changing configuration. Direct setup uses the default workspace; use the guided setup for a custom path.
+
+## Native registration
+
+```bash
+claude mcp add --transport stdio --scope user omnisql -- npx -y omnisql-mcp@latest
+codex mcp add omnisql -- npx -y omnisql-mcp@latest
+opencode mcp add omnisql --global -- npx -y omnisql-mcp@latest
+```
+
+The OpenCode command requires v2. See the [configuration guide](./configuration.md) for Claude Desktop, Cursor, and manual setup.
+
+## Standalone executable (macOS / Linux)
+
+```bash
+curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
+```
+
+Installs without sudo to `~/.local/share/omnisql-mcp` and creates `~/.local/bin/omnisql-mcp`. If Node.js or npm is missing, the installer downloads a private Node.js 22 runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as the command in your MCP client.
+
+Rerun to upgrade, or pin a version:
+
+```bash
+curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash -s -- 2.2.0
+```
+
+Set `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` to choose other directories.
+
+## Development
+
 ```bash
 git clone https://github.com/srthkdev/omnisql-mcp.git
 cd omnisql-mcp
-npm install
+npm ci
 npm run build
-npm link  # Makes the command available globally
+node dist/index.js --help
 ```
-
-### Method 3: Direct Download
-- Download the latest release from GitHub
-- Extract to desired directory
-- Run `npm install` in the extracted directory
-- Add the directory to your PATH
-
-## Post-Installation Configuration
-
-### Claude Desktop Setup
-
-Locate Config File:
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
-
-Add MCP Server Configuration:
-```json
-{
-  "mcpServers": {
-    "omnisql": {
-      "command": "omnisql-mcp",
-      "env": {
-        "OMNISQL_DEBUG": "false",
-        "OMNISQL_TIMEOUT": "30000"
-      }
-    }
-  }
-}
-```
-
-Restart Claude Desktop.
-
-## Verification
-Test the installation:
-```bash
-# Test help command
-omnisql-mcp --help
-
-# Test MCP server functionality
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | omnisql-mcp
-# Should return available tools
-```
-
-## Platform-Specific Notes
-
-### Windows
-- Use PowerShell or Command Prompt as Administrator for global installation
-- To enable the unsupported-driver CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
-
-### macOS
-- Use Homebrew for Node.js installation: `brew install node`
-- To enable the unsupported-driver CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
-
-### Linux
-- Install via package manager: `sudo apt install nodejs npm` (Ubuntu/Debian)
-- To enable the unsupported-driver CLI fallback, set `OMNISQL_CLI_PATH` to your DB client CLI binary
-
-## Environment Variables
-
-Configure the server behavior with these environment variables:
-
-- `OMNISQL_CLI_PATH`: Path to external DB client CLI (for unsupported-driver fallback)
-- `OMNISQL_WORKSPACE`: Path to local DB client workspace directory
-- `OMNISQL_PROJECT`: Name of the DB client project/workspace folder (default: `General`)
-- `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
-- `OMNISQL_DEBUG`: Enable debug logging (true/false)
-
-Example:
-```bash
-export OMNISQL_DEBUG=true
-export OMNISQL_TIMEOUT=60000
-omnisql-mcp
-```
-
-## Troubleshooting Installation
-
-### Common Issues
-
-- "omnisql-mcp command not found"
-  - Ensure npm global bin directory is in PATH
-  - Try `npm config get prefix` to find global directory
-  - Add `[prefix]/bin` to PATH
-- Permission errors on Linux/macOS
-  - `sudo chown -R $(whoami) ~/.npm`
-- Node.js version issues
-  - Use nvm to manage Node.js versions
-  - Install recommended version: `nvm install 18 && nvm use 18`
-- Binary execution issues
-  - Ensure the package was installed correctly: `npm install -g omnisql-mcp@latest`
-  - Check if the binary has execute permissions
-
-## Getting Help
-- Check the [Troubleshooting Guide](../troubleshooting.md)
-- Open an issue on [GitHub](https://github.com/srthkdev/omnisql-mcp/issues)
-- View the package on [npm](https://www.npmjs.com/package/omnisql-mcp)

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/wordmark.svg" alt="OmniSQL MCP — your databases, one conversation" width="620">
+  <img src="assets/wordmark.svg" alt="OmniSQL MCP" width="620">
 </p>
 
 <p align="center">
@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/omnisql-mcp"><img src="https://img.shields.io/npm/v/omnisql-mcp?color=75edc3&amp;label=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/omnisql-mcp"><img src="https://img.shields.io/npm/v/omnisql-mcp?color=913f32&amp;label=npm" alt="npm version"></a>
   <a href="https://github.com/srthkdev/omnisql-mcp/actions/workflows/ci.yml"><img src="https://github.com/srthkdev/omnisql-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/srthkdev/omnisql-mcp/stargazers"><img src="https://img.shields.io/github/stars/srthkdev/omnisql-mcp?style=flat&amp;color=75edc3" alt="GitHub stars"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a9b8cc" alt="MIT license"></a>
+  <a href="https://github.com/srthkdev/omnisql-mcp/stargazers"><img src="https://img.shields.io/github/stars/srthkdev/omnisql-mcp?style=flat&amp;color=913f32" alt="GitHub stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-716e65" alt="MIT license"></a>
 </p>
 
 <p align="center">
@@ -22,7 +22,9 @@
   <a href="CHANGELOG.md">releases</a>
 </p>
 
-<p align="center"><img src="assets/database-demo.gif" alt="Live MCP calls: discover connections, inspect schemas, query revenue, export CSV, compare schemas, and select a PostgreSQL database" width="100%"></p>
+<p align="center"><img src="assets/codex-session.gif" alt="Real Codex CLI session: OmniSQL lists SQLite connections, inspects tables, and queries paid revenue" width="100%"></p>
+
+<p align="center">Recorded in Codex CLI against synthetic SQLite data. <a href="assets/codex-session.mp4">Watch the recording</a>.</p>
 
 ## What you can do
 
@@ -75,8 +77,6 @@ npx -y omnisql-mcp@latest install opencode
 ```
 
 Add `--read-only` to register with writes disabled, or `--dry-run` to print the registration command. Direct setup uses the default workspace and the server's normal read/write settings unless you pass `--read-only`.
-
-<p align="center"><img src="assets/setup-demo.gif" alt="Guided setup: select a client, choose read-only access, select a workspace, and register the server" width="100%"></p>
 
 ### Native client commands
 
@@ -335,7 +335,7 @@ An expired SSO session produces an error naming the profile to re-authenticate.
 
 ## Try the demo
 
-The feature animation renders actual MCP responses; the setup GIF records the interactive wizard with a temporary client adapter. The demo creates two SQLite databases in an isolated `.demo/` workspace. It makes real MCP calls to discover connections, inspect schemas, aggregate revenue, export CSV, explain queries, compare schemas, and verify that writes are blocked.
+The recording above captures a real Codex CLI session calling OmniSQL tools. It uses synthetic customers and orders from the isolated `.demo/` workspace. The integration script below creates the SQLite fixtures, then checks discovery, schema inspection, queries, exports, query plans, schema comparison, and blocked writes.
 
 ```bash
 npm ci
@@ -349,7 +349,7 @@ To also test PostgreSQL database discovery, database selection, and pool identit
 OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin npm run demo -- --postgres
 ```
 
-The PostgreSQL cluster binds to loopback on a temporary port, uses a random password, and is stopped and deleted after the run. The SQLite examples stay under `.demo/` so you can connect a client to them. Existing workspaces are untouched. [Watch the walkthrough](assets/walkthrough.mp4).
+The PostgreSQL cluster binds to loopback on a temporary port, uses a random password, and is stopped and deleted after the run. The SQLite examples stay under `.demo/` so you can connect a client to them. Existing workspaces are untouched. [Watch the Codex CLI session](assets/codex-session.mp4). See [recording details](assets/README.md).
 
 ## Updates
 

@@ -1,104 +1,18 @@
-# Configuration Guide
+# Configuration
 
-Run `npx -y omnisql-mcp@latest install` to choose Claude Code, Codex, or OpenCode and register automatically. Use the entries below for manual setup.
+OmniSQL reads configuration from environment variables. The guided installer sets the workspace, read-only mode, and optional connection allowlist for your client.
 
-## Claude Desktop Integration
+## Workspace discovery
 
-To use OmniSQL MCP with Claude Desktop, add the following to your configuration file:
+By default, OmniSQL looks for the standard DBeaver workspace for your operating system and discovers connections across its project directories.
 
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux:** `~/.config/Claude/claude_desktop_config.json`
+| System | Default workspace |
+| --- | --- |
+| macOS | `~/Library/DBeaverData/workspace6` |
+| Linux | `~/.local/share/DBeaverData/workspace6` |
+| Windows | `~/AppData/Roaming/DBeaverData/workspace6` |
 
-### Basic Configuration
-```json
-{
-  "mcpServers": {
-    "omnisql": {
-      "command": "npx",
-      "args": ["-y", "omnisql-mcp@latest"],
-      "env": {
-        "OMNISQL_DEBUG": "false",
-        "OMNISQL_TIMEOUT": "30000"
-      }
-    }
-  }
-}
-```
-
-### Advanced Configuration
-```json
-{
-  "mcpServers": {
-    "omnisql": {
-      "command": "npx",
-      "args": ["-y", "omnisql-mcp@latest"],
-      "env": {
-        "OMNISQL_DEBUG": "true",
-        "OMNISQL_TIMEOUT": "60000",
-        "OMNISQL_CLI_PATH": "/path/to/your/db-client/cli"
-      }
-    }
-  }
-}
-```
-
-### Read-Only Configuration
-```json
-{
-  "mcpServers": {
-    "omnisql": {
-      "command": "npx",
-      "args": ["-y", "omnisql-mcp@latest"],
-      "env": {
-        "OMNISQL_READ_ONLY": "true",
-        "OMNISQL_TIMEOUT": "30000"
-      }
-    }
-  }
-}
-```
-
-## Environment Variables
-
-### Core Variables
-- `OMNISQL_CLI_PATH`: Path to external DB client CLI binary (required only for the unsupported-driver CLI fallback)
-- `OMNISQL_WORKSPACE`: Path to your local DB client workspace directory (defaults to the OS-standard location)
-- `OMNISQL_PROJECT`: Name of the DB client project/workspace folder, for custom-named or renamed DBeaver projects (default: discover all projects)
-- `OMNISQL_TIMEOUT`: Query timeout in milliseconds (default: 30000)
-- `OMNISQL_DEBUG`: Set to `true` to enable debug logging
-- `OMNISQL_UPDATE_NOTIFIER`: Set to `false` to disable the daily npm version check and stderr notice
-- `OMNISQL_SSH_KNOWN_HOSTS`: known_hosts file used to verify SSH tunnel hosts (default: `~/.ssh/known_hosts`)
-- `OMNISQL_SSH_STRICT_HOST_KEY`: Set to `true` to refuse SSH tunnel hosts with no `known_hosts` entry
-
-### Security Variables
-- `OMNISQL_READ_ONLY`: Set to `true` to disable all write operations (blocks `write_query`, `create_table`, `alter_table`, `drop_table`)
-- `OMNISQL_DISABLED_TOOLS`: Comma-separated list of tool names to disable (e.g., `drop_table,alter_table`)
-
-### Configuration Examples
-```bash
-# Development with debug logging
-export OMNISQL_DEBUG=true
-export OMNISQL_TIMEOUT=60000
-omnisql-mcp
-
-# Production with custom timeout
-export OMNISQL_DEBUG=false
-export OMNISQL_TIMEOUT=120000
-omnisql-mcp
-
-# Read-only mode (disable all write operations)
-export OMNISQL_READ_ONLY=true
-omnisql-mcp
-
-# Disable specific tools
-export OMNISQL_DISABLED_TOOLS="drop_table,alter_table"
-omnisql-mcp
-```
-
-## Cursor IDE Integration
-
-For Cursor IDE, add to your settings:
+Use `OMNISQL_WORKSPACE` to select another directory. Use `OMNISQL_PROJECT` to restrict discovery to one named project. Without it, discovery includes all project directories.
 
 ```json
 {
@@ -107,51 +21,59 @@ For Cursor IDE, add to your settings:
       "command": "npx",
       "args": ["-y", "omnisql-mcp@latest"],
       "env": {
-        "OMNISQL_DEBUG": "false",
-        "OMNISQL_TIMEOUT": "30000"
+        "OMNISQL_WORKSPACE": "/path/to/DBeaverData/workspace6",
+        "OMNISQL_PROJECT": "Analytics",
+        "OMNISQL_READ_ONLY": "true"
       }
     }
   }
 }
 ```
 
-## Advanced MCP Client Configuration
+Use absolute paths in client configuration. The path is the workspace directory, not the `data-sources.json` file inside a project.
 
-### Command Line Usage
-```bash
-# Basic usage
-omnisql-mcp
+## Environment variables
 
-# With environment variables
-OMNISQL_DEBUG=true omnisql-mcp
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OMNISQL_WORKSPACE` | Directory containing the DB client workspace | OS default |
+| `OMNISQL_PROJECT` | Read only this workspace project | All projects |
+| `OMNISQL_READ_ONLY` | Disable write and transaction tools | `false` |
+| `OMNISQL_ALLOWED_CONNECTIONS` | Comma-separated connection IDs or names | All connections |
+| `OMNISQL_DISABLED_TOOLS` | Comma-separated tool names to disable | None |
+| `OMNISQL_TIMEOUT` | Query timeout in milliseconds, where supported by the driver | `30000` |
+| `OMNISQL_DEBUG` | Write diagnostic logs to stderr | `false` |
+| `OMNISQL_UPDATE_NOTIFIER` | Enable the daily npm version check and update notice | `true` |
+| `OMNISQL_CLI_PATH` | External client CLI for unsupported-driver fallback | Unset |
+| `OMNISQL_POOL_MIN` | Minimum pooled connections | `2` |
+| `OMNISQL_POOL_MAX` | Maximum pooled connections | `10` |
+| `OMNISQL_POOL_IDLE_TIMEOUT` | Idle connection timeout, milliseconds | `30000` |
+| `OMNISQL_POOL_ACQUIRE_TIMEOUT` | Connection acquisition timeout, milliseconds | `10000` |
+| `OMNISQL_AWS_CLI_PATH` | AWS CLI executable used for IAM authentication | `aws` |
+| `OMNISQL_IAM_TOKEN_TIMEOUT` | IAM token generation timeout, milliseconds | `20000` |
+| `OMNISQL_SSH_KNOWN_HOSTS` | SSH host-key file | `~/.ssh/known_hosts` |
+| `OMNISQL_SSH_STRICT_HOST_KEY` | Reject unrecorded SSH hosts | `false` |
 
-# Test MCP server
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' | omnisql-mcp
+A configured SSH host key must match even when strict mode is off. Strict mode also rejects hosts that have no entry.
+
+## Read-only access and allowlists
+
+```json
+{
+  "OMNISQL_READ_ONLY": "true",
+  "OMNISQL_ALLOWED_CONNECTIONS": "dev-postgres,analytics",
+  "OMNISQL_DISABLED_TOOLS": "append_insight"
+}
 ```
 
-### Docker Configuration
-```dockerfile
-FROM node:18-alpine
-RUN npm install -g omnisql-mcp
-ENV OMNISQL_DEBUG=false
-ENV OMNISQL_TIMEOUT=30000
-CMD ["omnisql-mcp"]
-```
+These entries belong inside the client's `env` block. Read-only mode blocks database writes; analysis notes are stored locally and can be disabled separately.
 
-## Troubleshooting Configuration
+A bare connection ID permits the databases reachable through that connection's credentials. To pin access to particular databases, list `connectionId/database` entries. See [access and safety](../guides/access.md).
 
-### Common Issues
-1. **CLI fallback fails**: Set `OMNISQL_CLI_PATH` to your DB client CLI binary
-2. **Timeout errors**: Increase `OMNISQL_TIMEOUT` value
-3. **Debug information needed**: Set `OMNISQL_DEBUG=true`
+## Updates
 
-### Verification Commands
-```bash
-# Test MCP server
-omnisql-mcp --help
+Client entries created by the installer use `npx -y omnisql-mcp@latest`. Restart your MCP client to pick up a new release. A running server keeps its current version until it restarts.
 
-# Check environment variables
-echo $OMNISQL_CLI_PATH
-echo $OMNISQL_DEBUG
-echo $OMNISQL_TIMEOUT
-```
+The server checks npm at most once a day and writes an update notice to stderr if a newer version exists. The check sends no connection settings or credentials. Set `OMNISQL_UPDATE_NOTIFIER=false` to disable it.
+
+For standalone installations, rerun the curl installer. For global npm installations, run `npm install -g omnisql-mcp@latest`.

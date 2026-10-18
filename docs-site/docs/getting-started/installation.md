@@ -1,9 +1,6 @@
-# Installation Guide
+# Install & connect
 
-## Requirements
-
-- Node.js 18+ with npm, and Claude Code, Codex, or OpenCode installed
-- DBeaver-compatible workspace with saved, tested database connections
+You need Node.js 18 or newer with npm, an MCP client, and a DBeaver-compatible workspace with at least one saved, working connection. Use a current Node.js LTS release for a new installation.
 
 ## Guided setup
 
@@ -11,50 +8,89 @@
 npx -y omnisql-mcp@latest install
 ```
 
-Choose a client, your workspace directory, read-only or read/write access, and an optional connection allowlist. The installer registers OmniSQL in the selected client for your user account. It reuses saved database and SSH credentials. Start a new client session after setup.
+The installer asks you to:
 
-For direct setup:
+1. Select Claude Code, Codex, or OpenCode. Installed clients are marked as detected.
+2. Choose read-only or read/write access. Read-only is the default in this flow.
+3. Confirm your workspace directory.
+4. Optionally restrict access to specific connection IDs or names.
+
+It then calls the selected client's own MCP registration command. Database and SSH credentials come from your saved workspace. OmniSQL does not need a separate token.
+
+Start a new session in your client and ask it to list your database connections.
+
+## Set up one client directly
+
+These commands register OmniSQL with read-only access and the default workspace:
 
 ```bash
-npx -y omnisql-mcp@latest install claude
-npx -y omnisql-mcp@latest install codex
-npx -y omnisql-mcp@latest install opencode
+npx -y omnisql-mcp@latest install claude --read-only
+npx -y omnisql-mcp@latest install codex --read-only
+npx -y omnisql-mcp@latest install opencode --read-only
 ```
 
-Add `--read-only` to disable writes. Add `--dry-run` to preview the native registration command without changing configuration. Direct setup uses the default workspace; use the guided setup for a custom path.
+The OpenCode installer uses the v2 CLI. Older OpenCode versions can use a manual local MCP configuration.
 
-## Native registration
+Append `--dry-run` to inspect the registration command without changing your client settings. Direct setup does not open the workspace-selection prompts. Omitting `--read-only` in direct setup uses the server's normal read/write configuration.
+
+## Native registration commands
+
+If you prefer your client's own CLI:
 
 ```bash
-claude mcp add --transport stdio --scope user omnisql -- npx -y omnisql-mcp@latest
-codex mcp add omnisql -- npx -y omnisql-mcp@latest
-opencode mcp add omnisql --global -- npx -y omnisql-mcp@latest
+# Claude Code — user scope, across projects
+claude mcp add --transport stdio --scope user omnisql \
+  --env OMNISQL_READ_ONLY=true -- npx -y omnisql-mcp@latest
+
+# Codex
+codex mcp add omnisql --env OMNISQL_READ_ONLY=true \
+  -- npx -y omnisql-mcp@latest
+
+# OpenCode v2
+opencode mcp add omnisql --global --env OMNISQL_READ_ONLY=true \
+  -- npx -y omnisql-mcp@latest
 ```
 
-The OpenCode command requires v2. See the [configuration guide](./configuration.md) for Claude Desktop, Cursor, and manual setup.
+The installed client stores its own configuration. Restart the client session after registering.
 
-## Standalone executable (macOS / Linux)
+## Claude Desktop and Cursor
+
+Add this entry to Claude Desktop's `claude_desktop_config.json`, or Cursor's `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "omnisql": {
+      "command": "npx",
+      "args": ["-y", "omnisql-mcp@latest"],
+      "env": {
+        "OMNISQL_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+On Windows, if the client cannot launch `npx` directly, use `"command": "cmd"` and `"args": ["/c", "npx", "-y", "omnisql-mcp@latest"]`.
+
+## Standalone executable
+
+For macOS and Linux, including machines without Node.js:
 
 ```bash
 curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
 ```
 
-Installs without sudo to `~/.local/share/omnisql-mcp` and creates `~/.local/bin/omnisql-mcp`. If Node.js or npm is missing, the installer downloads a private Node.js 22 runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as the command in your MCP client.
+This installs under `~/.local/share/omnisql-mcp` and creates a launcher at `~/.local/bin/omnisql-mcp`. If Node.js or npm is missing, the installer downloads a private Node.js 22 runtime and verifies its SHA-256 checksum. It does not use sudo.
 
-Rerun to upgrade, or pin a version:
+Use the printed absolute launcher path as your MCP client's command. Rerun the installer to update, or specify a version:
 
 ```bash
 curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash -s -- 2.2.0
 ```
 
-Set `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` to choose other directories.
+`OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` let you choose other directories.
 
-## Development
+## Check the connection
 
-```bash
-git clone https://github.com/srthkdev/omnisql-mcp.git
-cd omnisql-mcp
-npm ci
-npm run build
-node dist/index.js --help
-```
+Ask your assistant to call `list_connections`, then `test_connection` on a connection you intend to expose. If the connection is missing, check the [workspace settings](configuration.md). If authentication fails, test it in DBeaver first and follow the [troubleshooting guide](../troubleshooting.md).

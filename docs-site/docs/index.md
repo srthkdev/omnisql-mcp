@@ -1,42 +1,48 @@
----
-sidebar_position: 1
----
+# Your workspace, in your assistant.
 
-# Introduction
+OmniSQL is a local MCP server for the database connections you have already saved in a DBeaver-compatible workspace. It gives your assistant tools to discover connections, inspect tables, run queries, and export results.
 
-OmniSQL MCP is a Model Context Protocol server that connects AI assistants to your databases using connections already configured in your local DB client workspace (DBeaver-compatible).
+It works with Claude Code, Codex, OpenCode, and other clients that can start an MCP server over stdio.
 
-## Why Use This?
+## Start with one command
 
-- **No extra config**: Uses connections you've already set up in your local DB client
-- **Wide database support**: Works with any database reachable via standard wire protocols
-- **Native drivers**: Direct execution for PostgreSQL, MySQL, SQLite, SQL Server
-- **Safety built-in**: Query validation, confirmation prompts for destructive ops
+```bash
+npx -y omnisql-mcp@latest install
+```
 
-## What It Does
+Choose a client, a workspace directory, and the access you want to allow. The guided installer defaults to read-only access. There is no OmniSQL account or API key.
 
-- Lists and tests workspace connections
-- Executes SELECT, INSERT, UPDATE, DELETE queries
-- Manages schema (CREATE/ALTER/DROP tables)
-- Exports data to CSV/JSON
-- Stores analysis notes for later reference
+[Set up your client](getting-started/installation.md)
 
-## Supported Databases
+## What happens when you connect
 
-Native execution (fast, no external CLI required):
-- PostgreSQL
-- MySQL / MariaDB
-- SQLite
-- SQL Server / MSSQL
-- Oracle (Thin mode, no Oracle Client needed)
+1. Your MCP client starts the OmniSQL process on your machine.
+2. OmniSQL discovers saved connections and reads the credentials and network settings from the workspace.
+3. Your assistant selects a tool. OmniSQL opens the database connection with the appropriate native driver.
+4. The result returns to your MCP client as structured data.
 
-Fallback via external CLI (configured with `OMNISQL_CLI_PATH`):
-- MongoDB and other drivers not natively supported
+The server does not route queries through an OmniSQL cloud service. Your assistant can receive query results through its MCP tools; treat those results according to your assistant provider's data policy.
 
-## Workspace Format Support
+## Native database drivers
 
-Supports both configuration formats written by DBeaver-compatible DB clients:
-- Legacy: XML config format
-- Modern: JSON config format
+| Engine | Execution path |
+| --- | --- |
+| PostgreSQL and compatible servers | `pg` |
+| MySQL and MariaDB | `mysql2` |
+| SQL Server | `mssql` |
+| Oracle | `oracledb`, Thin mode |
+| SQLite | Local `sqlite3` CLI |
 
-The server auto-detects which format you're using.
+[Database support and connection details](guides/databases.md)
+
+## Choose the access you need
+
+For inspection and analysis, begin with read-only mode and a connection allowlist. For a database-level permission boundary, also use a database account with read-only grants.
+
+Write tools, transaction support, and schema changes are available when enabled and supported by the driver. Read the [access guide](guides/access.md) before enabling them.
+
+## Explore the tools
+
+There are 22 tools, covering connection discovery, queries, schemas, exports, execution plans, transactions, and local analysis notes.
+
+The [tool reference](guides/available-tools.md) contains the input schemas exported from the server. [Queries and workflows](guides/usage-examples.md) shows how they fit together.

@@ -94,3 +94,17 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npm run typecheck
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - run: npm ci --prefix docs-site
+      - name: Check site pages, links, and media
+        run: npm test --prefix docs-site
+      - run: npm audit --prefix docs-site --audit-level=high

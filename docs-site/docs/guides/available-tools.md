@@ -1,126 +1,14 @@
----
-sidebar_position: 2
----
+# Tool reference
 
-# Available Tools
+These 22 tool definitions were exported from the OmniSQL server. The tables below describe the advertised input schemas. Your client may expose fewer tools when read-only mode or tool filtering is enabled.
 
-## Connection Management
+## A few conventions
 
-### `list_connections`
-List all database connections discovered in the workspace.
+- `connectionId` accepts a saved connection ID or name.
+- An optional `database` selects a database on the same server for supported tools.
+- Queries must use the syntax of the target database.
+- `execute_query` accepts a single read-only statement. Use `write_query` for permitted writes.
+- Transaction tools require a supported pooled driver and are disabled in read-only mode.
+- Schema migration scripts are returned as text; schema comparison does not apply them.
 
-Parameters:
-- `includeDetails` (optional): Include detailed connection info
-
-### `get_connection_info`
-Get details about a specific connection.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-
-### `test_connection`
-Test if a connection works.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-
-## Data Operations
-
-### `execute_query`
-Run SELECT queries (read-only).
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `query` (required): SQL SELECT statement
-- `maxRows` (optional): Max rows to return (default: 1000)
-
-### `write_query`
-Run INSERT, UPDATE, or DELETE queries.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `query` (required): SQL statement
-
-### `export_data`
-Export query results.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `query` (required): SQL SELECT statement
-- `format` (optional): csv or json (default: csv)
-- `includeHeaders` (optional): Include headers (default: true)
-- `maxRows` (optional): Max rows (default: 10000)
-
-## Schema Management
-
-### `list_tables`
-List tables and views.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `schema` (optional): Schema to list from
-- `includeViews` (optional): Include views (default: false)
-
-### `get_table_schema`
-Get table structure.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `tableName` (required): Table name
-- `includeIndexes` (optional): Include indexes (default: true)
-
-### `create_table`
-Create a table.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `query` (required): CREATE TABLE statement
-
-### `alter_table`
-Modify a table.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `query` (required): ALTER TABLE statement
-
-### `drop_table`
-Drop a table (requires confirmation).
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-- `tableName` (required): Table to drop
-- `confirm` (required): Must be true
-
-## Other
-
-### `get_database_stats`
-Get database statistics.
-
-Parameters:
-- `connectionId` (required): Connection ID or name
-
-### `append_insight`
-Store an analysis note.
-
-Parameters:
-- `insight` (required): Note text
-- `connection` (optional): Associated connection
-- `tags` (optional): Array of tags
-
-### `list_insights`
-Retrieve stored notes.
-
-Parameters:
-- `connection` (optional): Filter by connection
-- `tags` (optional): Filter by tags
-
-## Safety Levels
-
-- **Safe**: Read-only, no side effects
-- **Modifies data**: Changes data, not schema
-- **Schema changes**: Modifies database structure
-- **Destructive**: Permanently removes data/objects (requires confirmation)
-
-## Database discovery and selection
-
-`list_databases` takes `connectionId` and returns database names accessible to that user on PostgreSQL, MySQL/MariaDB, or SQL Server. An optional `database` argument selects a different database for `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `test_connection`, and `get_pool_stats`. Credentials, TLS, IAM, and SSH settings are inherited from the saved connection; read-only checks and whitelists still apply. Omit `database` to use the saved default. SQLite and other file-backed engines require separate saved connections.
+Tool schema options do not imply identical driver support. Oracle has no transaction or pool support, and detailed index/constraint introspection is limited. Check results before using a generated migration.

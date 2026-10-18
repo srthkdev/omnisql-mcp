@@ -1,41 +1,15 @@
-# Website
+# OmniSQL website
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+A custom static site: HTML, CSS, browser JavaScript, and Markdown documentation. The build renders Markdown and syntax highlighting at build time; the deployed site has no framework runtime.
 
-## Installation
-
-```bash
-yarn
+```sh
+npm ci
+npm run dev
+npm test
 ```
 
-## Local Development
+The local preview serves the same `/omnisql-mcp/` base path used by GitHub Pages. `npm run build` writes `build/`, including the standalone installer from `../scripts/install.sh`.
 
-```bash
-yarn start
-```
+Documentation lives in `docs/`. Navigation and page templates live in `scripts/build.mjs`, styles in `styles/site.css`, and browser interactions in `client/site.js`. `data/tools.json` contains tool schemas exported from the MCP server. Media is copied from `../assets/`.
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-## Build
-
-```bash
-yarn build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-## Deployment
-
-Using SSH:
-
-```bash
-USE_SSH=true yarn deploy
-```
-
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+After changing server tool definitions, build the server in the repository root, then run `npm run tools:refresh --prefix docs-site` to refresh the reference schemas. The export uses an empty temporary workspace and does not query a database.

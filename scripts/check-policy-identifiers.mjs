@@ -142,17 +142,25 @@ export async function checkIdentifierPolicies({
       setDatabaseRules({ ['scope/' + base.database]: { readOnly: true } });
       await query('SELECT 1 AS value');
       await assert.rejects(
-        () => call(client, 'write_query', {
-          connectionId: 'scope', query: 'DELETE FROM orders WHERE id=-1',
-        }),
+        () =>
+          call(client, 'write_query', {
+            connectionId: 'scope',
+            query: 'DELETE FROM orders WHERE id=-1',
+          }),
         /read.only/i
       );
-      await assert.rejects(() => call(client, 'begin_transaction', { connectionId: 'scope' }), /read.only/i);
+      await assert.rejects(
+        () => call(client, 'begin_transaction', { connectionId: 'scope' }),
+        /read.only/i
+      );
       if (['mysql', 'mariadb', 'mssql'].includes(engine)) {
         await assert.rejects(
-          () => call(client, 'execute_query', {
-            connectionId: 'scope', database: base.database.toUpperCase(), query: 'SELECT 1',
-          }),
+          () =>
+            call(client, 'execute_query', {
+              connectionId: 'scope',
+              database: base.database.toUpperCase(),
+              query: 'SELECT 1',
+            }),
           /Database.*policy/
         );
         const other = engine === 'mssql' ? 'omnisql_other' : 'information_schema';
@@ -162,12 +170,18 @@ export async function checkIdentifierPolicies({
         });
         const foreignTable = engine === 'mssql' ? other + '.dbo.orders' : other + '.TABLES';
         await assert.rejects(
-          () => call(client, 'write_query', {
-            connectionId: 'scope', query: `DELETE FROM ${foreignTable} WHERE 1=0`,
-          }),
+          () =>
+            call(client, 'write_query', {
+              connectionId: 'scope',
+              query: `DELETE FROM ${foreignTable} WHERE 1=0`,
+            }),
           /selected database/
         );
-        await call(client, 'execute_query', { connectionId: 'scope', database: other, query: 'SELECT 1' });
+        await call(client, 'execute_query', {
+          connectionId: 'scope',
+          database: other,
+          query: 'SELECT 1',
+        });
         for (const [name, args] of [
           ['write_query', { query: 'DELETE FROM orders WHERE id=-1' }],
           ['create_table', { query: 'CREATE TABLE policy_probe(id INTEGER)' }],
@@ -219,9 +233,17 @@ export async function checkIdentifierPolicies({
     if (engine === 'oracle') {
       await admin.query('CREATE TABLE "orders" ("secret" INTEGER PRIMARY KEY)');
       // Oracle read-only snapshots cannot span a recent DDL timestamp.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
       configure({ allowTables: ['orders'] });
-      await query('SELECT * FROM "orders"');
+      const deadline = Date.now() + 10000;
+      while (true) {
+        try {
+          await query('SELECT * FROM "orders"');
+          break;
+        } catch (error) {
+          if (!error.message.includes('ORA-01466') || Date.now() >= deadline) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
       await denied('SELECT * FROM ORDERS');
       const exact = await call(client, 'get_table_schema', {
         connectionId: 'scope',

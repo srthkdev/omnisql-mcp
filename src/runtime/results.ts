@@ -14,6 +14,26 @@ export class ResultTextDecoder {
   }
 }
 
+function resultValue(value: unknown, depth = 0): unknown {
+  if (depth > 64) throw new Error('Database value nesting exceeds the result limit');
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return String(value);
+    if (Number.isInteger(value) && !Number.isSafeInteger(value))
+      throw new Error(
+        'Driver returned an inexact integer; CAST this expression to a string in SQL'
+      );
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'bigint') return value.toString();
+  if (Buffer.isBuffer(value)) return { encoding: 'base64', data: value.toString('base64') };
+  if (Array.isArray(value)) return value.map((v) => resultValue(v, depth + 1));
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([key, v]) => [key, resultValue(v, depth + 1)])
+    );
+  return value;
+}
+
 /** Shared row and byte budget, applied while each native driver fetches rows. */
 export class ResultCollector {
   readonly rows: unknown[][] = [];
@@ -30,7 +50,10 @@ export class ResultCollector {
   }
   truncated = false;
   limitReason?: 'rows' | 'bytes';
-  private bytes = 2;
+  private bytes = 4;
+  get remainingBytes(): number {
+    return Math.max(0, this.maxBytes - this.bytes);
+  }
   readonly maxRows: number;
   readonly maxBytes: number;
   constructor(connection: DatabaseConnection, maxRows?: number) {
@@ -44,20 +67,8 @@ export class ResultCollector {
       this.limitReason = 'rows';
       return false;
     }
-    if (row.some((v) => typeof v === 'number' && Number.isInteger(v) && !Number.isSafeInteger(v)))
-      throw new Error(
-        'Driver returned an inexact integer; CAST this expression to a string in SQL'
-      );
-    const normalized = row.map((v) =>
-      v instanceof Date
-        ? v.toISOString()
-        : typeof v === 'bigint'
-          ? v.toString()
-          : Buffer.isBuffer(v)
-            ? { encoding: 'base64', data: v.toString('base64') }
-            : v
-    );
-    const size = Buffer.byteLength(JSON.stringify(normalized));
+    const normalized = row.map((value) => resultValue(value));
+    const size = Buffer.byteLength(JSON.stringify(normalized)) + (this.rows.length ? 1 : 0);
     if (this.bytes + size > this.maxBytes) {
       this.truncated = true;
       this.limitReason = 'bytes';
@@ -79,7 +90,7 @@ export class ResultCollector {
     };
   }
   private checkColumns(): void {
-    if (this.nameBytes > 65536 || this.nameBytes > this.maxBytes)
+    if (this.nameBytes > 65536 || this.nameBytes + 2 > this.maxBytes)
       throw new Error(
         'Result column names exceed the byte limit; select fewer columns or shorter aliases'
       );
@@ -90,7 +101,7 @@ export class ResultCollector {
 function jsonReader(text: string, decimalText: boolean) {
   let offset = 0;
   const skip = () => {
-    while (/\s/.test(text[offset] ?? '') && offset < text.length) offset++;
+    while (/[ \t\r\n]/.test(text[offset] ?? '') && offset < text.length) offset++;
   };
   const take = (char: string) => {
     skip();
@@ -109,6 +120,8 @@ function jsonReader(text: string, decimalText: boolean) {
         skip();
         if (text[offset] !== ',') break;
         offset++;
+        skip();
+        if (text[offset] === ']') throw new Error('Invalid database JSON array');
       }
       take(']');
       return items;
@@ -125,6 +138,8 @@ function jsonReader(text: string, decimalText: boolean) {
         skip();
         if (text[offset] !== ',') break;
         offset++;
+        skip();
+        if (text[offset] === '}') throw new Error('Invalid database JSON object');
       }
       take('}');
       return object;
@@ -147,7 +162,13 @@ function jsonReader(text: string, decimalText: boolean) {
     offset += token.length;
     if (/^-?\d+$/.test(token) && !Number.isSafeInteger(Number(token))) return token;
     if (decimalText && /^-?\d/.test(token) && /[.eE]/.test(token)) return token;
-    return JSON.parse(token);
+    const parsed: unknown = JSON.parse(token);
+    if (
+      typeof parsed === 'number' &&
+      (!Number.isFinite(parsed) || (Number.isInteger(parsed) && !Number.isSafeInteger(parsed)))
+    )
+      return token;
+    return parsed;
   };
   return {
     skip,
@@ -192,6 +213,8 @@ export function parseJsonRows(
       reader.skip();
       if (text[reader.offset] !== ',') break;
       reader.offset++;
+      reader.skip();
+      if (text[reader.offset] === '}') throw new Error('Invalid database JSON object');
     }
     reader.take('}');
     if (!columns.length) columns = names;
@@ -201,6 +224,8 @@ export function parseJsonRows(
     reader.skip();
     if (text[reader.offset] !== ',') break;
     reader.offset++;
+    reader.skip();
+    if (text[reader.offset] === ']') throw new Error('Invalid database JSON array');
   }
   reader.take(']');
   reader.skip();
@@ -217,6 +242,8 @@ export class JsonRowStream {
   private depth = 0;
   private quoted = false;
   private escaped = false;
+  private phase: 'start' | 'value' | 'separator' | 'done' = 'start';
+  private allowEnd = true;
   constructor(
     private collector: ResultCollector,
     private decimalText = false
@@ -226,23 +253,45 @@ export class JsonRowStream {
     this.bufferBytes += Buffer.byteLength(chunk);
     while (this.scan < this.buffer.length) {
       const c = this.buffer[this.scan];
-      if (this.quoted) {
+      if (!this.depth) {
+        if (/[ \t\r\n]/.test(c)) {
+          this.scan++;
+          continue;
+        }
+        if (this.phase === 'start' && c === '[') this.phase = 'value';
+        else if (this.phase === 'value' && c === '{') {
+          this.start = this.scan;
+          this.depth = 1;
+        } else if (this.phase === 'separator' && c === ',') {
+          this.phase = 'value';
+          this.allowEnd = false;
+        } else if (
+          c === ']' &&
+          (this.phase === 'separator' || (this.phase === 'value' && this.allowEnd))
+        )
+          this.phase = 'done';
+        else throw new Error('Invalid database JSON output');
+      } else if (this.quoted) {
         if (this.escaped) this.escaped = false;
         else if (c === '\\') this.escaped = true;
         else if (c === '"') this.quoted = false;
       } else if (c === '"') this.quoted = true;
-      else if (c === '{') {
-        if (this.depth === 0) this.start = this.scan;
-        this.depth++;
-      } else if (c === '}') {
+      else if (c === '{') this.depth++;
+      else if (c === '}') {
         this.depth--;
-        if (this.depth === 0 && this.start >= 0) {
+        if (this.depth === 0) {
           const parsed = parseJsonRows(
             '[' + this.buffer.slice(this.start, this.scan + 1) + ']',
             this.decimalText
           );
           if (!this.collector.columns.length) this.collector.columns = parsed.columns;
+          else if (
+            parsed.columns.length !== this.collector.columns.length ||
+            parsed.columns.some((name, i) => name !== this.collector.columns[i])
+          )
+            throw new Error('Inconsistent database columns');
           if (!this.collector.add(parsed.rows[0])) return false;
+          this.phase = 'separator';
           this.bufferBytes -= Buffer.byteLength(this.buffer.slice(0, this.scan + 1));
           this.buffer = this.buffer.slice(this.scan + 1);
           this.scan = -1;
@@ -256,6 +305,10 @@ export class JsonRowStream {
         'Database row exceeds the result byte limit; select fewer or smaller columns'
       );
     return true;
+  }
+  finish(): void {
+    if (this.phase !== 'done' && !(this.phase === 'start' && !this.buffer.trim()))
+      throw new Error('Incomplete database JSON output');
   }
 }
 

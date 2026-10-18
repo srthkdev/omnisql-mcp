@@ -6,6 +6,17 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { runJsonCli } from '../dist/runtime/cli.js';
+// CLI versions differ in how they encode BLOBs. Exercise malformed byte streams directly.
+const cliConnection = { id: 'synthetic', name: 'synthetic', driver: 'sqlite', url: '' };
+for (const [program, expected] of [
+  ["process.stdout.write(Buffer.from('5b7b226e223a22ff227d5d','hex'))", /invalid UTF-8/],
+  ['process.stdout.write(\'[{"n":1}\')', /Incomplete database JSON/],
+])
+  await assert.rejects(
+    () => runJsonCli(cliConnection, process.execPath, ['-e', program], 'Fixture CLI', 5000),
+    expected
+  );
 const dir = mkdtempSync(join(tmpdir(), 'omnisql-result-check-'));
 let client;
 try {
@@ -132,8 +143,14 @@ try {
   await call('append_insight', { connection: 'fixture', insight: 'Synthetic test note' });
   assert.equal((await call('list_insights', {})).length, 1);
   writeFileSync(policyFile, JSON.stringify({ version: 1, defaults: { readOnly: true } }));
-  await assert.rejects(() => call('read_result', { resultId: result.resultId }), /access policy changed/);
-  await assert.rejects(() => call('read_export', { resultId: exported.resultId }), /access policy changed/);
+  await assert.rejects(
+    () => call('read_result', { resultId: result.resultId }),
+    /access policy changed/
+  );
+  await assert.rejects(
+    () => call('read_export', { resultId: exported.resultId }),
+    /access policy changed/
+  );
   writeFileSync(policyFile, JSON.stringify({ version: 1 }));
   // Reusing an ID for another file must not expose data cached from the first one.
   const originalConfig = readFileSync(file, 'utf8');

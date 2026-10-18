@@ -36,6 +36,32 @@ describe.skipIf(!available)('SQLite execution', () => {
     expect(result.columns).toEqual(['id', 'id']);
     expect(result.rows).toEqual([[1, '9007199254740993']]);
   });
+  it('preserves native CLI text or rejects invalid UTF-8; explicit hex is portable', async () => {
+    const query = "SELECT X'FF' AS binary";
+    const native = spawnSync('sqlite3', [
+      '-init',
+      '/dev/null',
+      '-json',
+      connection.database,
+      query,
+    ]);
+    expect(native.status).toBe(0);
+    let text: string | undefined;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(native.stdout);
+    } catch {
+      /* Older CLIs can emit raw blob bytes. */
+    }
+    if (text === undefined)
+      await expect(client.executeQuery(connection, query)).rejects.toThrow(/invalid UTF-8/);
+    else
+      expect((await client.executeQuery(connection, query)).rows).toEqual([
+        [JSON.parse(text)[0].binary],
+      ]);
+    expect((await client.executeQuery(connection, "SELECT hex(X'FF') AS binary")).rows).toEqual([
+      ['FF'],
+    ]);
+  });
   it('reads table names and SQLite schema flags', async () => {
     expect(await client.listTables(connection)).toMatchObject([
       { name: 'notes', table_name: 'notes' },

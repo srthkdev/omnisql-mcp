@@ -41,6 +41,8 @@ import {
   oracleFetchTypeHandler,
   explainStatementId,
   normalizeOracleStatement,
+  collectOracleRow,
+  closeOracleLobs,
 } from './oracle.js';
 
 export class WorkspaceClient {
@@ -522,7 +524,17 @@ export class WorkspaceClient {
   ): Promise<QueryResult> {
     const { default: oracledb } = await import('oracledb');
     return this.withOracleConnection(connection, async (conn) => {
-      if (readOnly) await conn.execute('SET TRANSACTION READ ONLY');
+      const deadline = Date.now() + (connection.limits?.timeoutMs ?? this.timeout);
+      const beforeRead = () => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error('Oracle query deadline exceeded');
+        conn.callTimeout = remaining;
+      };
+      if (readOnly) {
+        beforeRead();
+        await conn.execute('SET TRANSACTION READ ONLY');
+      }
+      beforeRead();
       const res = await conn.execute<unknown[]>(normalizeOracleStatement(query), [], {
         outFormat: oracledb.OUT_FORMAT_ARRAY,
         autoCommit: !readOnly,
@@ -532,24 +544,33 @@ export class WorkspaceClient {
       const collector = new ResultCollector(connection, maxRows);
       collector.columns = (res.metaData ?? []).map((m) => m.name);
       if (!res.resultSet) return collector.result(res.rowsAffected);
-      const started = Date.now();
       try {
         let done = false;
         while (!done) {
-          if (Date.now() - started > (connection.limits?.timeoutMs ?? this.timeout))
-            throw new Error('Oracle query deadline exceeded');
+          beforeRead();
           const rows = await res.resultSet.getRows(Math.min(64, collector.maxRows + 1));
-          for (const row of rows)
-            if (!collector.add(row)) {
-              done = true;
-              break;
-            }
+          try {
+            for (const row of rows)
+              if (!(await collectOracleRow(row, collector, beforeRead))) {
+                done = true;
+                break;
+              }
+          } finally {
+            await closeOracleLobs(rows);
+          }
           if (rows.length === 0) done = true;
         }
         return collector.result();
       } finally {
         await res.resultSet.close();
       }
+    }).catch((error: unknown) => {
+      if (error instanceof Error && /ORA-40478|ORA-22835/.test(error.message))
+        throw new Error(
+          error.message +
+            '; return large JSON/text explicitly as CLOB, for example JSON_SERIALIZE(expression RETURNING CLOB)'
+        );
+      throw error;
     });
   }
 

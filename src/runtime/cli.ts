@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { DatabaseConnection, QueryResult } from '../types.js';
-import { ResultCollector, JsonRowStream } from './results.js';
+import { ResultCollector, JsonRowStream, ResultTextDecoder } from './results.js';
 
 /** Bounded, shell-free JSON output for embedded database command line clients. */
 export function runJsonCli(
@@ -23,23 +23,23 @@ export function runJsonCli(
     // whole MCP server down instead of failing this one tool call.
     let settled = false;
     let capped = false;
-    const deadline = setTimeout(() => {
-      if (settled) return;
-      settled = true;
+    let failure: Error | undefined;
+    const stop = (error: Error) => {
+      if (settled || failure) return;
+      failure = error;
       proc.kill('SIGKILL');
-      reject(new Error(`${label} query timed out after ${timeout}ms`));
+    };
+    const deadline = setTimeout(() => {
+      stop(new Error(`${label} query timed out after ${timeout}ms`));
     }, timeout);
     const fail = (err: NodeJS.ErrnoException) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(deadline);
       const hint =
         err.code === 'ENOENT'
           ? `${command} CLI not found on PATH - install it to query ${label} connections`
           : err.code === 'EACCES'
             ? `${command} CLI is not executable`
             : `Failed to run ${command} CLI`;
-      reject(new Error(`${hint}: ${err.message}`));
+      stop(new Error(`${hint}: ${err.message}`));
     };
 
     proc.on('error', fail);
@@ -47,12 +47,13 @@ export function runJsonCli(
 
     const collector = new ResultCollector(connection, maxRows);
     const stream = new JsonRowStream(collector, options.decimalText);
+    const decoder = new ResultTextDecoder();
     let text = '';
     let error = '';
-    proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', (data: string) => {
-      if (settled || capped) return;
+    proc.stdout.on('data', (bytes: Buffer) => {
+      if (settled || capped || failure) return;
       try {
+        const data = decoder.decode(bytes);
         if (options.output === 'text') {
           text += data;
           if (Buffer.byteLength(text) > collector.maxBytes)
@@ -64,10 +65,7 @@ export function runJsonCli(
           proc.kill('SIGKILL');
         }
       } catch (error) {
-        settled = true;
-        clearTimeout(deadline);
-        proc.kill('SIGKILL');
-        reject(error);
+        stop(error instanceof Error ? error : new Error(String(error)));
       }
     });
     proc.stderr.on('data', (data) => {
@@ -78,12 +76,24 @@ export function runJsonCli(
       clearTimeout(deadline);
       if (settled) return;
       settled = true;
+      if (failure) {
+        reject(failure);
+        return;
+      }
       if ((!capped && code !== 0) || error.trim()) {
         reject(new Error(`${label} error: ${error}`));
         return;
       }
 
       try {
+        if (!capped) {
+          const tail = decoder.decode();
+          if (options.output === 'text') text += tail;
+          else {
+            if (tail) stream.write(tail);
+            stream.finish();
+          }
+        }
         if (options.output === 'text') {
           collector.columns = ['explain_key', 'explain_value'];
           if (!collector.add(['plan', text]))

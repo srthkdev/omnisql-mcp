@@ -186,6 +186,19 @@ export async function checkIdentifierPolicies({
       );
       await admin.query('DROP TABLE "orders"');
     }
+    if (engine === 'postgres') {
+      await admin.query('CREATE TABLE "ä"(secret INTEGER)');
+      await admin.query('INSERT INTO "ä" VALUES(999)');
+      configure({ allowTables: ['orders', 'public.orders'] });
+      const text = 'WITH Ä AS (SELECT id FROM orders) SELECT * FROM ä';
+      assert.equal((await admin.query(text))[0].secret, 999);
+      await denied(text);
+      assert.equal(
+        (await query('WITH Ä AS (SELECT id FROM orders) SELECT * FROM Ä')).rows.length,
+        3
+      );
+      await admin.query('DROP TABLE "ä"');
+    }
     if (engine === 'mssql') {
       await admin.query('CREATE TABLE omnisql_other.dbo.orders(secret INTEGER)');
       await admin.query('INSERT INTO omnisql_other.dbo.orders VALUES(999)');
@@ -210,11 +223,15 @@ export async function checkIdentifierPolicies({
       );
       await query('SELECT * FROM dbo.orders');
       await denied('SELECT * FROM dbo.Orders');
+      await admin.query('INSERT INTO omnisql_case.dbo.Orders VALUES(999)');
+      const text = 'WITH orders AS (SELECT id FROM dbo.orders) SELECT * FROM Orders';
+      await admin.query('USE omnisql_case');
+      assert.equal((await admin.query(text))[0].secret, 999);
+      await denied(text);
       assert.deepEqual(
         (await call(client, 'list_tables', { connectionId: 'scope' })).map((t) => t.name),
         ['orders']
       );
-      await admin.query('USE omnisql_case');
       await admin.query('CREATE FUNCTION dbo.allowed() RETURNS int AS BEGIN RETURN 42 END');
       await admin.query('CREATE FUNCTION dbo.ALLOWED() RETURNS int AS BEGIN RETURN 99 END');
       writeFileSync(

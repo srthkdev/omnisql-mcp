@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- CTE aliases use dialect-specific ASCII folding; differently cased physical references cannot disappear from table policy analysis.
 - Access policies resolve actual catalog identities and native case rules, cover qualified denies and selected-database scope, and recheck stored results/exports.
 - Policy lookups share one round trip for joins and reuse transaction leases, including pools limited to one connection.
 - MySQL/MariaDB metadata distinguishes case-sensitive table names; SQL Server table discovery works with case-sensitive catalogs.

@@ -1,4 +1,4 @@
-import { mysqlNameEquals } from '../metadata/names.js';
+import { mysqlNameEquals, duckdbFold, duckdbNameEquals } from '../metadata/names.js';
 import type { DatabaseConnection, QueryResult } from '../types.js';
 import type { SqlNamePart } from './analyzer.js';
 import { sqlDialect } from './analyzer.js';
@@ -39,6 +39,7 @@ function sqlName(dialect: string, parts: SqlNamePart[]): string {
 }
 function like(dialect: string, column: string, glob: string, kind: IdentityKind): string {
   const pattern = literal(dialect, glob.replace(/[!%_[\]]/g, (c) => '!' + c).replace(/\*/g, '%'));
+  if (dialect === 'duckdb') return `(${duckdbFold(column)} LIKE ${duckdbFold(pattern)} ESCAPE '!')`;
   if (dialect === 'mssql') return `(${column} LIKE ${pattern} ESCAPE N'!')`;
   if (dialect === 'mysql') {
     const insensitive = `(BINARY LOWER(${column}) LIKE BINARY LOWER(${pattern}) ESCAPE '!')`;
@@ -105,7 +106,7 @@ function queryFor(
     )
   )
     throw new Error('Unsupported identifier in access policy lookup');
-  const nativeMatch = ['mysql', 'mssql', 'sqlite'].includes(d);
+  const nativeMatch = ['mysql', 'mssql', 'sqlite', 'duckdb'].includes(d);
   let schema: string, name: string, database: string, from: string, where: string;
   if (d === 'mysql') {
     schema = kind === 'table' ? 'TABLE_SCHEMA' : 'ROUTINE_SCHEMA';
@@ -119,6 +120,15 @@ function queryFor(
     where =
       `${match(schema, 'DATABASE()')} AND ${match(name, literal(d, last.value))}` +
       (kind === 'function' ? " AND ROUTINE_TYPE='FUNCTION'" : '');
+  } else if (d === 'duckdb') {
+    schema = 'schema_name';
+    name = kind === 'table' ? 'table_name' : 'function_name';
+    database = 'current_database()';
+    from =
+      kind === 'table'
+        ? '(SELECT database_name,schema_name,table_name FROM duckdb_tables() UNION ALL SELECT database_name,schema_name,view_name AS table_name FROM duckdb_views()) objects'
+        : 'duckdb_functions()';
+    where = `${kind === 'table' ? 'database_name=current_database() AND ' : ''}${duckdbNameEquals(schema, parts.length > 1 ? literal(d, parts.at(-2)!.value) : 'current_schema()')} AND ${duckdbNameEquals(name, literal(d, last.value))}`;
   } else if (d === 'mssql') {
     schema = 's.name';
     name = 'o.name';
@@ -203,7 +213,7 @@ function assertResolved(
   const [schema, name, allowed] = row;
   if (
     Number(allowed) !== 1 ||
-    (!['mysql', 'mssql', 'sqlite'].includes(sqlDialect(c.driver)) &&
+    (!['mysql', 'mssql', 'sqlite', 'duckdb'].includes(sqlDialect(c.driver)) &&
       !policy.allowsResolved(
         c,
         String(schema),

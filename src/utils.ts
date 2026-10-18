@@ -1,4 +1,4 @@
-import { mysqlNameEquals } from './metadata/names.js';
+import { mysqlNameEquals, duckdbNameEquals } from './metadata/names.js';
 import { sqlDialect } from './policy/analyzer.js';
 import { validateReadStatement, validateStatement } from './policy/sql.js';
 /**
@@ -33,6 +33,8 @@ const DIALECT_TOKENS = [
   'sqlserver',
   'microsoft',
   'sqlite',
+  'duckdb',
+  'clickhouse',
   'oracle',
   'db2',
   'hana',
@@ -59,6 +61,8 @@ const PROVIDER_DIALECTS: Record<string, string> = {
   mssql: 'mssql',
   sqlserver: 'mssql',
   sqlite: 'sqlite',
+  duckdb: 'duckdb',
+  clickhouse: 'clickhouse',
   oracle: 'oracle',
   db2: 'db2',
 };
@@ -532,6 +536,8 @@ export function getTestQuery(driver: string): string {
   } else if (driverLower.includes('oracle')) {
     // v$version is granted to PUBLIC, so any session can read it.
     return 'SELECT banner FROM v$version WHERE ROWNUM = 1';
+  } else if (driverLower.includes('duckdb')) {
+    return 'SELECT version();';
   } else if (driverLower.includes('sqlite')) {
     return 'SELECT sqlite_version();';
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
@@ -608,6 +614,9 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
   const safeTableName = sanitizeIdentifier(parts.at(-1)!);
   const safeSchema = parts.length === 2 ? sanitizeIdentifier(parts[0]) : null;
 
+  if (driverLower.includes('duckdb')) {
+    return `SELECT column_name,data_type,is_nullable,column_default,character_maximum_length,numeric_precision,numeric_scale FROM duckdb_columns() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', safeSchema ? `'${safeSchema}'` : 'current_schema()')} AND ${duckdbNameEquals('table_name', `'${safeTableName}'`)} ORDER BY column_index`;
+  }
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return `
       SELECT
@@ -681,6 +690,10 @@ export function buildListTablesQuery(
     dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
   const safeSchema = schema ? sanitizeIdentifier(schema) : null;
 
+  if (driverLower.includes('duckdb')) {
+    const filter = safeSchema ? ` AND ${duckdbNameEquals('schema_name', `'${safeSchema}'`)}` : '';
+    return `SELECT table_name,'BASE TABLE' AS table_type,schema_name AS table_schema FROM duckdb_tables() WHERE NOT internal AND database_name=current_database()${filter}${includeViews ? ` UNION ALL SELECT view_name AS table_name,'VIEW' AS table_type,schema_name AS table_schema FROM duckdb_views() WHERE NOT internal AND database_name=current_database()${filter}` : ''} ORDER BY table_schema,table_name`;
+  }
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     let query = `
       SELECT

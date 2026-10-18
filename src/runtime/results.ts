@@ -73,18 +73,51 @@ export class ResultCollector {
 }
 
 /** Preserve repeated column names and integers beyond Number's exact range. */
-export function parseSQLiteRows(text: string): { columns: string[]; rows: unknown[][] } {
+export function parseJsonRows(
+  text: string,
+  decimalText = false
+): { columns: string[]; rows: unknown[][] } {
   let offset = 0;
   const skip = () => {
     while (/\s/.test(text[offset] ?? '') && offset < text.length) offset++;
   };
   const take = (char: string) => {
     skip();
-    if (text[offset++] !== char) throw new Error('Invalid SQLite JSON');
+    if (text[offset++] !== char) throw new Error('Invalid database JSON');
   };
-  const value = (): unknown => {
+  const value = (depth = 0): unknown => {
+    if (depth > 64) throw new Error('JSON nesting exceeds the result limit');
     skip();
     const start = offset;
+    if (text[offset] === '[') {
+      take('[');
+      const items: unknown[] = [];
+      skip();
+      while (text[offset] !== ']') {
+        items.push(value(depth + 1));
+        skip();
+        if (text[offset] !== ',') break;
+        offset++;
+      }
+      take(']');
+      return items;
+    }
+    if (text[offset] === '{') {
+      take('{');
+      const object: Record<string, unknown> = Object.create(null);
+      skip();
+      while (text[offset] !== '}') {
+        const key = value(depth + 1);
+        if (typeof key !== 'string') throw new Error('Invalid JSON object key');
+        take(':');
+        object[key] = value(depth + 1);
+        skip();
+        if (text[offset] !== ',') break;
+        offset++;
+      }
+      take('}');
+      return object;
+    }
     if (text[offset] === '"') {
       offset++;
       while (offset < text.length) {
@@ -94,14 +127,15 @@ export function parseSQLiteRows(text: string): { columns: string[]; rows: unknow
         }
         if (text[offset++] === '"') return JSON.parse(text.slice(start, offset));
       }
-      throw new Error('Invalid SQLite JSON string');
+      throw new Error('Invalid database JSON string');
     }
     const token = text
       .slice(offset)
       .match(/^(?:null|true|false|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/)?.[0];
-    if (!token) throw new Error('Invalid SQLite value');
+    if (!token) throw new Error('Invalid database value');
     offset += token.length;
     if (/^-?\d+$/.test(token) && !Number.isSafeInteger(Number(token))) return token;
+    if (decimalText && /^-?\d/.test(token) && /[.eE]/.test(token)) return token;
     return JSON.parse(token);
   };
   if (!text.trim()) return { columns: [], rows: [] };
@@ -116,7 +150,7 @@ export function parseSQLiteRows(text: string): { columns: string[]; rows: unknow
     skip();
     while (text[offset] !== '}') {
       const key = value();
-      if (typeof key !== 'string') throw new Error('Invalid SQLite column');
+      if (typeof key !== 'string') throw new Error('Invalid database column');
       take(':');
       names.push(key);
       row.push(value());
@@ -127,7 +161,7 @@ export function parseSQLiteRows(text: string): { columns: string[]; rows: unknow
     take('}');
     if (!columns.length) columns = names;
     else if (JSON.stringify(columns) !== JSON.stringify(names))
-      throw new Error('Inconsistent SQLite columns');
+      throw new Error('Inconsistent database columns');
     rows.push(row);
     skip();
     if (text[offset] !== ',') break;
@@ -135,19 +169,22 @@ export function parseSQLiteRows(text: string): { columns: string[]; rows: unknow
   }
   take(']');
   skip();
-  if (offset !== text.length) throw new Error('Trailing SQLite output');
+  if (offset !== text.length) throw new Error('Trailing database output');
   return { columns, rows };
 }
 
-/** Incremental SQLite JSON framing. Retains at most one unfinished row. */
-export class SQLiteRowStream {
+/** Incremental CLI JSON framing. Retains at most one unfinished row. */
+export class JsonRowStream {
   private buffer = '';
   private scan = 0;
   private start = -1;
   private depth = 0;
   private quoted = false;
   private escaped = false;
-  constructor(private collector: ResultCollector) {}
+  constructor(
+    private collector: ResultCollector,
+    private decimalText = false
+  ) {}
   write(chunk: string): boolean {
     this.buffer += chunk;
     while (this.scan < this.buffer.length) {
@@ -163,7 +200,10 @@ export class SQLiteRowStream {
       } else if (c === '}') {
         this.depth--;
         if (this.depth === 0 && this.start >= 0) {
-          const parsed = parseSQLiteRows('[' + this.buffer.slice(this.start, this.scan + 1) + ']');
+          const parsed = parseJsonRows(
+            '[' + this.buffer.slice(this.start, this.scan + 1) + ']',
+            this.decimalText
+          );
           if (!this.collector.columns.length) this.collector.columns = parsed.columns;
           if (!this.collector.add(parsed.rows[0])) return false;
           this.buffer = this.buffer.slice(this.scan + 1);
@@ -174,7 +214,9 @@ export class SQLiteRowStream {
       this.scan++;
     }
     if (Buffer.byteLength(this.buffer) > this.collector.maxBytes)
-      throw new Error('SQLite row exceeds the result byte limit; select fewer or smaller columns');
+      throw new Error(
+        'Database row exceeds the result byte limit; select fewer or smaller columns'
+      );
     return true;
   }
 }

@@ -1,3 +1,4 @@
+import { duckdbAdapter } from './runtime/duckdb.js';
 import {
   assertQueryAccess as authorizeQuery,
   assertIdentityAccess,
@@ -11,10 +12,10 @@ import { indexesAndConstraints } from './metadata/catalog.js';
 import { QueryGate } from './runtime/concurrency.js';
 import { AdapterRegistry } from './runtime/adapter.js';
 import { sqlDialect } from './policy/analyzer.js';
-import { ResultCollector, SQLiteRowStream } from './runtime/results.js';
+import { ResultCollector } from './runtime/results.js';
 import { AccessPolicy } from './policy/access.js';
 import { booleanSetting } from './runtime-config.js';
-import { spawn } from 'child_process';
+import { runJsonCli } from './runtime/cli.js';
 import { Pool as PgPool } from 'pg';
 import { ConnectionPoolManager } from './pools/connection-pool.js';
 import type sql from 'mssql';
@@ -45,6 +46,7 @@ export class WorkspaceClient {
   private policy = new AccessPolicy();
   private gate = new QueryGate();
   private adapters = new AdapterRegistry([
+    duckdbAdapter(() => this.timeout),
     {
       id: 'postgres',
       capabilities: { databaseOverride: true, readOnly: 'transaction', transactions: true },
@@ -335,18 +337,14 @@ export class WorkspaceClient {
     maxRows?: number
   ): Promise<QueryResult> {
     const timeout = connection.limits?.timeoutMs ?? this.timeout;
-    return new Promise((resolve, reject) => {
-      const dbPath = connection.properties?.database || connection.database;
-      if (!dbPath) {
-        reject(new Error('SQLite database path not found'));
-        return;
-      }
-
-      if (query.trimStart().startsWith('.')) {
-        reject(new Error('SQLite CLI dot commands are not SQL and are not supported'));
-        return;
-      }
-      const args = [
+    const dbPath = connection.properties?.database || connection.database;
+    if (!dbPath) throw new Error('SQLite database path not found');
+    if (query.trimStart().startsWith('.'))
+      throw new Error('SQLite CLI dot commands are not SQL and are not supported');
+    return runJsonCli(
+      connection,
+      'sqlite3',
+      [
         '-safe',
         '-init',
         devNull,
@@ -356,75 +354,11 @@ export class WorkspaceClient {
         ...(readOnly ? ['-readonly'] : []),
         dbPath,
         query,
-      ];
-      const proc = spawn('sqlite3', args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      // A failed spawn surfaces twice: once as 'error' on the child, and again
-      // as EPIPE on the stdin we write to below. Both are 'error' events with
-      // no listener, which Node turns into an uncaught throw that takes the
-      // whole MCP server down instead of failing this one tool call.
-      let settled = false;
-      const deadline = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        proc.kill('SIGKILL');
-        reject(new Error(`SQLite query timed out after ${timeout}ms`));
-      }, timeout);
-      const fail = (err: NodeJS.ErrnoException) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(deadline);
-        const hint =
-          err.code === 'ENOENT'
-            ? 'sqlite3 CLI not found on PATH - install it to query SQLite connections'
-            : err.code === 'EACCES'
-              ? 'sqlite3 CLI is not executable'
-              : 'Failed to run sqlite3 CLI';
-        reject(new Error(`${hint}: ${err.message}`));
-      };
-
-      proc.on('error', fail);
-      proc.stdin.on('error', fail);
-
-      const collector = new ResultCollector(connection, maxRows);
-      const stream = new SQLiteRowStream(collector);
-      let error = '';
-      proc.stdout.setEncoding('utf8');
-      proc.stdout.on('data', (data: string) => {
-        if (settled) return;
-        try {
-          if (!stream.write(data)) {
-            settled = true;
-            clearTimeout(deadline);
-            proc.kill('SIGTERM');
-            resolve(collector.result());
-          }
-        } catch (error) {
-          settled = true;
-          clearTimeout(deadline);
-          proc.kill('SIGKILL');
-          reject(error);
-        }
-      });
-      proc.stderr.on('data', (data) => {
-        if (error.length < 65536) error += data.toString();
-      });
-
-      proc.on('close', (code) => {
-        clearTimeout(deadline);
-        if (settled) return;
-        settled = true;
-        if (code !== 0) {
-          reject(new Error(`SQLite error: ${error}`));
-          return;
-        }
-
-        resolve(collector.result());
-      });
-      proc.stdin.end();
-    });
+      ],
+      'SQLite',
+      timeout,
+      maxRows
+    );
   }
 
   private async executePostgreSQLQuery(
@@ -849,7 +783,7 @@ export class WorkspaceClient {
   private filterCatalogSql(connection: DatabaseConnection, sql: string): string {
     if (
       !this.policy.hasTableRestrictions(connection) ||
-      !['mysql', 'mssql', 'sqlite'].includes(sqlDialect(connection.driver))
+      !['mysql', 'mssql', 'sqlite', 'duckdb'].includes(sqlDialect(connection.driver))
     )
       return sql;
     const dialect = sqlDialect(connection.driver);
@@ -858,7 +792,9 @@ export class WorkspaceClient {
         ? 'visible.table_schema'
         : dialect === 'mssql'
           ? '(SELECT name FROM sys.databases WHERE database_id=DB_ID())'
-          : "''";
+          : dialect === 'duckdb'
+            ? 'current_database()'
+            : "''";
     const predicate = identityPredicate(
       connection,
       this.policy.rulesFor(connection),
@@ -893,7 +829,7 @@ export class WorkspaceClient {
         })
         .filter(
           (table) =>
-            ['mysql', 'mssql', 'sqlite'].includes(sqlDialect(connection.driver)) ||
+            ['mysql', 'mssql', 'sqlite', 'duckdb'].includes(sqlDialect(connection.driver)) ||
             this.policy.allowsResolved(
               connection,
               table.table_schema ?? table.schema ?? '',

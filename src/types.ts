@@ -51,6 +51,8 @@ export interface QueryResult {
   columns: string[];
   rows: any[][];
   rowCount: number;
+  /** Null when the execution API cannot report affected rows. */
+  affectedRows?: number | null;
   executionTime: number;
   truncated?: boolean;
   limitReason?: 'rows' | 'bytes';

@@ -171,6 +171,8 @@ export class AccessPolicy {
   ): string | null {
     if (!this.isDatabaseScoped(c)) return null;
     const dialect = sqlDialect(c.driver);
+    if (dialect === 'duckdb' && parts.length > 2)
+      return 'DuckDB catalog-qualified names are outside the database scope; use schema.table';
     if (dialect === 'mssql' && parts.length > 3)
       return 'Linked-server names are outside the database scope';
     const max = dialect === 'mysql' || dialect === 'clickhouse' ? 2 : 3;

@@ -104,11 +104,37 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build:rust
       - run: git diff --exit-code -- 'src/native/*.js' 'src/native/*.d.ts' src/native/package.json
-      - run: bun test --isolate tests/access-policy.test.ts tests/security-policy.test.ts tests/connections-config.test.ts
+      - run: bun test --isolate tests/access-policy.test.ts tests/security-policy.test.ts tests/connections-config.test.ts tests/policy-identifiers.test.ts
       - uses: actions/upload-artifact@v4
         with:
           name: rust-wasm-linux
           path: src/native/
+  duckdb:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runtime: [bun, node]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun install --frozen-lockfile
+      - name: Install verified DuckDB CLI 1.5.6
+        env:
+          DUCKDB_RELEASE: https://github.com/duckdb/duckdb/releases/download/v1.5.6/duckdb_cli-linux-amd64.gz
+        run: |
+          curl --fail --location --connect-timeout 10 --max-time 120 "$DUCKDB_RELEASE" -o "$RUNNER_TEMP/duckdb.gz"
+          printf 'cce2687a38681db644c248198b99ecd86170ff47e324c5f33e50c0042f142839  %s\n' "$RUNNER_TEMP/duckdb.gz" | sha256sum --check
+          gzip -dc "$RUNNER_TEMP/duckdb.gz" > "$RUNNER_TEMP/duckdb"
+          chmod 700 "$RUNNER_TEMP/duckdb"
+      - run: bun run build
+      - run: ${{ matrix.runtime }} scripts/check-duckdb.mjs
+        env:
+          OMNISQL_DUCKDB_CLI: ${{ runner.temp }}/duckdb
   tls:
     runs-on: ubuntu-latest
     timeout-minutes: 10

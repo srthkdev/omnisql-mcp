@@ -31,7 +31,7 @@
 | Capability | How it helps |
 |---|---|
 | **Reuse saved connections** | Read database and SSH settings from DBeaver-compatible workspaces, including custom projects. |
-| **Query across engines** | Native PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, and Oracle drivers. |
+| **Query across engines** | PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle, and DuckDB. |
 | **Choose another database** | Discover databases and select one at call time, using the same saved server credentials. |
 | **Understand your data** | Browse tables, inspect columns, explain queries, export CSV/JSON, and compare schemas. |
 | **Control access** | Choose read-only mode, restrict connections, or disable tools. |
@@ -39,17 +39,20 @@
 
 ## Database Support
 
-**Natively supported** (direct driver, fast):
+**Supported execution paths**:
 - PostgreSQL (via `pg`)
 - MySQL / MariaDB (via `mysql2`)
 - SQL Server / MSSQL (via `mssql`)
 - SQLite (via `sqlite3` CLI)
+- DuckDB (via DuckDB CLI 1.5.6+; existing local files, locked safe mode, exact numeric output)
 - Oracle (via `oracledb`)
 
 **Postgres-compatible** (routed through `pg` driver automatically):
 - CockroachDB, TimescaleDB, Amazon Redshift, YugabyteDB, AlloyDB, Supabase, Neon, Citus
 
 **Other databases**: Unsupported drivers return an explicit error. External GUI/CLI query fallback has been removed so access and output policies remain enforceable.
+
+DuckDB uses an installed CLI so its native binary stays out of the npm package. Install it with `brew install duckdb` on macOS, or use the [official downloads](https://duckdb.org/install/). Set `OMNISQL_DUCKDB_CLI` if the executable is outside your MCP client's PATH. See [database support](https://srthkdev.github.io/omnisql-mcp/guides/databases/) for configuration and limits.
 
 **Custom drivers** wrapping any of the above are detected automatically — see [Custom and IAM-Authenticated Drivers](#custom-and-iam-authenticated-drivers).
 

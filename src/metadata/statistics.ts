@@ -1,4 +1,4 @@
-import { mysqlNameEquals } from './names.js';
+import { mysqlNameEquals, duckdbNameEquals } from './names.js';
 import type { DatabaseConnection } from '../types.js';
 import { type CatalogQuery, records, tableParts } from './catalog.js';
 export interface TableStatistics {
@@ -20,6 +20,8 @@ export async function tableStatistics(
   let sql: string;
   if (dialect === 'postgres')
     sql = `SELECT CASE WHEN t.reltuples>=0 THEN t.reltuples::bigint ELSE NULL END AS row_estimate,pg_table_size(t.oid)::text AS data_bytes,pg_indexes_size(t.oid)::text AS index_bytes,pg_total_relation_size(t.oid)::text AS total_bytes FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname=${schema} AND t.relname='${table}' AND t.relkind IN ('r','m','p')`;
+  else if (dialect === 'duckdb')
+    sql = `SELECT estimated_size::VARCHAR AS row_estimate,NULL AS data_bytes,NULL AS index_bytes,NULL AS total_bytes FROM duckdb_tables() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', schema)} AND ${duckdbNameEquals('table_name', `'${table}'`)}`;
   else if (dialect === 'mysql')
     sql = `SELECT TABLE_ROWS AS row_estimate,DATA_LENGTH AS data_bytes,INDEX_LENGTH AS index_bytes,DATA_LENGTH+INDEX_LENGTH AS total_bytes FROM information_schema.TABLES WHERE ${mysqlNameEquals('TABLE_SCHEMA', schema)} AND ${mysqlNameEquals('TABLE_NAME', `'${table}'`)}`;
   else if (dialect === 'mssql')
@@ -49,6 +51,10 @@ export async function tableStatistics(
     notes.push(
       'No statistics visible for this table; the table may be empty, partitioned, or outside catalog permissions.'
     );
+  if (dialect === 'duckdb')
+    notes.push(
+      'DuckDB reports row estimates; per-table physical byte sizes are unavailable without attributing shared database blocks.'
+    );
   if (dialect === 'oracle')
     notes.push(
       'Storage covers the current Oracle user; LOB segments and global partition totals may require additional catalog privileges.'
@@ -75,6 +81,14 @@ export async function visibleStorage(
   let sql: string;
   if (dialect === 'postgres')
     sql = `SELECT n.nspname AS table_schema,t.relname AS table_name,pg_total_relation_size(t.oid)::text AS total_bytes FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace WHERE t.relkind IN ('r','m','p') AND n.nspname NOT IN ('pg_catalog','information_schema')`;
+  else if (dialect === 'duckdb')
+    return {
+      totalSizeBytes: null,
+      sizeComplete: false,
+      notes: [
+        'DuckDB database blocks are shared; per-table physical byte attribution is unavailable.',
+      ],
+    };
   else if (dialect === 'mysql')
     sql = `SELECT TABLE_SCHEMA AS table_schema,TABLE_NAME AS table_name,DATA_LENGTH+INDEX_LENGTH AS total_bytes FROM information_schema.TABLES WHERE ${mysqlNameEquals('TABLE_SCHEMA', 'DATABASE()')}`;
   else if (dialect === 'mssql')

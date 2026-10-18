@@ -1,4 +1,4 @@
-import { mysqlNameEquals } from './names.js';
+import { mysqlNameEquals, duckdbNameEquals } from './names.js';
 import { sanitizeIdentifier } from '../utils.js';
 import { sqlDialect } from '../policy/analyzer.js';
 import type { DatabaseConnection, QueryResult, IndexInfo, ConstraintInfo } from '../types.js';
@@ -19,17 +19,21 @@ export function tableParts(connection: DatabaseConnection, name: string) {
       ? `'${parts[0]}'`
       : dialect === 'postgres'
         ? 'current_schema()'
-        : dialect === 'mysql'
-          ? 'DATABASE()'
-          : dialect === 'mssql'
-            ? 'SCHEMA_NAME()'
-            : "SYS_CONTEXT('USERENV','CURRENT_SCHEMA')";
+        : dialect === 'duckdb'
+          ? 'current_schema()'
+          : dialect === 'mysql'
+            ? 'DATABASE()'
+            : dialect === 'mssql'
+              ? 'SCHEMA_NAME()'
+              : "SYS_CONTEXT('USERENV','CURRENT_SCHEMA')";
   return { dialect, table, schema };
 }
 function indexQuery(c: DatabaseConnection, name: string): string | undefined {
   const { dialect, table, schema } = tableParts(c, name);
   if (dialect === 'postgres')
     return `SELECT x.relname AS index_name, pg_get_indexdef(i.indexrelid,k.ordinality::integer,true) AS column_name, k.ordinality AS ordinal_position, i.indisunique AS is_unique, i.indisprimary AS is_primary, am.amname AS index_type, pg_get_indexdef(i.indexrelid) AS definition, pg_get_expr(i.indpred,i.indrelid) AS predicate, i.indisvalid AS is_valid FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace JOIN pg_class x ON x.oid=i.indexrelid JOIN pg_am am ON am.oid=x.relam CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY k(attnum,ordinality) WHERE n.nspname=${schema} AND t.relname='${table}' AND k.ordinality<=i.indnkeyatts ORDER BY x.relname,k.ordinality`;
+  if (dialect === 'duckdb')
+    return `SELECT index_name,unnest(expressions::VARCHAR[]) AS column_name,generate_subscripts(expressions::VARCHAR[],1) AS ordinal_position,is_unique,is_primary,'ART' AS index_type,sql AS definition FROM duckdb_indexes() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', schema)} AND ${duckdbNameEquals('table_name', `'${table}'`)} ORDER BY index_name,ordinal_position`;
   if (dialect === 'mysql')
     return `SELECT INDEX_NAME AS index_name,COLUMN_NAME AS column_name,SEQ_IN_INDEX AS ordinal_position,NON_UNIQUE=0 AS is_unique,INDEX_NAME='PRIMARY' AS is_primary,INDEX_TYPE AS index_type FROM information_schema.STATISTICS WHERE ${mysqlNameEquals('TABLE_SCHEMA', schema)} AND ${mysqlNameEquals('TABLE_NAME', `'${table}'`)} ORDER BY INDEX_NAME,SEQ_IN_INDEX`;
   if (dialect === 'mssql')
@@ -41,6 +45,8 @@ function constraintQuery(c: DatabaseConnection, name: string): string | undefine
   const { dialect, table, schema } = tableParts(c, name);
   if (dialect === 'postgres')
     return `SELECT k.conname AS constraint_name, CASE k.contype WHEN 'p' THEN 'PRIMARY_KEY' WHEN 'u' THEN 'UNIQUE' WHEN 'f' THEN 'FOREIGN_KEY' WHEN 'c' THEN 'CHECK' END AS constraint_type,a.attname AS column_name,rn.nspname||'.'||rt.relname AS referenced_table,ra.attname AS referenced_column,pg_get_constraintdef(k.oid) AS definition,keys.ordinality AS ordinal_position FROM pg_constraint k JOIN pg_class t ON t.oid=k.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace LEFT JOIN LATERAL unnest(k.conkey) WITH ORDINALITY keys(attnum,ordinality) ON true LEFT JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=keys.attnum LEFT JOIN pg_class rt ON rt.oid=k.confrelid LEFT JOIN pg_namespace rn ON rn.oid=rt.relnamespace LEFT JOIN pg_attribute ra ON ra.attrelid=k.confrelid AND ra.attnum=k.confkey[keys.ordinality] WHERE n.nspname=${schema} AND t.relname='${table}' AND k.contype IN ('p','u','f','c') ORDER BY k.conname,keys.ordinality`;
+  if (dialect === 'duckdb')
+    return `SELECT k.constraint_name,replace(k.constraint_type,' ','_') AS constraint_type,col.column_name,k.referenced_table,k.referenced_column_names[col.ordinal_position] AS referenced_column,col.ordinal_position,k.constraint_text AS definition FROM duckdb_constraints() k LEFT JOIN LATERAL unnest(k.constraint_column_names) WITH ORDINALITY AS col(column_name,ordinal_position) ON true WHERE k.constraint_type IN ('PRIMARY KEY','FOREIGN KEY','UNIQUE','CHECK') AND k.database_name=current_database() AND ${duckdbNameEquals('k.schema_name', schema)} AND ${duckdbNameEquals('k.table_name', `'${table}'`)} ORDER BY k.constraint_name,col.ordinal_position`;
   if (dialect === 'mysql')
     return `SELECT k.CONSTRAINT_NAME AS constraint_name,REPLACE(k.CONSTRAINT_TYPE,' ','_') AS constraint_type,c.COLUMN_NAME AS column_name,CONCAT(c.REFERENCED_TABLE_SCHEMA,'.',c.REFERENCED_TABLE_NAME) AS referenced_table,c.REFERENCED_COLUMN_NAME AS referenced_column,c.ORDINAL_POSITION AS ordinal_position FROM information_schema.TABLE_CONSTRAINTS k LEFT JOIN information_schema.KEY_COLUMN_USAGE c ON ${mysqlNameEquals('c.CONSTRAINT_SCHEMA', 'k.CONSTRAINT_SCHEMA')} AND ${mysqlNameEquals('c.TABLE_NAME', 'k.TABLE_NAME')} AND c.CONSTRAINT_NAME=k.CONSTRAINT_NAME WHERE ${mysqlNameEquals('k.TABLE_SCHEMA', schema)} AND ${mysqlNameEquals('k.TABLE_NAME', `'${table}'`)} ORDER BY k.CONSTRAINT_NAME,c.ORDINAL_POSITION`;
   if (dialect === 'oracle')
@@ -143,6 +149,7 @@ export async function indexesAndConstraints(
       k = {
         name,
         type: String(row.constraint_type) as ConstraintInfo['type'],
+        ...(dialect === 'duckdb' ? { nameIsGenerated: true } : {}),
         columns: [],
         ...(row.referenced_table
           ? { referencedTable: String(row.referenced_table), referencedColumns: [] }

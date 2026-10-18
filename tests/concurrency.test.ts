@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'bun:test';
-import { QueryGate } from '../src/runtime/concurrency.js';
+import { QueryGate, ReadWriteGate } from '../src/runtime/concurrency.js';
 describe('shared query concurrency', () => {
   it('holds a fixed number of active slots and transfers released slots once', async () => {
     const gate = new QueryGate(1, 1);
@@ -34,4 +34,28 @@ describe('shared query concurrency', () => {
       vi.useRealTimers();
     }
   });
+});
+
+it('lets readers share access and prevents later readers overtaking a writer', async () => {
+  const gate = new ReadWriteGate();
+  const r1 = await gate.acquire(false, 1000);
+  const r2 = await gate.acquire(false, 1000);
+  const order: string[] = [];
+  const writer = gate.acquire(true, 1000).then((release) => {
+    order.push('write');
+    return release;
+  });
+  const reader = gate.acquire(false, 1000).then((release) => {
+    order.push('read');
+    return release;
+  });
+  r1();
+  await Promise.resolve();
+  expect(order).toEqual([]);
+  r2();
+  const finishWrite = await writer;
+  expect(order).toEqual(['write']);
+  finishWrite();
+  (await reader)();
+  expect(order).toEqual(['write', 'read']);
 });

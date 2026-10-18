@@ -95,6 +95,8 @@ export function loadConfiguredConnections(
         throw new Error(`Connection ${id}: invalid ${k} limit`);
     const properties =
       merged.properties === undefined ? {} : object(merged.properties, 'Connection properties');
+    if (Object.values(properties).some((value) => typeof value !== 'string'))
+      throw new Error(`Connection ${id}: property values must be strings`);
     let parsed: Partial<DatabaseConnection> = {};
     const rawUrl = env(merged.urlEnv);
     if (rawUrl) {

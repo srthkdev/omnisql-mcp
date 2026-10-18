@@ -72,6 +72,7 @@ describe('one server, independent database instances', () => {
       { sales: { driver: 'postgres', readOnly: 'false' } },
       { '../sales': { driver: 'postgres' } },
       { sales: { driver: 'postgres', limits: { poolMax: 0 } } },
+      { sales: { driver: 'duckdb', properties: { 'duckdb.memoryMB': { value: 256 } } } },
       { sales: { driver: 'postgres', passwordEnv: 'OMNISQL_MISSING_TEST_CREDENTIAL' } },
     ])
       expect(() => load(cfg)).toThrow();

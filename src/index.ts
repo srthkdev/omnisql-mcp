@@ -3,14 +3,15 @@ const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.met
   .version as string;
 const bunVersion = process.versions.bun;
 const current = (bunVersion ?? process.versions.node).split('.').map(Number);
-const minimum = bunVersion ? [1, 4, 3] : [22, 15, 0];
-const supported =
-  current[0] > minimum[0] ||
-  (current[0] === minimum[0] &&
-    (current[1] > minimum[1] || (current[1] === minimum[1] && current[2] >= minimum[2])));
+const minimum = [1, 4, 3];
+const supported = bunVersion
+  ? current[0] > minimum[0] ||
+    (current[0] === minimum[0] &&
+      (current[1] > minimum[1] || (current[1] === minimum[1] && current[2] >= minimum[2])))
+  : current[0] >= 24 || (current[0] === 22 && current[1] >= 15);
 if (!supported) {
   console.error(
-    `OmniSQL ${VERSION} requires Bun 1.4.3+ or Node.js 22.15+. Current: ${bunVersion ? 'Bun' : 'Node.js'} ${bunVersion ?? process.versions.node}`
+    `OmniSQL ${VERSION} requires Bun 1.4.3+, Node.js 22.15+ LTS, or Node.js 24+. Current: ${bunVersion ? 'Bun' : 'Node.js'} ${bunVersion ?? process.versions.node}`
   );
   process.exit(1);
 }

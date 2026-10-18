@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readConnectionProp } from '../auth/connection-props.js';
 import { booleanSetting } from '../runtime-config.js';
-import { Pool as PgPool } from 'pg';
-import mysql, { Pool as MySqlPool } from 'mysql2/promise';
-import sql, { ConnectionPool as MssqlPool } from 'mssql';
+import type { Pool as PgPool } from 'pg';
+import type mysql from 'mysql2/promise';
+import type { Pool as MySqlPool } from 'mysql2/promise';
+import type { ConnectionPool as MssqlPool } from 'mssql';
 import { DatabaseConnection, PoolConfig, PoolStats } from '../types.js';
 import { isIamAuthConnection, resolveIamCredentials } from '../auth/iam-auth.js';
 import { sshTunnelManager } from '../net/ssh-tunnel.js';
@@ -189,7 +190,8 @@ export class ConnectionPoolManager {
         (await resolveIamCredentials(connection, 5432, { debug: this.debug })).password;
     }
 
-    const pool = new PgPool({
+    const { Pool } = await import('pg');
+    const pool = new Pool({
       host,
       port,
       database: connection.database || connection.properties?.database,
@@ -244,6 +246,7 @@ export class ConnectionPoolManager {
       };
     }
 
+    const { default: mysql } = await import('mysql2/promise');
     const pool = mysql.createPool({
       host,
       port,
@@ -286,6 +289,7 @@ export class ConnectionPoolManager {
     // loopback address and would read as an ordinary on-prem server.
     const isAzure = (connection.host || host).includes('.database.windows.net');
 
+    const { default: sql } = await import('mssql');
     const pool = new sql.ConnectionPool({
       server: host,
       port,

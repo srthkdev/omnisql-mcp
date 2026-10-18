@@ -2,7 +2,7 @@ import { AccessPolicy } from '../policy/access.js';
 import crypto from 'crypto';
 import { PoolClient as PgPoolClient } from 'pg';
 import { PoolConnection as MySqlPoolConnection } from 'mysql2/promise';
-import sql from 'mssql';
+import type sql from 'mssql';
 import { Transaction, TransactionResult, DatabaseConnection } from '../types.js';
 import { ConnectionPoolManager } from '../pools/connection-pool.js';
 
@@ -66,6 +66,7 @@ export class TransactionManager {
         type = 'mysql';
       } else if (driver.includes('mssql') || driver.includes('sqlserver')) {
         const mssqlPool = poolEntry.pool as sql.ConnectionPool;
+        const { default: sql } = await import('mssql');
         const mssqlTxn = new sql.Transaction(mssqlPool);
         await mssqlTxn.begin();
         client = mssqlTxn;
@@ -131,6 +132,7 @@ export class TransactionManager {
         };
       } else if (active.type === 'mssql') {
         const mssqlTxn = active.client as sql.Transaction;
+        const { default: sql } = await import('mssql');
         const request = new sql.Request(mssqlTxn);
         const result = await request.query(query);
         const columns = result.recordset?.columns ? Object.keys(result.recordset.columns) : [];

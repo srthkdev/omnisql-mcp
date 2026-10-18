@@ -8,7 +8,11 @@
     "omnisql-mcp": "dist/index.js"
   },
   "files": [
-    "dist/",
+    "dist/**/*.js",
+    "dist/native/*.wasm",
+    "dist/native/package.json",
+    "dist/native/LICENSE",
+    "dist/native/THIRD_PARTY_LICENSES.txt",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

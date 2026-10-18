@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A portable Rust SQL analyzer for schema/table policies across query tools, exports, transactions, and resources. npm installations include WebAssembly and need no Rust compiler.
 
 ### Changed
+- CLI help/version commands avoid loading the MCP server; SQL drivers load only when used. Local benchmarks and reproduction commands are documented under `docs/benchmarks/`.
+- CLI release packages omit development source maps and type declarations.
 - Ordinary PostgreSQL, MySQL/MariaDB, and SQL Server queries reuse isolated connection pools.
 - Native SQL drivers collect results within row and byte budgets rather than rewriting SQL with LIMIT/TOP.
 - Connection names retain spaces and Unicode; ambiguous workspace IDs fail instead of silently selecting one project.

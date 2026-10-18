@@ -1,7 +1,6 @@
 import { QueryGate } from './runtime/concurrency.js';
 import { AdapterRegistry } from './runtime/adapter.js';
 import { sqlDialect } from './policy/analyzer.js';
-import Cursor from 'pg-cursor';
 import { ResultCollector, SQLiteRowStream } from './runtime/results.js';
 import { AccessPolicy } from './policy/access.js';
 import { booleanSetting } from './runtime-config.js';
@@ -13,7 +12,7 @@ import os from 'os';
 import csv from 'csv-parser';
 import { Pool as PgPool } from 'pg';
 import { ConnectionPoolManager } from './pools/connection-pool.js';
-import sql from 'mssql';
+import type sql from 'mssql';
 import mysql from 'mysql2/promise';
 import {
   DatabaseConnection,
@@ -31,7 +30,7 @@ import {
   buildListTablesQuery,
 } from './utils.js';
 import { sshTunnelManager } from './net/ssh-tunnel.js';
-import oracledb from 'oracledb';
+import type oracledb from 'oracledb';
 import {
   resolveOracleConnectOptions,
   oracleFetchTypeHandler,
@@ -530,6 +529,7 @@ export class WorkspaceClient {
     try {
       if (readOnly) await client.query('BEGIN READ ONLY');
       const collector = new ResultCollector(connection, maxRows);
+      const { default: Cursor } = await import('pg-cursor');
       const cursor = client.query(new Cursor(query, [], { rowMode: 'array' }));
       const deadline = setTimeout(() => {
         broken = true;
@@ -701,6 +701,7 @@ export class WorkspaceClient {
       throw new Error('User is required for Oracle connection');
     }
 
+    const { default: oracledb } = await import('oracledb');
     const conn = await oracledb.getConnection({
       user,
       password,
@@ -732,6 +733,7 @@ export class WorkspaceClient {
     maxRows?: number,
     readOnly = false
   ): Promise<QueryResult> {
+    const { default: oracledb } = await import('oracledb');
     return this.withOracleConnection(connection, async (conn) => {
       if (readOnly) await conn.execute('SET TRANSACTION READ ONLY');
       const res = await conn.execute<unknown[]>(normalizeOracleStatement(query), [], {
@@ -772,6 +774,7 @@ export class WorkspaceClient {
    */
   async explainOracleQuery(connection: DatabaseConnection, query: string): Promise<QueryResult> {
     const startTime = Date.now();
+    const { default: oracledb } = await import('oracledb');
     return this.withOracleConnection(connection, async (conn) => {
       const statementId = explainStatementId();
       try {

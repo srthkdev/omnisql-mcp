@@ -134,6 +134,11 @@ export function verifyHostKey(
   }
 
   const presented = key.toString('base64');
+  if (
+    matching.some((entry) => entry.revoked && entry.keyType === keyType && entry.key === presented)
+  ) {
+    return { status: 'mismatch', expectedTypes: [keyType] };
+  }
   const accepted = matching.filter(
     (entry) => !entry.revoked && entry.keyType === keyType && entry.key === presented
   );

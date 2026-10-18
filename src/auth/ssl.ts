@@ -140,6 +140,8 @@ export function resolvePostgresSsl(
   const disable = PG_DISABLE_MODES.includes(sslMode);
 
   if (disable) {
+    if (iamAuth)
+      throw new Error('IAM authentication requires TLS; remove the disabled SSL setting');
     return false;
   }
 
@@ -180,6 +182,8 @@ export function resolveMysqlSsl(
   const sslMode = mysqlSslMode(connection);
 
   if (MYSQL_DISABLE_MODES.includes(sslMode)) {
+    if (iamAuth)
+      throw new Error('IAM authentication requires TLS; remove the disabled SSL setting');
     return undefined;
   }
 

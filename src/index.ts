@@ -9,6 +9,9 @@ import {
   ReadResourceRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import { booleanSetting } from './runtime-config.js';
+import { validateToolArguments } from './policy/arguments.js';
+import { validateStatement } from './policy/sql.js';
 import { checkForUpdate } from './update-check.js';
 import { WorkspaceConfigParser } from './config-parser.js';
 import { WorkspaceClient } from './workspace-client.js';
@@ -88,7 +91,7 @@ class OmniSQLMCPServer {
 
   constructor() {
     this.debug = process.env.OMNISQL_DEBUG === 'true';
-    this.readOnly = process.env.OMNISQL_READ_ONLY === 'true';
+    this.readOnly = booleanSetting(process.env.OMNISQL_READ_ONLY, 'OMNISQL_READ_ONLY');
     this.disabledTools = (process.env.OMNISQL_DISABLED_TOOLS || '')
       .split(',')
       .map((t) => t.trim())
@@ -356,444 +359,459 @@ class OmniSQLMCPServer {
   }
 
   private setupToolHandlers() {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const tools: Tool[] = [
-        {
-          name: 'list_connections',
-          description: 'List all available database connections',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              includeDetails: {
-                type: 'boolean',
-                description: 'Include detailed connection information',
-                default: false,
-              },
-            },
-          },
-        },
-        {
-          name: 'get_connection_info',
-          description: 'Get detailed information about a specific database connection',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-            },
-            required: ['connectionId'],
-          },
-        },
-        {
-          name: 'execute_query',
-          description: 'Execute a SQL query on a specific database connection (read-only queries)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection to use',
-              },
-              query: {
-                type: 'string',
-                description: 'The SQL query to execute (SELECT statements only)',
-              },
-              maxRows: {
-                type: 'number',
-                description: 'Maximum number of rows to return (default: 1000)',
-                default: 1000,
-              },
-            },
-            required: ['connectionId', 'query'],
-          },
-        },
-        {
-          name: 'write_query',
-          description:
-            'Execute INSERT, UPDATE, or DELETE queries on a specific database connection',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection to use',
-              },
-              query: {
-                type: 'string',
-                description: 'The SQL query to execute (INSERT, UPDATE, DELETE)',
-              },
-            },
-            required: ['connectionId', 'query'],
-          },
-        },
-        {
-          name: 'create_table',
-          description: 'Create new tables in the database',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-              query: {
-                type: 'string',
-                description: 'CREATE TABLE statement',
-              },
-            },
-            required: ['connectionId', 'query'],
-          },
-        },
-        {
-          name: 'alter_table',
-          description: 'Modify existing table schema (add columns, rename tables, etc.)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-              query: {
-                type: 'string',
-                description: 'ALTER TABLE statement',
-              },
-            },
-            required: ['connectionId', 'query'],
-          },
-        },
-        {
-          name: 'drop_table',
-          description: 'Remove a table from the database with safety confirmation',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-              tableName: {
-                type: 'string',
-                description: 'Name of the table to drop',
-              },
-              confirm: {
-                type: 'boolean',
-                description: 'Safety confirmation flag (must be true)',
-              },
-            },
-            required: ['connectionId', 'tableName', 'confirm'],
-          },
-        },
-        {
-          name: 'get_table_schema',
-          description: 'Get schema information for a specific table',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-              tableName: {
-                type: 'string',
-                description: 'The name of the table to describe',
-              },
-              includeIndexes: {
-                type: 'boolean',
-                description: 'Include index information',
-                default: true,
-              },
-            },
-            required: ['connectionId', 'tableName'],
-          },
-        },
-        {
-          name: 'export_data',
-          description: 'Export query results to various formats (CSV, JSON, etc.)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-              query: {
-                type: 'string',
-                description: 'The SQL query to execute for export (SELECT only)',
-              },
-              format: {
-                type: 'string',
-                enum: ['csv', 'json'],
-                description: 'Export format (csv or json)',
-                default: 'csv',
-              },
-              includeHeaders: {
-                type: 'boolean',
-                description: 'Include column headers in export',
-                default: true,
-              },
-              maxRows: {
-                type: 'number',
-                description: 'Maximum number of rows to export',
-                default: 10000,
-              },
-            },
-            required: ['connectionId', 'query'],
-          },
-        },
-        {
-          name: 'test_connection',
-          description: 'Test connectivity to a database connection',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection to test',
-              },
-            },
-            required: ['connectionId'],
-          },
-        },
-        {
-          name: 'get_database_stats',
-          description: 'Get statistics and information about a database',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-            },
-            required: ['connectionId'],
-          },
-        },
-        {
-          name: 'list_tables',
-          description: 'List all tables in a database',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-              schema: {
-                type: 'string',
-                description: 'Specific schema to list tables from (optional)',
-              },
-              includeViews: {
-                type: 'boolean',
-                description: 'Include views in the results',
-                default: false,
-              },
-            },
-            required: ['connectionId'],
-          },
-        },
-        {
-          name: 'append_insight',
-          description: 'Add a business insight or analysis note to the memo',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              insight: {
-                type: 'string',
-                description: 'The business insight or analysis note to store',
-              },
-              connection: {
-                type: 'string',
-                description: 'Optional connection ID to associate with this insight',
-              },
-              tags: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Optional tags to categorize the insight',
-              },
-            },
-            required: ['insight'],
-          },
-        },
-        {
-          name: 'list_insights',
-          description: 'List all stored business insights and analysis notes',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connection: {
-                type: 'string',
-                description: 'Filter insights by connection ID (optional)',
-              },
-              tags: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Filter insights by tags (optional)',
-              },
-            },
-          },
-        },
-        // Transaction tools
-        {
-          name: 'begin_transaction',
-          description: 'Start a new database transaction',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-            },
-            required: ['connectionId'],
-          },
-        },
-        {
-          name: 'commit_transaction',
-          description: 'Commit an active transaction',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              transactionId: {
-                type: 'string',
-                description: 'The transaction ID returned by begin_transaction',
-              },
-            },
-            required: ['transactionId'],
-          },
-        },
-        {
-          name: 'rollback_transaction',
-          description: 'Rollback an active transaction',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              transactionId: {
-                type: 'string',
-                description: 'The transaction ID returned by begin_transaction',
-              },
-            },
-            required: ['transactionId'],
-          },
-        },
-        {
-          name: 'execute_in_transaction',
-          description: 'Execute a query within an active transaction',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              transactionId: {
-                type: 'string',
-                description: 'The transaction ID returned by begin_transaction',
-              },
-              query: {
-                type: 'string',
-                description: 'The SQL query to execute',
-              },
-            },
-            required: ['transactionId', 'query'],
-          },
-        },
-        // Query analysis tools
-        {
-          name: 'explain_query',
-          description: 'Get the execution plan for a SQL query',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-              query: {
-                type: 'string',
-                description: 'The SQL query to analyze',
-              },
-              analyze: {
-                type: 'boolean',
-                description: 'Run EXPLAIN ANALYZE for actual execution stats',
-                default: false,
-              },
-              format: {
-                type: 'string',
-                enum: ['text', 'json'],
-                description: 'Output format for the execution plan',
-                default: 'text',
-              },
-            },
-            required: ['connectionId', 'query'],
-          },
-        },
-        // Schema comparison tools
-        {
-          name: 'compare_schemas',
-          description: 'Compare schemas between two database connections',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              sourceConnectionId: {
-                type: 'string',
-                description: 'The source connection ID to compare from',
-              },
-              targetConnectionId: {
-                type: 'string',
-                description: 'The target connection ID to compare to',
-              },
-              includeMigrationScript: {
-                type: 'boolean',
-                description: 'Generate SQL migration script',
-                default: false,
-              },
-            },
-            required: ['sourceConnectionId', 'targetConnectionId'],
-          },
-        },
-        // Pool management tools
-        {
-          name: 'get_pool_stats',
-          description: 'Get connection pool statistics for a connection',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              connectionId: {
-                type: 'string',
-                description: 'The ID or name of the database connection',
-              },
-            },
-            required: ['connectionId'],
-          },
-        },
-      ];
-
-      tools.push({
-        name: 'list_databases',
-        description:
-          'List databases accessible through a saved PostgreSQL, MySQL/MariaDB, or SQL Server connection',
+    const tools: Tool[] = [
+      {
+        name: 'list_connections',
+        description: 'List all available database connections',
         inputSchema: {
           type: 'object',
           properties: {
-            connectionId: { type: 'string', description: 'Saved connection ID or name' },
+            includeDetails: {
+              type: 'boolean',
+              description: 'Include detailed connection information',
+              default: false,
+            },
+          },
+        },
+      },
+      {
+        name: 'get_connection_info',
+        description: 'Get detailed information about a specific database connection',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
           },
           required: ['connectionId'],
         },
-      });
-      for (const tool of tools) {
-        if (DATABASE_TOOLS.has(tool.name)) {
-          tool.inputSchema.properties = {
-            ...tool.inputSchema.properties,
-            database: {
+      },
+      {
+        name: 'execute_query',
+        description: 'Execute a SQL query on a specific database connection (read-only queries)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
               type: 'string',
-              minLength: 1,
-              maxLength: 128,
-              description:
-                'Optional database on the same server; reuses saved credentials and settings',
+              description: 'The ID or name of the database connection to use',
             },
-          };
-        }
-      }
+            query: {
+              type: 'string',
+              description: 'The SQL query to execute (SELECT statements only)',
+            },
+            maxRows: {
+              type: 'number',
+              description: 'Maximum number of rows to return (default: 1000)',
+              default: 1000,
+            },
+          },
+          required: ['connectionId', 'query'],
+        },
+      },
+      {
+        name: 'write_query',
+        description: 'Execute INSERT, UPDATE, or DELETE queries on a specific database connection',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection to use',
+            },
+            query: {
+              type: 'string',
+              description: 'The SQL query to execute (INSERT, UPDATE, DELETE)',
+            },
+          },
+          required: ['connectionId', 'query'],
+        },
+      },
+      {
+        name: 'create_table',
+        description: 'Create new tables in the database',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+            query: {
+              type: 'string',
+              description: 'CREATE TABLE statement',
+            },
+          },
+          required: ['connectionId', 'query'],
+        },
+      },
+      {
+        name: 'alter_table',
+        description: 'Modify existing table schema (add columns, rename tables, etc.)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+            query: {
+              type: 'string',
+              description: 'ALTER TABLE statement',
+            },
+          },
+          required: ['connectionId', 'query'],
+        },
+      },
+      {
+        name: 'drop_table',
+        description: 'Remove a table from the database with safety confirmation',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+            tableName: {
+              type: 'string',
+              description: 'Name of the table to drop',
+            },
+            confirm: {
+              type: 'boolean',
+              description: 'Safety confirmation flag (must be true)',
+            },
+          },
+          required: ['connectionId', 'tableName', 'confirm'],
+        },
+      },
+      {
+        name: 'get_table_schema',
+        description: 'Get schema information for a specific table',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+            tableName: {
+              type: 'string',
+              description: 'The name of the table to describe',
+            },
+            includeIndexes: {
+              type: 'boolean',
+              description: 'Include index information',
+              default: true,
+            },
+          },
+          required: ['connectionId', 'tableName'],
+        },
+      },
+      {
+        name: 'export_data',
+        description: 'Export query results to various formats (CSV, JSON, etc.)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+            query: {
+              type: 'string',
+              description: 'The SQL query to execute for export (SELECT only)',
+            },
+            format: {
+              type: 'string',
+              enum: ['csv', 'json'],
+              description: 'Export format (csv or json)',
+              default: 'csv',
+            },
+            includeHeaders: {
+              type: 'boolean',
+              description: 'Include column headers in export',
+              default: true,
+            },
+            maxRows: {
+              type: 'number',
+              description: 'Maximum number of rows to export',
+              default: 10000,
+            },
+          },
+          required: ['connectionId', 'query'],
+        },
+      },
+      {
+        name: 'test_connection',
+        description: 'Test connectivity to a database connection',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection to test',
+            },
+          },
+          required: ['connectionId'],
+        },
+      },
+      {
+        name: 'get_database_stats',
+        description: 'Get statistics and information about a database',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+          },
+          required: ['connectionId'],
+        },
+      },
+      {
+        name: 'list_tables',
+        description: 'List all tables in a database',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+            schema: {
+              type: 'string',
+              description: 'Specific schema to list tables from (optional)',
+            },
+            includeViews: {
+              type: 'boolean',
+              description: 'Include views in the results',
+              default: false,
+            },
+          },
+          required: ['connectionId'],
+        },
+      },
+      {
+        name: 'append_insight',
+        description: 'Add a business insight or analysis note to the memo',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            insight: {
+              type: 'string',
+              description: 'The business insight or analysis note to store',
+            },
+            connection: {
+              type: 'string',
+              description: 'Optional connection ID to associate with this insight',
+            },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional tags to categorize the insight',
+            },
+          },
+          required: ['insight'],
+        },
+      },
+      {
+        name: 'list_insights',
+        description: 'List all stored business insights and analysis notes',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connection: {
+              type: 'string',
+              description: 'Filter insights by connection ID (optional)',
+            },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Filter insights by tags (optional)',
+            },
+          },
+        },
+      },
+      // Transaction tools
+      {
+        name: 'begin_transaction',
+        description: 'Start a new database transaction',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+          },
+          required: ['connectionId'],
+        },
+      },
+      {
+        name: 'commit_transaction',
+        description: 'Commit an active transaction',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            transactionId: {
+              type: 'string',
+              description: 'The transaction ID returned by begin_transaction',
+            },
+          },
+          required: ['transactionId'],
+        },
+      },
+      {
+        name: 'rollback_transaction',
+        description: 'Rollback an active transaction',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            transactionId: {
+              type: 'string',
+              description: 'The transaction ID returned by begin_transaction',
+            },
+          },
+          required: ['transactionId'],
+        },
+      },
+      {
+        name: 'execute_in_transaction',
+        description: 'Execute a query within an active transaction',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            transactionId: {
+              type: 'string',
+              description: 'The transaction ID returned by begin_transaction',
+            },
+            query: {
+              type: 'string',
+              description: 'The SQL query to execute',
+            },
+          },
+          required: ['transactionId', 'query'],
+        },
+      },
+      // Query analysis tools
+      {
+        name: 'explain_query',
+        description: 'Get the execution plan for a SQL query',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+            query: {
+              type: 'string',
+              description: 'The SQL query to analyze',
+            },
+            analyze: {
+              type: 'boolean',
+              description: 'Run EXPLAIN ANALYZE for actual execution stats',
+              default: false,
+            },
+            format: {
+              type: 'string',
+              enum: ['text', 'json'],
+              description: 'Output format for the execution plan',
+              default: 'text',
+            },
+          },
+          required: ['connectionId', 'query'],
+        },
+      },
+      // Schema comparison tools
+      {
+        name: 'compare_schemas',
+        description: 'Compare schemas between two database connections',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sourceConnectionId: {
+              type: 'string',
+              description: 'The source connection ID to compare from',
+            },
+            targetConnectionId: {
+              type: 'string',
+              description: 'The target connection ID to compare to',
+            },
+            includeMigrationScript: {
+              type: 'boolean',
+              description: 'Generate SQL migration script',
+              default: false,
+            },
+          },
+          required: ['sourceConnectionId', 'targetConnectionId'],
+        },
+      },
+      // Pool management tools
+      {
+        name: 'get_pool_stats',
+        description: 'Get connection pool statistics for a connection',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            connectionId: {
+              type: 'string',
+              description: 'The ID or name of the database connection',
+            },
+          },
+          required: ['connectionId'],
+        },
+      },
+    ];
 
+    tools.push({
+      name: 'list_databases',
+      description:
+        'List databases accessible through a saved PostgreSQL, MySQL/MariaDB, or SQL Server connection',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          connectionId: { type: 'string', description: 'Saved connection ID or name' },
+        },
+        required: ['connectionId'],
+      },
+    });
+    for (const tool of tools) {
+      tool.inputSchema.additionalProperties = false;
+      const properties = tool.inputSchema.properties as Record<string, any>;
+      if (properties?.maxRows) {
+        properties.maxRows.type = 'integer';
+        properties.maxRows.minimum = 1;
+      }
+      tool.annotations = {
+        readOnlyHint: !WRITE_TOOLS.includes(tool.name) && tool.name !== 'append_insight',
+        destructiveHint: WRITE_TOOLS.includes(tool.name),
+        openWorldHint: true,
+      };
+      if (DATABASE_TOOLS.has(tool.name)) {
+        tool.inputSchema.properties = {
+          ...tool.inputSchema.properties,
+          database: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 128,
+            description:
+              'Optional database on the same server; reuses saved credentials and settings',
+          },
+        };
+      }
+    }
+
+    for (const name of this.disabledTools) {
+      if (!tools.some((tool) => tool.name === name))
+        throw new Error(`Unknown disabled tool: ${name}`);
+    }
+
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       // Filter tools based on read-only mode and disabled tools
       let filteredTools = tools;
 
@@ -811,7 +829,15 @@ class OmniSQLMCPServer {
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      const { name } = request.params;
+      const definition = tools.find((tool) => tool.name === name);
+      if (!definition) throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+      let args: Record<string, unknown>;
+      try {
+        args = validateToolArguments(definition, request.params.arguments);
+      } catch (error) {
+        throw new McpError(ErrorCode.InvalidParams, formatError(error));
+      }
 
       // Block write tools if read-only mode is enabled
       if (this.readOnly && WRITE_TOOLS.includes(name)) {
@@ -1122,7 +1148,10 @@ class OmniSQLMCPServer {
       }
     }
 
-    const result = await this.workspaceClient.executeQuery(connection, finalQuery, { maxRows });
+    const result = await this.workspaceClient.executeQuery(connection, finalQuery, {
+      maxRows,
+      readOnly: true,
+    });
 
     const response = {
       query: finalQuery,
@@ -1174,6 +1203,8 @@ class OmniSQLMCPServer {
     }
 
     const connection = await this.getConnection(connectionId);
+    if (connection?.readonly)
+      throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1202,11 +1233,16 @@ class OmniSQLMCPServer {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
 
+    const statementError = validateStatement(query);
+    if (statementError) throw new McpError(ErrorCode.InvalidParams, statementError);
+
     if (!query.toLowerCase().startsWith('create table')) {
       throw new McpError(ErrorCode.InvalidParams, 'Only CREATE TABLE statements are allowed');
     }
 
     const connection = await this.getConnection(connectionId);
+    if (connection?.readonly)
+      throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1235,11 +1271,16 @@ class OmniSQLMCPServer {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const query = args.query.trim();
 
+    const statementError = validateStatement(query);
+    if (statementError) throw new McpError(ErrorCode.InvalidParams, statementError);
+
     if (!query.toLowerCase().startsWith('alter table')) {
       throw new McpError(ErrorCode.InvalidParams, 'Only ALTER TABLE statements are allowed');
     }
 
     const connection = await this.getConnection(connectionId);
+    if (connection?.readonly)
+      throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1276,7 +1317,7 @@ class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Table name is required');
     }
 
-    if (!args.confirm) {
+    if (args.confirm !== true) {
       return {
         content: [
           {
@@ -1296,6 +1337,8 @@ class OmniSQLMCPServer {
     }
 
     const connection = await this.getConnection(connectionId);
+    if (connection?.readonly)
+      throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
@@ -1395,7 +1438,10 @@ class OmniSQLMCPServer {
       finalQuery = `${query} LIMIT ${maxRows}`;
     }
 
-    const result = await this.workspaceClient.executeQuery(connection, finalQuery, { maxRows });
+    const result = await this.workspaceClient.executeQuery(connection, finalQuery, {
+      maxRows,
+      readOnly: true,
+    });
 
     if (format === 'csv') {
       const csvData = convertToCSV(result.columns, result.rows);
@@ -1568,6 +1614,8 @@ class OmniSQLMCPServer {
   private async handleBeginTransaction(args: { connectionId: string }) {
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.getConnection(connectionId);
+    if (connection?.readonly)
+      throw new McpError(ErrorCode.InvalidRequest, 'This saved connection is read-only');
 
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
@@ -1640,8 +1688,7 @@ class OmniSQLMCPServer {
     analyze?: boolean;
     format?: 'text' | 'json';
   }) {
-    const policyError =
-      validateQuery(args.query) || (this.readOnly ? enforceReadOnly(args.query) : null);
+    const policyError = validateQuery(args.query) || enforceReadOnly(args.query);
     if (policyError) throw new McpError(ErrorCode.InvalidParams, policyError);
     const connectionId = sanitizeConnectionId(args.connectionId);
     const connection = await this.getConnection(connectionId, args.database);
@@ -1669,7 +1716,7 @@ class OmniSQLMCPServer {
     // Oracle needs two statements in one session (EXPLAIN PLAN, then DBMS_XPLAN).
     const result = connection.driver.toLowerCase().includes('oracle')
       ? await this.workspaceClient.explainOracleQuery(connection, args.query)
-      : await this.workspaceClient.executeQuery(connection, explainQuery);
+      : await this.workspaceClient.executeQuery(connection, explainQuery, { readOnly: true });
     const explainResult = parseExplainOutput(connection.driver, result.rows, args.query, format);
 
     return {

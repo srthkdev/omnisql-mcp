@@ -52,6 +52,15 @@ describe.skipIf(!available)('SQLite execution', () => {
     expect(result.columns).toContain('detail');
     expect(JSON.stringify(result.rows)).toMatch(/SEARCH|SCAN/);
   });
+  it('terminates a query that exceeds its deadline', async () => {
+    const bounded = new WorkspaceClient(undefined, 20);
+    await expect(
+      bounded.executeQuery(
+        connection,
+        'WITH RECURSIVE counter(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM counter) SELECT max(n) FROM counter'
+      )
+    ).rejects.toThrow(/timed out/);
+  });
   it('blocks SQLite host file functions', async () => {
     await expect(
       client.executeQuery(connection, `SELECT writefile('/tmp/omnisql-unsafe-test', 'blocked')`)

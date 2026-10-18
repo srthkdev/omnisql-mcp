@@ -40,7 +40,8 @@
     "typecheck": "tsc --noEmit",
     "prepack": "npm run clean && npm run build",
     "test:package": "node scripts/check-package.mjs",
-    "demo": "node scripts/demo.mjs"
+    "demo": "node scripts/demo.mjs",
+    "test:integration": "npm run build && node scripts/integration.mjs"
   },
   "lint-staged": {
     "*.ts": [
@@ -77,6 +78,7 @@
     "csv-stringify": "^6.4.6",
     "mssql": "^12.2.0",
     "mysql2": "^3.16.0",
+    "node-sql-parser": "^5.4.0",
     "oracledb": "^6.10.0",
     "pg": "^8.13.1",
     "ssh2": "^1.17.0",

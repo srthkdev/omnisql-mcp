@@ -42,8 +42,10 @@ describe('resolvePostgresSsl', () => {
     expect(resolvePostgresSsl(connection({}), true)).toEqual({ rejectUnauthorized: false });
   });
 
-  it('still respects an explicit disable under IAM auth', () => {
-    expect(resolvePostgresSsl(connection({ sslmode: 'disable' }), true)).toBe(false);
+  it('rejects disabled TLS for IAM auth', () => {
+    expect(() => resolvePostgresSsl(connection({ sslmode: 'disable' }), true)).toThrow(
+      /requires TLS/
+    );
   });
 
   it('treats an enabled ssl handler as require', () => {

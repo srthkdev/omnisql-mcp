@@ -1,0 +1,1571 @@
+[
+  {
+    "repo": "Etsuya233/omnisql-mcp",
+    "url": "https://github.com/Etsuya233/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-10-13T03:06:38Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "feat/hierarchical-resources",
+        "sha": "430979cc79c8496648923d0d58711f1a968e7dad",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 11,
+        "commits": [
+          {
+            "sha": "430979cc79c8496648923d0d58711f1a968e7dad",
+            "message": "feat(resources): browse the catalogue one level at a time"
+          }
+        ],
+        "files": [
+          "CHANGELOG.md",
+          "README.md",
+          "src/index.ts",
+          "src/resources.ts",
+          "src/utils.ts",
+          "src/workspace-client.ts",
+          "tests/resources.test.ts",
+          "tests/utils.test.ts"
+        ],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "139b9f934367fa49316e9423f20144508cecc888",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 11,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "refactor",
+        "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 32,
+        "commits": [
+          {
+            "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+            "message": "chore: Major version update to 2.0.0 with package renaming and breaking changes"
+          }
+        ],
+        "files": [
+          ".github/workflows/ci.yml",
+          "CHANGELOG.md",
+          "LICENSE",
+          "package-lock.json",
+          "package.json",
+          "src/connections/dbeaver-source.ts",
+          "src/connections/index.ts",
+          "src/connections/registry.ts",
+          "src/dbeaver-client.ts",
+          "src/drivers/base.ts",
+          "src/drivers/index.ts",
+          "src/drivers/mssql.ts",
+          "src/drivers/mysql.ts",
+          "src/drivers/postgres.ts",
+          "src/drivers/registry.ts",
+          "src/drivers/sqlite.ts",
+          "src/index.ts",
+          "src/safety/index.ts",
+          "src/safety/query-classifier.ts",
+          "src/safety/sanitizer.ts",
+          "src/safety/validator.ts",
+          "src/tools/analysis-tools.ts",
+          "src/tools/base.ts",
+          "src/tools/connection-tools.ts",
+          "src/tools/index.ts",
+          "src/tools/insight-tools.ts",
+          "src/tools/query-tools.ts",
+          "src/tools/registry.ts",
+          "src/tools/schema-tools.ts",
+          "src/tools/schemas.ts",
+          "src/tools/transaction-tools.ts",
+          "src/types.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "kaizencode-art/omnisql-mcp",
+    "url": "https://github.com/kaizencode-art/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-10-18T08:14:58Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/oracle-native",
+        "sha": "8e5411e5144a38b3d238de6bffd2183158b98e7e",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 9,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "139b9f934367fa49316e9423f20144508cecc888",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 11,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "leenawat/omnisql-mcp",
+    "url": "https://github.com/leenawat/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-09-07T05:35:23Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "fix/mysql-dbeaver-ssl-handler",
+        "sha": "84857785c7093a6138fc55a40e51c97151991b9b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 10,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "139b9f934367fa49316e9423f20144508cecc888",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 11,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "Grrr1337/omnisql-mcp",
+    "url": "https://github.com/Grrr1337/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-04-19T19:42:55Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "8537fce661683efee022af667b7b870ea1aea1e6",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 28,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "mononen/omnisql-mcp",
+    "url": "https://github.com/mononen/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-08-04T17:10:16Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "8cc1a5fde2ac693bafd7b10462251fe8a3b930fe",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 27,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "zerafachris/omnisql-mcp",
+    "url": "https://github.com/zerafachris/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-07-09T19:12:26Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "feat/configurable-project-name",
+        "sha": "1e4ba8605d41a26b8735f9604cbc110669167a94",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 27,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "8537fce661683efee022af667b7b870ea1aea1e6",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 28,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "refactor",
+        "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 32,
+        "commits": [
+          {
+            "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+            "message": "chore: Major version update to 2.0.0 with package renaming and breaking changes"
+          }
+        ],
+        "files": [
+          ".github/workflows/ci.yml",
+          "CHANGELOG.md",
+          "LICENSE",
+          "package-lock.json",
+          "package.json",
+          "src/connections/dbeaver-source.ts",
+          "src/connections/index.ts",
+          "src/connections/registry.ts",
+          "src/dbeaver-client.ts",
+          "src/drivers/base.ts",
+          "src/drivers/index.ts",
+          "src/drivers/mssql.ts",
+          "src/drivers/mysql.ts",
+          "src/drivers/postgres.ts",
+          "src/drivers/registry.ts",
+          "src/drivers/sqlite.ts",
+          "src/index.ts",
+          "src/safety/index.ts",
+          "src/safety/query-classifier.ts",
+          "src/safety/sanitizer.ts",
+          "src/safety/validator.ts",
+          "src/tools/analysis-tools.ts",
+          "src/tools/base.ts",
+          "src/tools/connection-tools.ts",
+          "src/tools/index.ts",
+          "src/tools/insight-tools.ts",
+          "src/tools/query-tools.ts",
+          "src/tools/registry.ts",
+          "src/tools/schema-tools.ts",
+          "src/tools/schemas.ts",
+          "src/tools/transaction-tools.ts",
+          "src/types.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "bemyak/omnisql-mcp",
+    "url": "https://github.com/bemyak/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-06-13T17:20:26Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "02c49228a3fc15c15d1286c07d0226f336020b02",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 28,
+        "commits": [
+          {
+            "sha": "02c49228a3fc15c15d1286c07d0226f336020b02",
+            "message": "feat: Add DBeaver SSH tunnel support"
+          }
+        ],
+        "files": [
+          "README.md",
+          "docs-site/docs/troubleshooting.md",
+          "package-lock.json",
+          "package.json",
+          "src/config-parser.ts",
+          "src/pools/connection-pool.ts",
+          "src/ssh-tunnel.ts",
+          "src/types.ts",
+          "src/workspace-client.ts",
+          "tests/config-parser.test.ts",
+          "tests/ssh-tunnel.test.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "aneeskodappana/omnisql-mcp",
+    "url": "https://github.com/aneeskodappana/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-06-03T06:04:57Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "dbac65df9f40eb7ffd246f1aa65223bfeead3004",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 27,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "rrsela/omnisql-mcp",
+    "url": "https://github.com/rrsela/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-05-06T07:31:22Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "feat/database-override-syntax",
+        "sha": "fdc52f0e0b5494e1a1fc4a85c8ab5472722d4112",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 27,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "8537fce661683efee022af667b7b870ea1aea1e6",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 28,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "refactor",
+        "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 32,
+        "commits": [
+          {
+            "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+            "message": "chore: Major version update to 2.0.0 with package renaming and breaking changes"
+          }
+        ],
+        "files": [
+          ".github/workflows/ci.yml",
+          "CHANGELOG.md",
+          "LICENSE",
+          "package-lock.json",
+          "package.json",
+          "src/connections/dbeaver-source.ts",
+          "src/connections/index.ts",
+          "src/connections/registry.ts",
+          "src/dbeaver-client.ts",
+          "src/drivers/base.ts",
+          "src/drivers/index.ts",
+          "src/drivers/mssql.ts",
+          "src/drivers/mysql.ts",
+          "src/drivers/postgres.ts",
+          "src/drivers/registry.ts",
+          "src/drivers/sqlite.ts",
+          "src/index.ts",
+          "src/safety/index.ts",
+          "src/safety/query-classifier.ts",
+          "src/safety/sanitizer.ts",
+          "src/safety/validator.ts",
+          "src/tools/analysis-tools.ts",
+          "src/tools/base.ts",
+          "src/tools/connection-tools.ts",
+          "src/tools/index.ts",
+          "src/tools/insight-tools.ts",
+          "src/tools/query-tools.ts",
+          "src/tools/registry.ts",
+          "src/tools/schema-tools.ts",
+          "src/tools/schemas.ts",
+          "src/tools/transaction-tools.ts",
+          "src/types.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "pavelpp-topia/omnisql-mcp",
+    "url": "https://github.com/pavelpp-topia/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-04-30T09:03:09Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "7045502923ed9eae7379e9dd3789dfbed63f3a9c",
+        "status": "diverged",
+        "ahead": 2,
+        "behind": 28,
+        "commits": [
+          {
+            "sha": "0abb1f57c88058119de72a2d6dc3b7e32a3dd52d",
+            "message": "fix(mssql): read encrypt/trustServerCertificate from DBeaver connection properties"
+          },
+          {
+            "sha": "7045502923ed9eae7379e9dd3789dfbed63f3a9c",
+            "message": "chore: update package-lock.json"
+          }
+        ],
+        "files": [
+          "package-lock.json",
+          "src/pools/connection-pool.ts",
+          "src/workspace-client.ts"
+        ],
+        "error": null
+      },
+      {
+        "name": "refactor",
+        "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 32,
+        "commits": [
+          {
+            "sha": "b2cc1218e50de59bf35bedb7bf509ae9dc87200c",
+            "message": "chore: Major version update to 2.0.0 with package renaming and breaking changes"
+          }
+        ],
+        "files": [
+          ".github/workflows/ci.yml",
+          "CHANGELOG.md",
+          "LICENSE",
+          "package-lock.json",
+          "package.json",
+          "src/connections/dbeaver-source.ts",
+          "src/connections/index.ts",
+          "src/connections/registry.ts",
+          "src/dbeaver-client.ts",
+          "src/drivers/base.ts",
+          "src/drivers/index.ts",
+          "src/drivers/mssql.ts",
+          "src/drivers/mysql.ts",
+          "src/drivers/postgres.ts",
+          "src/drivers/registry.ts",
+          "src/drivers/sqlite.ts",
+          "src/index.ts",
+          "src/safety/index.ts",
+          "src/safety/query-classifier.ts",
+          "src/safety/sanitizer.ts",
+          "src/safety/validator.ts",
+          "src/tools/analysis-tools.ts",
+          "src/tools/base.ts",
+          "src/tools/connection-tools.ts",
+          "src/tools/index.ts",
+          "src/tools/insight-tools.ts",
+          "src/tools/query-tools.ts",
+          "src/tools/registry.ts",
+          "src/tools/schema-tools.ts",
+          "src/tools/schemas.ts",
+          "src/tools/transaction-tools.ts",
+          "src/types.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "mason-respark/omnisql-mcp",
+    "url": "https://github.com/mason-respark/omnisql-mcp",
+    "default_branch": "main",
+    "pushed_at": "2026-06-16T23:32:43Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "031fb43d7217add9c9589b240b4324691e795fd9",
+        "status": "diverged",
+        "ahead": 12,
+        "behind": 28,
+        "commits": [
+          {
+            "sha": "9c202a8e1deb4ed37db2773f4013cf536e4ed95d",
+            "message": "fix: DBeaver 25+ compat, add native ClickHouse driver"
+          },
+          {
+            "sha": "80cd98c279420f1b50e31755d7ac9ba61a7a5f7d",
+            "message": "fix: use SELECT version() as the ClickHouse test query"
+          },
+          {
+            "sha": "7fc43bba0456ea07750719d32bd72fc205b37e64",
+            "message": "feat: outputPath option on export_data for off-context dumps"
+          },
+          {
+            "sha": "3f5ba8d568bd6ab2541520278849b943f25b81a3",
+            "message": "docs(spec): native Aurora IAM/SSO auth for the DBeaver MCP server"
+          },
+          {
+            "sha": "ce73ac20276b35f2c48fc44f4f42775fb6604abf",
+            "message": "feat(iam): Aurora IAM auth core module (detection, token minting)"
+          },
+          {
+            "sha": "a4b40a8b271556d557fef9064243c39f42f7c883",
+            "message": "feat(iam): mint IAM tokens on the Postgres query and pool paths"
+          },
+          {
+            "sha": "b692a6aadfb3f2a4b00019250322df79015bacf1",
+            "message": "feat(iam): aws_sso_login tool + structured auth_required result"
+          },
+          {
+            "sha": "1784348cd29b56f0d67f70a94b255b2142221c70",
+            "message": "fix(iam): harden TLS + surface auth_required across all Postgres paths"
+          },
+          {
+            "sha": "4cc0f9de0676540ed5d9d61a396dc023664bfada",
+            "message": "refactor(iam): consolidate nested-prop reads, slim token-mint seam"
+          },
+          {
+            "sha": "f2a3d66ba5ccb7df7c9174915c2d6aee9aa23175",
+            "message": "feat(config): fall back to legacy DBEAVER_* env vars"
+          },
+          {
+            "sha": "f2d7c3d5acb249e50a54455b0099e21af5acb5c9",
+            "message": "Merge pull request #2 from mason-respark/feat/mcp-aurora-iam-auth"
+          },
+          {
+            "sha": "031fb43d7217add9c9589b240b4324691e795fd9",
+            "message": "docs(readme): document native AWS IAM/SSO auth for Aurora"
+          }
+        ],
+        "files": [
+          "CHANGELOG.md",
+          "README.md",
+          "docs/superpowers/specs/2026-06-16-mcp-aurora-iam-auth-design.md",
+          "package-lock.json",
+          "package.json",
+          "src/iam-auth.test.ts",
+          "src/iam-auth.ts",
+          "src/index.ts",
+          "src/pools/connection-pool.ts",
+          "src/types.ts",
+          "src/utils.ts",
+          "src/workspace-client.ts",
+          "tests/connection-pool-iam.test.ts",
+          "tests/utils.test.ts",
+          "tests/workspace-client-iam.test.ts",
+          "tests/workspace-client.test.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "eliranmoyal/dbeaver-mcp-server",
+    "url": "https://github.com/eliranmoyal/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-04-15T08:18:16Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "058efe0e9bb1a5b0c830472e87f6e0984348f062",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 32,
+        "commits": [
+          {
+            "sha": "058efe0e9bb1a5b0c830472e87f6e0984348f062",
+            "message": "feat: Enhance configuration parsing with additional properties support"
+          }
+        ],
+        "files": [
+          "src/config-parser.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "aofalyb/dbeaver-mcp-server",
+    "url": "https://github.com/aofalyb/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-02-15T19:21:47Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "fe3777e275f13b815165ca89ba7ff06062b7eb08",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 32,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "hongweihao/dbeaver-mcp-server",
+    "url": "https://github.com/hongweihao/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-04-02T10:40:49Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "fix/postgres-ssl-nested-properties",
+        "sha": "4e264e3c912c824dc900736b7e8904e8f316ad29",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 31,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "fe3777e275f13b815165ca89ba7ff06062b7eb08",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 32,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "cageyv/dbeaver-mcp-server",
+    "url": "https://github.com/cageyv/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-02-03T16:03:26Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "7c93ff434acefbd4c77cb9ead70105679b6faf95",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 37,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "kiprasmel/dbeaver-mcp-server",
+    "url": "https://github.com/kiprasmel/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-02-02T17:11:48Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "5383d434b21f8f4a39a4b7cae9097c3051499679",
+        "status": "diverged",
+        "ahead": 2,
+        "behind": 39,
+        "commits": [
+          {
+            "sha": "ec3447c744e4d016659f147eea929c6bd79464dc",
+            "message": "encrypt=true"
+          },
+          {
+            "sha": "5383d434b21f8f4a39a4b7cae9097c3051499679",
+            "message": "fix: Default PostgreSQL/CockroachDB connections to SSL enabled"
+          }
+        ],
+        "files": [
+          "src/dbeaver-client.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "MarkusLund/dbeaver-mcp-server",
+    "url": "https://github.com/MarkusLund/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-01-28T14:00:25Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "fix/azure-sql-encryption",
+        "sha": "e3bfb47d0915d49c9c9f5ff65f6d8914dce9e97a",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 38,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "2c0969bc324015ccc6aa17ec8bdedb26f76e6606",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 39,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "simonegiacomelli/dbeaver-mcp-server",
+    "url": "https://github.com/simonegiacomelli/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-01-24T16:02:45Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "41a5fe4c65fbea7c1042f66a122bbea69a35f21b",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 39,
+        "commits": [
+          {
+            "sha": "41a5fe4c65fbea7c1042f66a122bbea69a35f21b",
+            "message": "fix: Disable DBeaver CLI fallback and add query guard for read-only mode"
+          }
+        ],
+        "files": [
+          "src/dbeaver-client.ts",
+          "src/index.ts",
+          "src/query-guard.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "changsongyang/dbeaver-mcp-server",
+    "url": "https://github.com/changsongyang/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-01-14T20:12:35Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "2c0969bc324015ccc6aa17ec8bdedb26f76e6606",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 39,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "siegelpeter/dbeaver-mcp-server",
+    "url": "https://github.com/siegelpeter/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-01-07T09:52:18Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "feature/AzureSQL",
+        "sha": "4720afe5b6319fc32ab7afb8a79fa497aa28c1b5",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 48,
+        "commits": [
+          {
+            "sha": "4720afe5b6319fc32ab7afb8a79fa497aa28c1b5",
+            "message": "Adds support for MSSQL and Azure SQL"
+          }
+        ],
+        "files": [
+          "package-lock.json",
+          "package.json",
+          "src/dbeaver-client.ts",
+          "src/index.ts",
+          "src/utils.ts"
+        ],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "52849587d81bde95633955db4f3aa7807e808ff4",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 48,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "miguelarcjr/dbeaver-mcp-server",
+    "url": "https://github.com/miguelarcjr/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-12-31T16:07:45Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feature/mssql-support",
+        "sha": "6aa25d8d81a00ef3302d052cb783a507a48671bb",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 47,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "52849587d81bde95633955db4f3aa7807e808ff4",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 48,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "maciej-w/dbeaver-mcp-server",
+    "url": "https://github.com/maciej-w/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-08-14T12:48:47Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feature/mysql-support",
+        "sha": "84111508b6205ccc4dedab522bbcacd4cd2f46f8",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 47,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "8537fce661683efee022af667b7b870ea1aea1e6",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 28,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "fzvincent/dbeaver-mcp-server",
+    "url": "https://github.com/fzvincent/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-12-11T23:10:01Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "fix_ssl",
+        "sha": "b6ca3f1aef8fafb718d97037409c39f330fe1a98",
+        "status": "diverged",
+        "ahead": 2,
+        "behind": 48,
+        "commits": [
+          {
+            "sha": "34d0973de8ba837e17b5f2b7c7cac05ff3676f48",
+            "message": "feat: Update dependencies and enhance PostgreSQL SSL mode detection to include `sslMode` property."
+          },
+          {
+            "sha": "b6ca3f1aef8fafb718d97037409c39f330fe1a98",
+            "message": "feat: add MySQL and MariaDB query execution support"
+          }
+        ],
+        "files": [
+          "package-lock.json",
+          "package.json",
+          "src/dbeaver-client.ts"
+        ],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "83f22c3a555afb8fefd9782066a607a07bff6bbb",
+        "status": "diverged",
+        "ahead": 3,
+        "behind": 48,
+        "commits": [
+          {
+            "sha": "9cf5a0f6bccd84790a54a13a34b1d63f826d455c",
+            "message": "feat: Add DBeaver configuration parser and client, update dependencies and build script, and extend gitignore."
+          },
+          {
+            "sha": "6667d1f8643344ca69bd31fb8c54d1aba1c6a3f4",
+            "message": "feat: Add DBeaver client implementation, comprehensive testing setup, and update gitignore and package configurations."
+          },
+          {
+            "sha": "83f22c3a555afb8fefd9782066a607a07bff6bbb",
+            "message": "chore: Update package name, author, and repository URLs in project metadata."
+          }
+        ],
+        "files": [
+          ".gitignore",
+          "jest.config.cjs",
+          "package-lock.json",
+          "package.json",
+          "src/config-parser.test.ts",
+          "src/config-parser.ts",
+          "src/dbeaver-client.test.ts",
+          "src/dbeaver-client.ts",
+          "src/utils.test.ts",
+          "tsconfig.test.json"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "PXSR/dbeaver-mcp-server",
+    "url": "https://github.com/PXSR/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-11-09T18:37:01Z",
+    "stars": 2,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "52849587d81bde95633955db4f3aa7807e808ff4",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 48,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "harikrishnan2b/dbeaver-mcp-server",
+    "url": "https://github.com/harikrishnan2b/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-11-09T18:37:01Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "52849587d81bde95633955db4f3aa7807e808ff4",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 48,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "iflow-mcp/dbeaver-mcp-server",
+    "url": "https://github.com/iflow-mcp/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-11-28T03:19:18Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat/auth-ssl-pg-fallback",
+        "sha": "2c72fd3856173b02766c22eaaf8a103cc284492b",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 53,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "iflow",
+        "sha": "b4d249949a9479efa62267bb6bcda0441f9dadd5",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 48,
+        "commits": [
+          {
+            "sha": "b4d249949a9479efa62267bb6bcda0441f9dadd5",
+            "message": "iflow"
+          }
+        ],
+        "files": [
+          ".gitignore",
+          "package-lock.json",
+          "package.json"
+        ],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "52849587d81bde95633955db4f3aa7807e808ff4",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 48,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "ndrini/dbeaver-mcp-server",
+    "url": "https://github.com/ndrini/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-11-21T10:08:36Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feat_installation",
+        "sha": "cdfd41753d550614ceb9886f3407fbd6224d1008",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 48,
+        "commits": [
+          {
+            "sha": "cdfd41753d550614ceb9886f3407fbd6224d1008",
+            "message": "WIP leggimi.md"
+          }
+        ],
+        "files": [
+          ".gemini/settings.json",
+          "LEGGIMI.md"
+        ],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "52849587d81bde95633955db4f3aa7807e808ff4",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 48,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "PescaDev/dbeaver-mcp-server",
+    "url": "https://github.com/PescaDev/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-09-02T18:22:25Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "fix/ssl-handler-properties",
+        "sha": "de2cc09fad2b2195b7a35d8a4ab734add82929d0",
+        "status": "diverged",
+        "ahead": 4,
+        "behind": 37,
+        "commits": [
+          {
+            "sha": "d00c22085dea031ea0a36587d7e18b6a038cf595",
+            "message": "fix: Extract SSL handler properties and simplify cross-platform build"
+          },
+          {
+            "sha": "bfe83336fea795be6db3a768c2e25760e30674e8",
+            "message": "fix: Allow spaces and unicode in connection name sanitization"
+          },
+          {
+            "sha": "519188d28556784d5d7995515f6e9e980ea9179f",
+            "message": "fix: list connections as resources instead of every table"
+          },
+          {
+            "sha": "de2cc09fad2b2195b7a35d8a4ab734add82929d0",
+            "message": "test: assert the intended sanitizeConnectionId and workspace path behaviour"
+          }
+        ],
+        "files": [
+          "package.json",
+          "src/config-parser.ts",
+          "src/index.ts",
+          "src/utils.ts",
+          "tests/config-parser.test.ts",
+          "tests/utils.test.ts"
+        ],
+        "error": null
+      },
+      {
+        "name": "fix/xml2js-ssl-support",
+        "sha": "0cdd134a29ae6d89bb62881e1761e2de820a1c68",
+        "status": "diverged",
+        "ahead": 1,
+        "behind": 48,
+        "commits": [
+          {
+            "sha": "0cdd134a29ae6d89bb62881e1761e2de820a1c68",
+            "message": "fix: add missing xml2js dependency and auto-SSL support for cloud providers"
+          }
+        ],
+        "files": [
+          "package-lock.json",
+          "package.json",
+          "scripts/add-shebang.js",
+          "src/dbeaver-client.ts"
+        ],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "de2cc09fad2b2195b7a35d8a4ab734add82929d0",
+        "status": "diverged",
+        "ahead": 4,
+        "behind": 37,
+        "commits": [
+          {
+            "sha": "d00c22085dea031ea0a36587d7e18b6a038cf595",
+            "message": "fix: Extract SSL handler properties and simplify cross-platform build"
+          },
+          {
+            "sha": "bfe83336fea795be6db3a768c2e25760e30674e8",
+            "message": "fix: Allow spaces and unicode in connection name sanitization"
+          },
+          {
+            "sha": "519188d28556784d5d7995515f6e9e980ea9179f",
+            "message": "fix: list connections as resources instead of every table"
+          },
+          {
+            "sha": "de2cc09fad2b2195b7a35d8a4ab734add82929d0",
+            "message": "test: assert the intended sanitizeConnectionId and workspace path behaviour"
+          }
+        ],
+        "files": [
+          "package.json",
+          "src/config-parser.ts",
+          "src/index.ts",
+          "src/utils.ts",
+          "tests/config-parser.test.ts",
+          "tests/utils.test.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "nick-titus/dbeaver-mcp-server",
+    "url": "https://github.com/nick-titus/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-10-29T15:15:02Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "feature/sql-server-support",
+        "sha": "d1aa78e9f85616f2850542e05b0ef33eb1929df5",
+        "status": "diverged",
+        "ahead": 6,
+        "behind": 52,
+        "commits": [
+          {
+            "sha": "4f0518afb48b94882acbe4c174d981057492a299",
+            "message": "docs: add SQL Server implementation design"
+          },
+          {
+            "sha": "38d1ccd4c0ac262d95474ab2b0b79477c19d6e67",
+            "message": "chore: add .worktrees/ to .gitignore"
+          },
+          {
+            "sha": "d17b71687125286389c8e251e8b6bbc7d8c5a14d",
+            "message": "docs: add SQL Server implementation plan"
+          },
+          {
+            "sha": "d43dc9a12c4f4cbfd5df6cb7cbf2ea66038ea8e5",
+            "message": "feat: add SQL Server support for AWS RDS"
+          },
+          {
+            "sha": "0551a5c2bf28dd3a563ac095638273a43d159a19",
+            "message": "fix: move @types/mssql to devDependencies"
+          },
+          {
+            "sha": "d1aa78e9f85616f2850542e05b0ef33eb1929df5",
+            "message": "fix: improve SQL Server error handling and resource cleanup"
+          }
+        ],
+        "files": [
+          ".gitignore",
+          "docs/plans/2025-10-29-sql-server-support-design.md",
+          "docs/plans/2025-10-29-sql-server-support.md",
+          "package-lock.json",
+          "package.json",
+          "src/dbeaver-client.ts"
+        ],
+        "error": null
+      },
+      {
+        "name": "fix/postgresql-cleanup-logging",
+        "sha": "dea1852c15da036275ef5ea9b1e95d6690ae5c58",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 51,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "5b4230b25137bd1e340b7e8252aad5b94ae1ff30",
+        "status": "diverged",
+        "ahead": 7,
+        "behind": 52,
+        "commits": [
+          {
+            "sha": "4f0518afb48b94882acbe4c174d981057492a299",
+            "message": "docs: add SQL Server implementation design"
+          },
+          {
+            "sha": "38d1ccd4c0ac262d95474ab2b0b79477c19d6e67",
+            "message": "chore: add .worktrees/ to .gitignore"
+          },
+          {
+            "sha": "d17b71687125286389c8e251e8b6bbc7d8c5a14d",
+            "message": "docs: add SQL Server implementation plan"
+          },
+          {
+            "sha": "d43dc9a12c4f4cbfd5df6cb7cbf2ea66038ea8e5",
+            "message": "feat: add SQL Server support for AWS RDS"
+          },
+          {
+            "sha": "0551a5c2bf28dd3a563ac095638273a43d159a19",
+            "message": "fix: move @types/mssql to devDependencies"
+          },
+          {
+            "sha": "d1aa78e9f85616f2850542e05b0ef33eb1929df5",
+            "message": "fix: improve SQL Server error handling and resource cleanup"
+          },
+          {
+            "sha": "5b4230b25137bd1e340b7e8252aad5b94ae1ff30",
+            "message": "Merge pull request #1 from nick-titus/feature/sql-server-support"
+          }
+        ],
+        "files": [
+          ".gitignore",
+          "docs/plans/2025-10-29-sql-server-support-design.md",
+          "docs/plans/2025-10-29-sql-server-support.md",
+          "package-lock.json",
+          "package.json",
+          "src/dbeaver-client.ts"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "wjhrdy/dbeaver-mcp-server",
+    "url": "https://github.com/wjhrdy/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-10-01T18:52:47Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "42704634116ca8d294e5eca3f624f372687d222a",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 57,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "vishprometa/dbeaver-mcp-server",
+    "url": "https://github.com/vishprometa/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-09-20T15:33:45Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "docs-improvements",
+        "sha": "66c781aa3835ec2f1831ebffd607887f4ec08426",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 66,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "b9f0e8f04cc43b0581ab4a5b8992a35d2d49f9ea",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 67,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "qspencer/dbeaver-mcp-server",
+    "url": "https://github.com/qspencer/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-09-10T19:23:21Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "fix/dbeaver-config-detection",
+        "sha": "f3a9602269f24046d73cfecf3cec4533f5a2da00",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 68,
+        "commits": [],
+        "files": [],
+        "error": null
+      },
+      {
+        "name": "main",
+        "sha": "9336b128d7eede7ff3424caaf563fa5210ac772c",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 69,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "Macioa/dbeaver-mcp-server-fork",
+    "url": "https://github.com/Macioa/dbeaver-mcp-server-fork",
+    "default_branch": "main",
+    "pushed_at": "2025-09-07T20:21:55Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "85777e91f6f9902696706fff03ae135a4aca1b8f",
+        "status": "diverged",
+        "ahead": 11,
+        "behind": 78,
+        "commits": [
+          {
+            "sha": "e247c195228baa0d5a6ad1fa98252bc475bbc2d7",
+            "message": "table schema to psql"
+          },
+          {
+            "sha": "9e39c043e1b368a06baba59c405d475ba71be8ab",
+            "message": "table tools to psql"
+          },
+          {
+            "sha": "62e006006f4a7fcbc4df9485cdccd87650dd1311",
+            "message": "expand table data and add export data"
+          },
+          {
+            "sha": "ae20e2062b3d8b53455b817c0a2c19edbbbab468",
+            "message": "Add .env file with example database password"
+          },
+          {
+            "sha": "750a37b54efb1179ba18ba5bcfe3e21cfa16390a",
+            "message": "Add list_db_passwords tool to collect environment variables ending with db_password"
+          },
+          {
+            "sha": "2752cc3f8dd2d447dab1e24f9d20251bc230b544",
+            "message": "Update all tools to accept password parameters and implement new tool flow"
+          },
+          {
+            "sha": "745acc96395f4d23516af0084bc90c00e8ec0c45",
+            "message": "Add set_db_password tool for dynamic credential management"
+          },
+          {
+            "sha": "5c43ae34fbbfe0c36f5a6978919766417b67a0f4",
+            "message": "Fix test_connection tool - add missing testConnection method"
+          },
+          {
+            "sha": "04e464b44fee49abff4c9ab15d5741597b3fac1a",
+            "message": "create login env and allow psql for tools"
+          },
+          {
+            "sha": "020135f6e41de817885f3aadd581123bc6f4f169",
+            "message": "update env examples"
+          },
+          {
+            "sha": "85777e91f6f9902696706fff03ae135a4aca1b8f",
+            "message": "prompt on no login match"
+          }
+        ],
+        "files": [
+          ".env",
+          "package-lock.json",
+          "package.json",
+          "src/config-parser.ts",
+          "src/dbeaver-client.ts",
+          "src/index.ts",
+          "src/types.ts",
+          "test-connection.js",
+          "test-psql.js"
+        ],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "alexproca/dbeaver-mcp-server",
+    "url": "https://github.com/alexproca/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-06-26T17:12:32Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "55051aadaeecc29825f5af1de532c81bddba1bc0",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 79,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "joelmgallant/dbeaver-mcp-server",
+    "url": "https://github.com/joelmgallant/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2025-06-27T11:25:03Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "55051aadaeecc29825f5af1de532c81bddba1bc0",
+        "status": "behind",
+        "ahead": 0,
+        "behind": 79,
+        "commits": [],
+        "files": [],
+        "error": null
+      }
+    ]
+  },
+  {
+    "repo": "A-viral-dev/dbeaver-mcp-server",
+    "url": "https://github.com/A-viral-dev/dbeaver-mcp-server",
+    "default_branch": "main",
+    "pushed_at": "2026-09-06T05:25:14Z",
+    "stars": 0,
+    "branches": [
+      {
+        "name": "main",
+        "sha": "a5ebfbad30abc0708de245cebb41265e3d4c489d",
+        "status": "diverged",
+        "ahead": 3,
+        "behind": 48,
+        "commits": [
+          {
+            "sha": "49a8933611e6ca247ed1015b2b3820daa3c5ab2b",
+            "message": "feat: enforce read-only queries, remove write tools, sanitize identifiers, and redact credentials"
+          },
+          {
+            "sha": "3bda1e6b08b483b0a79aa3c6ffd4a3185d5d2d6e",
+            "message": "docs: update README with read-only security-hardened fork details"
+          },
+          {
+            "sha": "a5ebfbad30abc0708de245cebb41265e3d4c489d",
+            "message": "feat: enforce read-only defaults, harden query validation, and add DuckDB Quack protocol support"
+          }
+        ],
+        "files": [
+          "README.md",
+          "package-lock.json",
+          "package.json",
+          "src/dbeaver-client.ts",
+          "src/index.ts",
+          "src/utils.ts"
+        ],
+        "error": null
+      }
+    ]
+  }
+]

@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AccessPolicy } from '../src/policy/access.js';
+import { analyzeSql } from '../src/policy/analyzer.js';
 import type { DatabaseConnection } from '../src/types.js';
 const folders: string[] = [];
 afterEach(() => {
@@ -23,6 +24,24 @@ const connection = (driver: string): DatabaseConnection => ({
   database: 'reports',
 });
 describe('database scope in SQL names', () => {
+  it('retains physical references when CTE aliases differ under native naming rules', () => {
+    const postgres = analyzeSql(
+      'WITH Ä AS (SELECT * FROM public.orders) SELECT * FROM ä',
+      'postgres'
+    );
+    expect(postgres.relations.some((parts) => parts[0].value === 'ä')).toBe(true);
+    const sqlServer = analyzeSql(
+      'WITH Orders AS (SELECT * FROM dbo.orders) SELECT * FROM orders',
+      'mssql'
+    );
+    expect(
+      sqlServer.relations.some((parts) => parts.length === 1 && parts[0].value === 'orders')
+    ).toBe(true);
+    for (const driver of ['sqlite', 'duckdb'])
+      expect(
+        analyzeSql('WITH "Orders" AS (SELECT 1) SELECT * FROM orders', driver).relations
+      ).toEqual([]);
+  });
   it.each([
     ['mysql', 'SELECT * FROM private_db.orders', 'SELECT * FROM reports.orders'],
     ['mariadb', 'SELECT * FROM private_db.orders', 'SELECT * FROM reports.orders'],

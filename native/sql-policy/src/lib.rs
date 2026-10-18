@@ -45,21 +45,28 @@ pub struct Analysis {
     locking: bool,
     settings: bool,
 }
+#[derive(Clone, Copy, Default)]
+enum NameFolding {
+    #[default]
+    Exact,
+    LowerUnquoted,
+    UpperUnquoted,
+    LowerAscii,
+}
 #[derive(Default)]
 struct Analyzer {
-    oracle: bool,
+    folding: NameFolding,
     output: Analysis,
     scopes: Vec<HashSet<String>>,
     definition_scopes: HashMap<usize, HashSet<String>>,
 }
 impl Analyzer {
     fn key(&self, value: &str, quoted: bool) -> String {
-        if quoted {
-            value.into()
-        } else if self.oracle {
-            value.to_uppercase()
-        } else {
-            value.to_lowercase()
+        match self.folding {
+            NameFolding::LowerAscii => value.to_ascii_lowercase(),
+            NameFolding::LowerUnquoted if !quoted => value.to_ascii_lowercase(),
+            NameFolding::UpperUnquoted if !quoted => value.to_ascii_uppercase(),
+            _ => value.into(),
         }
     }
 }
@@ -157,7 +164,7 @@ impl Visitor for Analyzer {
         ControlFlow::Continue(())
     }
 }
-fn parse(sql: &str, dialect: &dyn Dialect, oracle: bool) -> Result<Analysis, String> {
+fn parse(sql: &str, dialect: &dyn Dialect, folding: NameFolding) -> Result<Analysis, String> {
     if sql.len() > 1_000_000 {
         return Err("SQL exceeds the 1 MB limit".into());
     }
@@ -171,7 +178,7 @@ fn parse(sql: &str, dialect: &dyn Dialect, oracle: bool) -> Result<Analysis, Str
         return Err("Only a single SQL statement is allowed".into());
     }
     let mut analyzer = Analyzer {
-        oracle,
+        folding,
         ..Analyzer::default()
     };
     analyzer.output.operation = match &statements[0] {
@@ -189,14 +196,14 @@ fn parse(sql: &str, dialect: &dyn Dialect, oracle: bool) -> Result<Analysis, Str
 }
 pub fn analyze(sql: &str, dialect: &str) -> Result<Analysis, String> {
     match dialect {
-        "postgres" => parse(sql, &PostgreSqlDialect {}, false),
-        "mysql" => parse(sql, &MySqlDialect {}, false),
-        "mssql" => parse(sql, &MsSqlDialect {}, false),
-        "sqlite" => parse(sql, &SQLiteDialect {}, false),
-        "duckdb" => parse(sql, &DuckDbDialect {}, false),
-        "clickhouse" => parse(sql, &ClickHouseDialect {}, false),
-        "generic" => parse(sql, &GenericDialect {}, false),
-        "oracle" => parse(sql, &GenericDialect {}, true),
+        "postgres" => parse(sql, &PostgreSqlDialect {}, NameFolding::LowerUnquoted),
+        "mysql" => parse(sql, &MySqlDialect {}, NameFolding::Exact),
+        "mssql" => parse(sql, &MsSqlDialect {}, NameFolding::Exact),
+        "sqlite" => parse(sql, &SQLiteDialect {}, NameFolding::LowerAscii),
+        "duckdb" => parse(sql, &DuckDbDialect {}, NameFolding::LowerAscii),
+        "clickhouse" => parse(sql, &ClickHouseDialect {}, NameFolding::Exact),
+        "generic" => parse(sql, &GenericDialect {}, NameFolding::Exact),
+        "oracle" => parse(sql, &GenericDialect {}, NameFolding::UpperUnquoted),
         _ => Err("Unsupported SQL dialect".into()),
     }
 }
@@ -245,6 +252,54 @@ mod tests {
             ),
             ["private.b", "public.a", "public.c"]
         );
+    }
+    #[test]
+    fn unicode_cte_aliases_cannot_hide_postgres_relations() {
+        let analysis = analyze(
+            "WITH Ä AS (SELECT * FROM public.orders) SELECT * FROM ä",
+            "postgres",
+        )
+        .unwrap();
+        assert!(analysis.relations.iter().any(|n| n[0].value == "ä"));
+        assert!(
+            analyze("WITH Ä AS (SELECT 1) SELECT * FROM Ä", "postgres")
+                .unwrap()
+                .relations
+                .is_empty()
+        );
+    }
+    #[test]
+    fn collation_dependent_ctes_do_not_hide_case_distinct_tables() {
+        for dialect in ["mssql", "mysql"] {
+            let analysis = analyze(
+                "WITH Orders AS (SELECT * FROM allowed) SELECT * FROM orders",
+                dialect,
+            )
+            .unwrap();
+            assert!(analysis.relations.iter().any(|n| n[0].value == "orders"));
+            assert!(
+                analyze("WITH Orders AS (SELECT 1) SELECT * FROM Orders", dialect)
+                    .unwrap()
+                    .relations
+                    .is_empty()
+            );
+        }
+    }
+    #[test]
+    fn sqlite_and_duckdb_ctes_fold_ascii_quoted_names() {
+        for dialect in ["sqlite", "duckdb"] {
+            assert!(
+                analyze(
+                    "WITH \"Orders\" AS (SELECT 1) SELECT * FROM orders",
+                    dialect
+                )
+                .unwrap()
+                .relations
+                .is_empty()
+            );
+            let analysis = analyze("WITH Ä AS (SELECT 1) SELECT * FROM ä", dialect).unwrap();
+            assert!(analysis.relations.iter().any(|n| n[0].value == "ä"));
+        }
     }
     #[test]
     fn side_effects_and_predicates() {

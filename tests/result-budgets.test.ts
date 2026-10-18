@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { ResultCollector, SQLiteRowStream, parseSQLiteRows } from '../src/runtime/results.js';
 const connection = { id: 'fixture', name: 'fixture', driver: 'postgresql', url: '' };
 describe('bounded results', () => {

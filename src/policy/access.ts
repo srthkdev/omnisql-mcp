@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { DatabaseConnection } from '../types.js';
+import type { DatabaseConnection } from '../types.js';
 import { analyzeSql, canonicalName } from './analyzer.js';
 import { validateReadStatement, validateStatement } from './sql.js';
 

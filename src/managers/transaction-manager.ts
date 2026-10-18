@@ -4,7 +4,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import type { PoolClient as PgPoolClient } from 'pg';
 import type { PoolConnection as MySqlPoolConnection } from 'mysql2/promise';
 import type sql from 'mssql';
-import { Transaction, TransactionResult, DatabaseConnection, QueryResult } from '../types.js';
+import type { Transaction, TransactionResult, DatabaseConnection, QueryResult } from '../types.js';
 import { ConnectionPoolManager } from '../pools/connection-pool.js';
 import { readPostgres, readMysql, readSqlServer } from '../runtime/sql-sessions.js';
 import { acquireLease, withDeadline } from '../runtime/lease.js';

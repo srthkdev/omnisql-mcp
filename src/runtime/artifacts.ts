@@ -4,7 +4,7 @@ import { mkdtempSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { QueryResult } from '../types.js';
+import type { QueryResult } from '../types.js';
 
 interface Entry {
   id: string;

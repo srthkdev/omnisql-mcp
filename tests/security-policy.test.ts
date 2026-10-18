@@ -1,5 +1,5 @@
 import { booleanSetting } from '../src/runtime-config.js';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { enforceReadOnly, validateQuery, redactConnection, redactArgs } from '../src/utils.js';
 import { validateToolArguments } from '../src/policy/arguments.js';
 import { parseKnownHosts, verifyHostKey } from '../src/net/known-hosts.js';

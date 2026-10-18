@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'bun:test';
 import { ResultArtifacts } from '../src/runtime/artifacts.js';
 const stores: ResultArtifacts[] = [];
 function store(ttl?: number, quota?: number) {
@@ -65,7 +65,8 @@ describe('private result artifacts', () => {
     vi.useFakeTimers();
     const s = store(100);
     const saved = await s.save(result, source);
-    await vi.advanceTimersByTimeAsync(101);
+    vi.advanceTimersByTime(101);
+    await Promise.resolve();
     expect(() => s.source(saved.resultId)).toThrow(/expired/);
     expect(() => s.source('../../etc/passwd')).toThrow(/Invalid/);
   });

@@ -55,7 +55,7 @@
 
 ## Requirements
 
-- Node.js 18+
+- Bun 1.4.3+ or Node.js 22+
 - A local DB client (DBeaver-compatible) with at least one configured connection
 
 ## Quick setup
@@ -120,7 +120,7 @@ For a local executable, including machines without Node.js:
 curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
 ```
 
-Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Node.js or npm is missing, it downloads a private Node.js 22 runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 2.2.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
+Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Bun 1.4.3+ is unavailable, it downloads a private Bun runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 2.2.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
 
 ## One server, many instances
 
@@ -349,53 +349,55 @@ An expired SSO session produces an error naming the profile to re-authenticate.
 The recording above captures a real Codex CLI session calling OmniSQL tools. It uses synthetic customers and orders from the isolated `.demo/` workspace. The integration script below creates the SQLite fixtures, then checks discovery, schema inspection, queries, exports, query plans, schema comparison, and blocked writes.
 
 ```bash
-npm ci
-npm run build
-npm run demo
+bun install --frozen-lockfile
+bun run build
+bun run demo
 ```
 
 To also test PostgreSQL database discovery, database selection, and pool identities against a temporary local cluster:
 
 ```bash
-OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin npm run demo -- --postgres
+OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin bun run demo -- --postgres
 ```
 
 The PostgreSQL cluster binds to loopback on a temporary port, uses a random password, and is stopped and deleted after the run. The SQLite examples stay under `.demo/` so you can connect a client to them. Existing workspaces are untouched. [Watch the Codex CLI session](assets/codex-session.mp4). See [recording details](assets/README.md).
 
 ## Updates
 
-Client entries use `npx -y omnisql-mcp@latest`; restart the MCP client to pick up a new version. Running servers keep their current version until restarted. OmniSQL checks npm at most once a day and writes a short update notice to stderr when a newer version is available. The check sends no database settings or credentials. Set `OMNISQL_UPDATE_NOTIFIER=false` to disable it. Standalone installs update by rerunning the curl installer.
+Node setup registers `npx -y omnisql-mcp@latest`; Bun setup registers the current Bun executable with `x --bun --yes omnisql-mcp@latest`; restart the MCP client to pick up a new version. Running servers keep their current version until restarted. OmniSQL checks npm at most once a day and writes a short update notice to stderr when a newer version is available. The check sends no database settings or credentials. Set `OMNISQL_UPDATE_NOTIFIER=false` to disable it. Standalone installs update by rerunning the curl installer.
 
 ## Development
+
+Bun 1.4.3 is the development runtime and package manager. `bun.lock` covers the server and website workspace. Builds transpile with Bun; `bun run typecheck` remains required because transpilation does not check types. The published JavaScript also runs on Node 22+ for existing npm clients.
 
 ```bash
 git clone https://github.com/srthkdev/omnisql-mcp.git
 cd omnisql-mcp
-npm ci
-npm run build
-npm test
-npm run lint
+bun install --frozen-lockfile
+bun run build
+bun run test
+bun run lint
 ```
 
 
 ## Releases
 
-CI builds and tests the server, verifies the packed MCP server on Node.js 18, 20, 22, and 24, and checks dependencies. It does not publish to npm.
+CI builds with Bun 1.4.3, runs native Bun tests, verifies the packed MCP server on Bun and Node.js 22/24/26, and checks dependencies. Seeded database and TLS fixtures run on both Bun and Node. It does not publish to npm.
 
 Maintainers release from a clean checkout after CI passes:
 
 ```bash
-npm ci
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm run test:package
-npm audit --audit-level=high
+bun install --frozen-lockfile
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run test:package
+bun audit --audit-level=high
 npm login
 npm publish --access public
-git tag v2.2.0
-git push origin v2.2.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 Update the package version and changelog before publishing. Pushing the version tag creates the GitHub release; attach the release notes from the changelog. `npm pack` rebuilds `dist/` before packaging.

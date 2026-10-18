@@ -103,9 +103,9 @@ Call `explain_query` with these arguments. `analyze` can execute the query on en
 From a repository checkout:
 
 ```bash
-npm ci
-npm run build
-npm run demo
+bun install --frozen-lockfile
+bun run build
+bun run demo
 ```
 
 The demo creates two SQLite files under `.demo/` and exercises the MCP tools against synthetic customers and orders. It leaves your saved workspaces untouched.
@@ -113,7 +113,7 @@ The demo creates two SQLite files under `.demo/` and exercises the MCP tools aga
 To also test a temporary PostgreSQL cluster, provide the directory containing `initdb` and `pg_ctl`:
 
 ```bash
-OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin npm run demo -- --postgres
+OMNISQL_DEMO_PG_BIN=/path/to/postgres/bin bun run demo -- --postgres
 ```
 
 That cluster uses a random password, listens on loopback, and is stopped and removed after the run.

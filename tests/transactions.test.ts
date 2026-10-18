@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, mock } from 'bun:test';
 import { TransactionManager } from '../src/managers/transaction-manager.js';
 import { acquireLease } from '../src/runtime/lease.js';
 import type { DatabaseConnection } from '../src/types.js';
 import type { ConnectionPoolManager } from '../src/pools/connection-pool.js';
 import { readPostgres } from '../src/runtime/sql-sessions.js';
-vi.mock('../src/runtime/sql-sessions.js', () => ({
+mock.module('../src/runtime/sql-sessions.js', () => ({
   readPostgres: vi.fn(),
   readMysql: vi.fn(),
   readSqlServer: vi.fn(),
@@ -39,21 +39,23 @@ describe('transaction lifecycle', () => {
     const { manager, client } = setup();
     client.query.mockRejectedValueOnce(new Error('connection lost'));
     await expect(manager.beginTransaction(connection)).rejects.toThrow('connection lost');
-    expect(client.release).toHaveBeenCalledExactlyOnceWith(true);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
     expect(manager.getActiveTransactions()).toEqual([]);
   });
   it('rejects concurrent statements and commit on an occupied session', async () => {
     const { manager, client } = setup();
     const { transactionId } = await manager.beginTransaction(connection);
     let complete!: (value: any) => void;
-    vi.mocked(readPostgres).mockImplementationOnce(
+    readPostgres.mockImplementationOnce(
       () =>
         new Promise((r) => {
           complete = r;
         })
     );
     const running = manager.executeInTransaction(transactionId, 'SELECT 1');
-    await vi.waitFor(() => expect(complete).toBeTypeOf('function'));
+    await Promise.resolve();
+    expect(complete).toBeTypeOf('function');
     await expect(manager.executeInTransaction(transactionId, 'SELECT 2')).rejects.toThrow(
       /operation in progress/
     );
@@ -62,7 +64,8 @@ describe('transaction lifecycle', () => {
     await running;
     await manager.rollbackTransaction(transactionId);
     expect(client.query).toHaveBeenLastCalledWith('ROLLBACK');
-    expect(client.release).toHaveBeenCalledExactlyOnceWith();
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith();
   });
   it('does not commit a session after config revocation', async () => {
     const resolve = vi.fn().mockResolvedValue({ ...connection, readonly: true });
@@ -70,20 +73,22 @@ describe('transaction lifecycle', () => {
     const { transactionId } = await manager.beginTransaction(connection);
     await expect(manager.commitTransaction(transactionId)).rejects.toThrow(/settings changed/);
     expect(client.query).not.toHaveBeenCalledWith('COMMIT');
-    expect(client.release).toHaveBeenCalledExactlyOnceWith(true);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
     expect(manager.getTransaction(transactionId)).toBeNull();
   });
   it('rolls back query failures and never releases a destroyed client twice', async () => {
     const { manager, client } = setup();
     const { transactionId } = await manager.beginTransaction(connection);
-    vi.mocked(readPostgres).mockImplementationOnce(async (_client, _query, options) => {
+    readPostgres.mockImplementationOnce(async (_client, _query, options) => {
       options.abort();
       throw new Error('query deadline');
     });
     await expect(manager.executeInTransaction(transactionId, 'SELECT 1')).rejects.toThrow(
       'query deadline'
     );
-    expect(client.release).toHaveBeenCalledExactlyOnceWith(true);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
     await expect(manager.commitTransaction(transactionId)).rejects.toThrow(/not found/);
   });
   it('bounds pending starts as well as established sessions', async () => {
@@ -97,7 +102,8 @@ describe('transaction lifecycle', () => {
     );
     const starts = Array.from({ length: 32 }, () => manager.beginTransaction(connection));
     await expect(manager.beginTransaction(connection)).rejects.toThrow(/limit reached/);
-    await vi.waitFor(() => expect(unblock).toHaveLength(32));
+    await Promise.resolve();
+    expect(unblock).toHaveLength(32);
     unblock.forEach((resolve) => resolve());
     await Promise.all(starts);
     expect(await manager.rollbackAll()).toBe(32);
@@ -112,13 +118,13 @@ describe('connection acquisition deadline', () => {
     const pending = new Promise<object>((r) => {
       resolve = r;
     });
-    const result = expect(acquireLease(pending, 20, release)).rejects.toThrow(
-      /acquisition timed out/
-    );
-    await vi.advanceTimersByTimeAsync(21);
-    await result;
+    const result = acquireLease(pending, 20, release).catch((error) => error);
+    vi.advanceTimersByTime(21);
+    await Promise.resolve();
+    expect((await result).message).toMatch(/acquisition timed out/);
     resolve(lease);
     await Promise.resolve();
-    expect(release).toHaveBeenCalledExactlyOnceWith(lease);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(lease);
   });
 });

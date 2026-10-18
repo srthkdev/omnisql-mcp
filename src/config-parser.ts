@@ -6,7 +6,7 @@ import os from 'os';
 import { parseString } from 'xml2js';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import { DatabaseConnection, SshTunnelConfig, WorkspaceConfig } from './types.js';
+import type { DatabaseConnection, SshTunnelConfig, WorkspaceConfig } from './types.js';
 import {
   resolveDriverDialect,
   parseJdbcUrl,

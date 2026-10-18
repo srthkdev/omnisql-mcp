@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
-import { BusinessInsight } from '../types.js';
+import type { BusinessInsight } from '../types.js';
 /** Private, bounded notes scoped to the workspace and its access configuration. */
 export class PrivateNotes {
   private directory: string;

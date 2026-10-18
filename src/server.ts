@@ -1,5 +1,5 @@
 import { PrivateNotes } from './runtime/notes.js';
-import { ResultArtifacts, ArtifactSource } from './runtime/artifacts.js';
+import { ResultArtifacts, type ArtifactSource } from './runtime/artifacts.js';
 import { AccessPolicy } from './policy/access.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -11,7 +11,7 @@ import {
   ListToolsRequestSchema,
   McpError,
   ReadResourceRequestSchema,
-  Tool,
+  type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { booleanSetting, integerSetting } from './runtime-config.js';
 import { validateToolArguments } from './policy/arguments.js';
@@ -19,7 +19,7 @@ import { validateStatement } from './policy/sql.js';
 import { checkForUpdate } from './update-check.js';
 import { WorkspaceConfigParser } from './config-parser.js';
 import { WorkspaceClient } from './workspace-client.js';
-import { BusinessInsight, DatabaseConnection, SchemaDiff, QueryResult } from './types.js';
+import type { BusinessInsight, DatabaseConnection, SchemaDiff, QueryResult } from './types.js';
 import {
   validateQuery,
   enforceReadOnly,

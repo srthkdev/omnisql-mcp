@@ -1,30 +1,21 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-vi.mock('node:child_process', () => ({ spawnSync: vi.fn() }));
+import { describe, it, expect, vi, mock, afterEach } from 'bun:test';
+mock.module('node:child_process', () => ({ spawnSync: vi.fn() }));
 import { spawnSync } from 'node:child_process';
 import { buildInstallCommand, installClient } from '../src/install.js';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('MCP client registration', () => {
+  const launch = process.versions.bun
+    ? [process.execPath, 'x', '--bun', '--yes', 'omnisql-mcp@latest']
+    : ['npx', '-y', 'omnisql-mcp@latest'];
   it.each([
     [
       'claude',
-      [
-        'mcp',
-        'add',
-        '--transport',
-        'stdio',
-        '--scope',
-        'user',
-        'omnisql',
-        '--',
-        'npx',
-        '-y',
-        'omnisql-mcp@latest',
-      ],
+      ['mcp', 'add', '--transport', 'stdio', '--scope', 'user', 'omnisql', '--', ...launch],
     ],
-    ['codex', ['mcp', 'add', 'omnisql', '--', 'npx', '-y', 'omnisql-mcp@latest']],
-    ['opencode', ['mcp', 'add', 'omnisql', '--global', '--', 'npx', '-y', 'omnisql-mcp@latest']],
+    ['codex', ['mcp', 'add', 'omnisql', '--', ...launch]],
+    ['opencode', ['mcp', 'add', 'omnisql', '--global', '--', ...launch]],
   ])('uses the native %s registration command', (client, args) => {
     expect(buildInstallCommand(client)).toEqual({ command: client, args });
   });
@@ -42,7 +33,7 @@ describe('MCP client registration', () => {
 
   it('does not invoke clients for dry runs or invalid options', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(spawnSync).mockClear();
+    spawnSync.mockClear();
     installClient(['claude', '--dry-run']);
     expect(() => installClient(['claude', '--unknown'])).toThrow(/Supported install options/);
     expect(() => installClient(['unknown'])).toThrow(/Choose a client/);
@@ -51,11 +42,11 @@ describe('MCP client registration', () => {
 
   it('reports missing clients and failed registrations', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(spawnSync).mockReturnValue({
+    spawnSync.mockReturnValue({
       error: Object.assign(new Error('missing'), { code: 'ENOENT' }),
     } as never);
     expect(() => installClient(['codex'])).toThrow(/not on PATH/);
-    vi.mocked(spawnSync).mockReturnValue({ status: 1 } as never);
+    spawnSync.mockReturnValue({ status: 1 } as never);
     expect(() => installClient(['codex'])).toThrow(/exit 1/);
   });
 });

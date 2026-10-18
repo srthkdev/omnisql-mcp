@@ -1,4 +1,4 @@
-import { DatabaseConnection, QueryResult } from '../types.js';
+import type { DatabaseConnection, QueryResult } from '../types.js';
 export interface QueryOptions {
   maxRows?: number;
   readOnly: boolean;

@@ -1,5 +1,5 @@
-import { DatabaseConnection } from '../types.js';
-import { CatalogQuery, records, tableParts } from './catalog.js';
+import type { DatabaseConnection } from '../types.js';
+import { type CatalogQuery, records, tableParts } from './catalog.js';
 export interface TableStatistics {
   tableName: string;
   rowEstimate: string | null;

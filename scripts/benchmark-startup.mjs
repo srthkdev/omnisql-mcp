@@ -49,6 +49,7 @@ try {
     report.push({
       entry,
       samples: 12,
+      runtime: process.versions.bun ? `Bun ${process.versions.bun}` : `Node ${process.version}`,
       node: process.version,
       platform: process.platform,
       arch: process.arch,

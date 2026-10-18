@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'bun:test';
 import oracledb from 'oracledb';
 import {
   resolveOracleConnectOptions,

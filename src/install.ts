@@ -10,8 +10,9 @@ export function buildInstallCommand(
   readOnly = false,
   environment: Record<string, string> = {}
 ): { command: string; args: string[] } {
-  const launch =
-    process.platform === 'win32'
+  const launch = process.versions.bun
+    ? [process.execPath, 'x', '--bun', '--yes', 'omnisql-mcp@latest']
+    : process.platform === 'win32'
       ? ['cmd', '/c', 'npx', '-y', 'omnisql-mcp@latest']
       : ['npx', '-y', 'omnisql-mcp@latest'];
   const settings = { ...environment, ...(readOnly ? { OMNISQL_READ_ONLY: 'true' } : {}) };

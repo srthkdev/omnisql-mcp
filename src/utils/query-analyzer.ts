@@ -1,6 +1,6 @@
 import { parseString } from 'xml2js';
 import { sqlDialect } from '../policy/analyzer.js';
-import { ExplainResult, QueryPlanNode } from '../types.js';
+import type { ExplainResult, QueryPlanNode } from '../types.js';
 
 /**
  * Build EXPLAIN query based on database driver

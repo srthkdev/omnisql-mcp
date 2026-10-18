@@ -80,4 +80,52 @@ describe('resolveMysqlSsl', () => {
   it('forces TLS for IAM auth, which RDS requires', () => {
     expect(resolveMysqlSsl(connection({}), true)).toEqual({ rejectUnauthorized: false });
   });
+
+  it('reads the enabled DBeaver mysql_ssl handler', () => {
+    expect(
+      resolveMysqlSsl(
+        connection({
+          handlers: {
+            mysql_ssl: {
+              enabled: true,
+              properties: {
+                'ssl.method': 'CERTIFICATES',
+                'ssl.require': true,
+                'ssl.verify.server': false,
+              },
+            },
+          },
+        })
+      )
+    ).toEqual({ rejectUnauthorized: false });
+  });
+
+  it('verifies the server for a DBeaver mysql_ssl handler that requests verification', () => {
+    expect(
+      resolveMysqlSsl(
+        connection({
+          handlers: {
+            mysql_ssl: {
+              enabled: true,
+              properties: {
+                'ssl.require': true,
+                'ssl.verify.server': true,
+              },
+            },
+          },
+        })
+      )
+    ).toEqual({ rejectUnauthorized: true });
+  });
+
+  it('lets an explicit disabled mode override an enabled DBeaver handler', () => {
+    expect(
+      resolveMysqlSsl(
+        connection({
+          properties: { sslMode: 'DISABLED' },
+          handlers: { mysql_ssl: { enabled: true, properties: {} } },
+        })
+      )
+    ).toBeUndefined();
+  });
 });

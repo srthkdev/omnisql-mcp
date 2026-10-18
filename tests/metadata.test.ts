@@ -9,7 +9,9 @@ describe('scoped catalog metadata', () => {
   it('pins server catalogs to the selected schema and database', () => {
     expect(buildSchemaQuery('postgresql', 'private.orders')).toContain("table_schema = 'private'");
     expect(buildSchemaQuery('postgresql', 'orders')).toContain('current_schema()');
-    expect(buildSchemaQuery('mysql', 'warehouse.orders')).toContain("TABLE_SCHEMA = 'warehouse'");
+    expect(buildSchemaQuery('mysql', 'warehouse.orders')).toContain(
+      "BINARY TABLE_SCHEMA=BINARY 'warehouse'"
+    );
     expect(buildSchemaQuery('mssql', 'dbo.orders')).toContain('TABLE_CATALOG = DB_NAME()');
   });
   it('reads SQLite indexes, composite keys, references, and page sizes', async () => {
@@ -45,6 +47,36 @@ describe('scoped catalog metadata', () => {
       const all = await client.getDatabaseStats(c);
       expect(all.tableCount).toBe(2);
       expect(all.serverVersion).toMatch(/^\d+\./);
+    } finally {
+      await client.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('resolves quoted SQLite case variants before allowing queries or metadata', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnisql-case-test-'));
+    const database = path.join(dir, 'fixture.db');
+    const client = new WorkspaceClient();
+    const c = {
+      id: 'fixture',
+      name: 'fixture',
+      url: '',
+      driver: 'sqlite',
+      database,
+      accessRules: [{ allowTables: ['*', 'main.*'], denyTables: ['main.customers'] }],
+    };
+    try {
+      execFileSync('sqlite3', [
+        database,
+        'CREATE TABLE orders(id INTEGER);CREATE TABLE customers(secret TEXT);',
+      ]);
+      await client.executeQuery(c, 'SELECT * FROM "ORDERS"');
+      await expect(client.executeQuery(c, 'SELECT * FROM "CUSTOMERS"')).rejects.toThrow(
+        /Table.*policy/
+      );
+      await expect(client.getTableSchema(c, 'main.CUSTOMERS')).rejects.toThrow(/Table.*policy/);
+      await expect(client.getTableStats(c, 'CUSTOMERS')).rejects.toThrow(/Table.*policy/);
+      expect((await client.listTables(c)).map((t) => t.name)).toEqual(['orders']);
+      expect((await client.getDatabaseStats(c)).tableCount).toBe(1);
     } finally {
       await client.close();
       fs.rmSync(dir, { recursive: true, force: true });

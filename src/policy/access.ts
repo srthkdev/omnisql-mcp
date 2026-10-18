@@ -1,8 +1,14 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { DatabaseConnection } from '../types.js';
-import { analyzeSql, canonicalName } from './analyzer.js';
-import { validateReadStatement, validateStatement } from './sql.js';
+import {
+  analyzeSql,
+  canonicalName,
+  sqlDialect,
+  type SqlNamePart,
+  type SqlAnalysis,
+} from './analyzer.js';
+import { validateReadStatement, validateStatement, sqlTokens } from './sql.js';
 
 export interface AccessRule {
   readOnly?: boolean;
@@ -107,6 +113,34 @@ export class AccessPolicy {
       this.policy.connections?.[c.id],
     ].filter((r): r is AccessRule => r !== undefined);
   }
+  rulesFor(c: DatabaseConnection): readonly AccessRule[] {
+    return this.rules(c);
+  }
+  isBuiltin(parts: SqlNamePart[]): boolean {
+    return parts.length === 1 && !parts[0].quoted && FUNCTIONS.has(parts[0].value.toLowerCase());
+  }
+  allowsResolved(
+    c: DatabaseConnection,
+    schema: string,
+    name: string,
+    kind: 'table' | 'function',
+    allowBare: boolean
+  ): boolean {
+    const qualified = schema ? schema + '.' + name : name;
+    const all = [name, qualified, [c.database, qualified].filter(Boolean).join('.')];
+    const allowed = allowBare ? all : all.slice(1);
+    const rules = this.rules(c);
+    if (kind === 'function' && !rules.some((r) => r.allowFunctions)) return false;
+    return rules.every((r) => {
+      const allow = kind === 'table' ? r.allowTables : r.allowFunctions;
+      const deny = kind === 'table' ? r.denyTables : r.denyFunctions;
+      return (
+        (!r.schemas || includes(r.schemas, schema)) &&
+        (!allow || allowed.some((name) => includes(allow, name))) &&
+        (!deny || !all.some((name) => includes(deny, name)))
+      );
+    });
+  }
   isReadOnly(c: DatabaseConnection): boolean {
     return c.readonly === true || this.rules(c).some((r) => r.readOnly === true);
   }
@@ -116,11 +150,77 @@ export class AccessPolicy {
   assertConnection(c: DatabaseConnection): void {
     if (!this.allowsDatabase(c)) throw new Error('Database is not allowed by the access policy');
   }
+  private isDatabaseScoped(c: DatabaseConnection): boolean {
+    return (
+      c.id.includes('/') ||
+      this.rules(c).some(
+        (r) =>
+          r.databases ||
+          r.schemas ||
+          r.allowTables ||
+          r.denyTables ||
+          r.allowFunctions ||
+          r.denyFunctions
+      )
+    );
+  }
+  private scopeError(
+    c: DatabaseConnection,
+    parts: SqlNamePart[],
+    kind: 'table' | 'function'
+  ): string | null {
+    if (!this.isDatabaseScoped(c)) return null;
+    const dialect = sqlDialect(c.driver);
+    if (dialect === 'mssql' && parts.length > 3)
+      return 'Linked-server names are outside the database scope';
+    const max = dialect === 'mysql' || dialect === 'clickhouse' ? 2 : 3;
+    if (parts.length > max) return 'Name is outside the database scope';
+    const dbIndex =
+      dialect === 'mysql' || dialect === 'clickhouse'
+        ? parts.length === 2
+          ? 0
+          : -1
+        : dialect === 'mssql' || dialect === 'postgres'
+          ? parts.length === 3
+            ? 0
+            : -1
+          : -1;
+    if (dbIndex >= 0) {
+      const part = parts[dbIndex];
+      const database =
+        dialect === 'postgres' && !part.quoted
+          ? part.value.replace(/[A-Z]/g, (c) => c.toLowerCase())
+          : part.value;
+      if (database !== c.database)
+        return 'SQL references must stay in the selected database; select another database in the tool arguments';
+    }
+    if (
+      kind === 'table' &&
+      dialect === 'sqlite' &&
+      parts.length > 1 &&
+      parts[0].value.toLowerCase() !== 'main'
+    )
+      return 'Attached SQLite databases are outside the database scope';
+    return null;
+  }
+  assertTableScope(c: DatabaseConnection, table: string): void {
+    const error = this.scopeError(
+      c,
+      table.split('.').map((value) => ({ value, quoted: true })),
+      'table'
+    );
+    if (error) throw new Error(error);
+  }
   allowsTable(c: DatabaseConnection, table: string): boolean {
     const parts = table.split('.');
     const schema = parts.length > 1 ? parts.at(-2)! : '';
     return (
       this.allowsDatabase(c) &&
+      !this.scopeError(
+        c,
+        parts.map((value) => ({ value, quoted: true })),
+        'table'
+      ) &&
       this.rules(c).every(
         (r) =>
           (!r.schemas || includes(r.schemas, schema)) &&
@@ -135,17 +235,34 @@ export class AccessPolicy {
   hasTableRestrictions(c: DatabaseConnection): boolean {
     return this.rules(c).some((r) => r.schemas || r.allowTables || r.denyTables);
   }
-  assertQuery(c: DatabaseConnection, query: string, readOnly: boolean): void {
+  assertQuery(
+    c: DatabaseConnection,
+    query: string,
+    readOnly: boolean,
+    options: { deferNames?: boolean } = {}
+  ): SqlAnalysis | undefined {
     this.assertConnection(c);
     const error =
       validateStatement(query) ||
       (readOnly || this.isReadOnly(c) ? validateReadStatement(query) : null);
     if (error) throw new Error(error);
     const rules = this.rules(c);
-    const restricted =
-      this.hasTableRestrictions(c) || rules.some((r) => r.allowFunctions || r.denyFunctions);
+    const restricted = this.isDatabaseScoped(c);
     if (!restricted) return;
+    if (
+      sqlDialect(c.driver) === 'oracle' &&
+      sqlTokens(query).some((t) => t.kind === 'symbol' && t.value === '@')
+    )
+      throw new Error('Oracle database links are outside the database scope');
     const analysis = analyzeSql(query, c.driver);
+    for (const [kind, names] of [
+      ['table', analysis.relations],
+      ['function', analysis.functions],
+    ] as const)
+      for (const parts of names) {
+        const error = this.scopeError(c, parts, kind);
+        if (error) throw new Error(error);
+      }
     if (
       this.hasTableRestrictions(c) &&
       !['select', 'explain', 'insert', 'update', 'delete'].includes(analysis.operation)
@@ -166,12 +283,13 @@ export class AccessPolicy {
       )
     )
       throw new Error('Identifiers containing dots are unsupported under table policies');
-    for (const relation of analysis.relations)
-      this.assertTable(c, canonicalName(relation, c.driver));
+    if (!options.deferNames)
+      for (const relation of analysis.relations)
+        this.assertTable(c, canonicalName(relation, c.driver));
     for (const name of analysis.functions) {
       const functionName = canonicalName(name, c.driver);
-      const builtIn =
-        name.length === 1 && !name[0].quoted && FUNCTIONS.has(functionName.toLowerCase());
+      const builtIn = this.isBuiltin(name);
+      if (options.deferNames && !builtIn) continue;
       if (
         rules.some((r) => r.denyFunctions && includes(r.denyFunctions, functionName)) ||
         (!builtIn &&
@@ -179,5 +297,6 @@ export class AccessPolicy {
       )
         throw new Error('Function is not allowed by the access policy');
     }
+    return analysis;
   }
 }

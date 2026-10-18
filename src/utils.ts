@@ -1,3 +1,4 @@
+import { mysqlNameEquals } from './metadata/names.js';
 import { sqlDialect } from './policy/analyzer.js';
 import { validateReadStatement, validateStatement } from './policy/sql.js';
 /**
@@ -564,7 +565,7 @@ function buildOracleSchemaQuery(tableName: string): string {
   const table = sanitizeIdentifier(parts[parts.length - 1]);
   const owner =
     parts.length === 2
-      ? `UPPER('${sanitizeIdentifier(parts[0])}')`
+      ? `'${sanitizeIdentifier(parts[0])}'`
       : `SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')`;
 
   return `
@@ -587,7 +588,7 @@ function buildOracleSchemaQuery(tableName: string): string {
       ) pk
         ON pk.owner = c.owner AND pk.table_name = c.table_name AND pk.column_name = c.column_name
       WHERE c.owner = ${owner}
-        AND c.table_name = UPPER('${table}')
+        AND c.table_name = '${table}'
       ORDER BY c.column_id;
     `;
 }
@@ -634,7 +635,7 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         COLUMN_KEY as column_key,
         EXTRA as extra
       FROM information_schema.COLUMNS
-      WHERE TABLE_SCHEMA = ${safeSchema ? `'${safeSchema}'` : 'DATABASE()'} AND TABLE_NAME = '${safeTableName}'
+      WHERE ${mysqlNameEquals('TABLE_SCHEMA', safeSchema ? `'${safeSchema}'` : 'DATABASE()')} AND ${mysqlNameEquals('TABLE_NAME', `'${safeTableName}'`)}
       ORDER BY ORDINAL_POSITION;
     `;
   } else if (driverLower.includes('sqlite')) {
@@ -707,11 +708,11 @@ export function buildListTablesQuery(
         TABLE_TYPE as table_type,
         TABLE_SCHEMA as table_schema
       FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = DATABASE()
+      WHERE ${mysqlNameEquals('TABLE_SCHEMA', 'DATABASE()')}
     `;
 
     if (safeSchema) {
-      query += ` AND TABLE_SCHEMA = '${safeSchema}'`;
+      query += ` AND ${mysqlNameEquals('TABLE_SCHEMA', `'${safeSchema}'`)}`;
     }
 
     if (!includeViews) {
@@ -724,18 +725,21 @@ export function buildListTablesQuery(
     const query = `
       SELECT
         name as table_name,
-        type as table_type
+        type as table_type,
+        'main' as table_schema
       FROM sqlite_master
       WHERE type IN ('table'${includeViews ? ", 'view'" : ''})
         AND name NOT LIKE 'sqlite_%'
       ORDER BY name;
     `;
     return query;
+  } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
+    return `SELECT o.name AS table_name,CASE WHEN o.type='U' THEN 'BASE TABLE' ELSE 'VIEW' END AS table_type,s.name AS table_schema FROM sys.objects o JOIN sys.schemas s ON s.schema_id=o.schema_id WHERE o.is_ms_shipped=0 AND o.type IN (${includeViews ? "'U','V'" : "'U'"})${safeSchema ? ` AND s.name='${safeSchema}'` : ''} ORDER BY s.name,o.name`;
   } else if (driverLower.includes('oracle')) {
     // Without a schema, skip the schemas Oracle maintains itself (SYS, SYSTEM,
     // ...): they hold thousands of dictionary tables that would bury the rest.
     const ownerFilter = safeSchema
-      ? ` WHERE owner = UPPER('${safeSchema}')`
+      ? ` WHERE owner = '${safeSchema}'`
       : ` WHERE owner NOT IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y')`;
 
     let query = `

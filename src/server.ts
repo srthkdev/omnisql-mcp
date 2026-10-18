@@ -1047,7 +1047,7 @@ export class OmniSQLMCPServer {
             const source = this.artifacts.source(args.resultId as string);
             const connection = await this.getConnection(source.connectionId, source.database);
             if (!connection) throw new Error('Result connection is no longer accessible');
-            this.accessPolicy.assertQuery(connection, source.query, false);
+            await this.workspaceClient.assertQueryAccess(connection, source.query, false);
             const result =
               name === 'read_result'
                 ? await this.artifacts.page(
@@ -1915,7 +1915,7 @@ export class OmniSQLMCPServer {
     }
 
     const format = args.format || 'text';
-    this.accessPolicy.assertQuery(connection, args.query, true);
+    await this.workspaceClient.assertQueryAccess(connection, args.query, true);
     const dialect = connection.driver.toLowerCase();
     const isSqlServer = /mssql|sqlserver|microsoft/.test(dialect);
     if (isSqlServer && args.analyze)

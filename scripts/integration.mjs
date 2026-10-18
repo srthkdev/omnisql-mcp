@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { checkIdentifierPolicies } from './check-policy-identifiers.mjs';
 import { benchmarkSessionReuse } from './benchmark-sessions.mjs';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -627,6 +628,7 @@ try {
         `${engine}: independent instances, concurrent pools, table policies, resources, and read-only settings passed`
       );
       await client.close();
+      await checkIdentifierPolicies({ engine, admin, base, password, workspace, startMcp, call });
       client = await startMcp(workspace, false, {
         OMNISQL_CONFIG_FILE: '',
         OMNISQL_TIMEOUT: '200',

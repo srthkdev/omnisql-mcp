@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Optional gzip, Brotli, and zstd exports with private chunked download handles.
 - Ordered index and key metadata, catalog table/storage estimates, and a `get_table_stats` tool.
 - Lazy connection-to-table-to-schema resources.
 - Private expiring result handles, row/column pagination, long-cell reads, and bounded export chunks.
@@ -16,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A portable Rust SQL analyzer for schema/table policies across query tools, exports, transactions, and resources. npm installations include WebAssembly and need no Rust compiler.
 
 ### Changed
+- Bun 1.4.3 handles development, builds, tests, and standalone installs. Published JavaScript also supports Node 22.15+ and 24+.
+- Real Codex screenshots use lossless WebP; the site minifies CSS/JavaScript and defers the demo video until playback.
+- Oracle metadata arguments now use exact catalog names, preserving quoted table case.
 - CLI help/version commands avoid loading the MCP server; SQL drivers load only when used. Local benchmarks and reproduction commands are documented under `docs/benchmarks/`.
 - CLI release packages omit development source maps and type declarations.
 - Ordinary PostgreSQL, MySQL/MariaDB, and SQL Server queries reuse isolated connection pools.
@@ -25,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- Access policies resolve actual catalog identities and native case rules, cover qualified denies and selected-database scope, and recheck stored results/exports.
+- Policy lookups share one round trip for joins and reuse transaction leases, including pools limited to one connection.
+- MySQL/MariaDB metadata distinguishes case-sensitive table names; SQL Server table discovery works with case-sensitive catalogs.
+- Transactions bound row/byte output, preserve duplicate columns, and roll back after policy changes or query errors.
 - Certificate hostname verification survives SSH forwarding for PostgreSQL, MySQL, and SQL Server; unreadable explicit TLS material fails closed.
 - IAM authentication defaults to verified TLS when no mode is specified.
 - Schema comparisons now preserve qualified names, case, type dimensions, indexes, and constraints. Migration previews are explicitly commented review outlines.
@@ -33,7 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Saved read-only connections reject write tools. PostgreSQL, MySQL/MariaDB, and Oracle use read-only query transactions; SQLite queries have a process deadline and output safety cap.
 - SQL Server queries use an isolated pool with cleanup and configured TLS settings. Revoked SSH keys take precedence; disabled TLS is rejected for IAM authentication.
 
-### Changed
 - Replaced Docusaurus with a custom static website, searchable documentation, and client setup commands.
 - Rewrote the database, configuration, tool, and access guides; added site link and media checks to CI.
 - Replaced the illustrated walkthrough with a real Codex CLI session and included its terminal capture.

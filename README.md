@@ -13,6 +13,7 @@ Universal database MCP server — give AI assistants read/write access to your d
 - MySQL / MariaDB (via `mysql2`)
 - SQL Server / MSSQL (via `mssql`)
 - SQLite (via `sqlite3` CLI)
+- Oracle (via `oracledb`)
 
 **Postgres-compatible** (routed through `pg` driver automatically):
 - CockroachDB, TimescaleDB, Amazon Redshift, YugabyteDB, AlloyDB, Supabase, Neon, Citus
@@ -24,7 +25,7 @@ Universal database MCP server — give AI assistants read/write access to your d
 ## Features
 
 - Reuses connections already configured in your local DB client workspace — no duplicate setup
-- Native query execution for PostgreSQL, MySQL/MariaDB, SQLite, SQL Server
+- Native query execution for PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, Oracle
 - AWS RDS IAM authentication, including custom drivers built on the AWS Advanced JDBC Wrapper
 - Connection pooling with configurable pool size and timeouts
 - Transaction support (BEGIN/COMMIT/ROLLBACK)
@@ -252,6 +253,12 @@ credentials can reach. To pin it to specific databases, list `connection/databas
 instead of the bare connection.
 
 Credentials are automatically decrypted from the workspace `credentials-config.json`.
+
+### Oracle
+
+Oracle runs through `oracledb` in Thin mode, so no Oracle Client is needed. Service names, SIDs,
+TNS aliases and connect descriptors are read from the connection. Rows are capped by the driver,
+since Oracle has no `LIMIT`. Transactions and pooling are not supported yet.
 
 ## Custom and IAM-Authenticated Drivers
 

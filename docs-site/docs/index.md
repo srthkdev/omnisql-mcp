@@ -28,9 +28,10 @@ Native execution (fast, no external CLI required):
 - MySQL / MariaDB
 - SQLite
 - SQL Server / MSSQL
+- Oracle (Thin mode, no Oracle Client needed)
 
 Fallback via external CLI (configured with `OMNISQL_CLI_PATH`):
-- Oracle, MongoDB, and other drivers not natively supported
+- MongoDB and other drivers not natively supported
 
 ## Workspace Format Support
 

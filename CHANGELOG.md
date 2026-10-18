@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Native Oracle support** via `oracledb` in Thin mode. Oracle connections previously fell through to the CLI fallback and failed.
+
 ## [2.1.0] - 2026-08-29
 
 First release carrying the connection-handling work that had accumulated on `main`. Notably, `OMNISQL_PROJECT` was documented before it shipped (#30) - it is in this release.

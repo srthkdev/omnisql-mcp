@@ -25,6 +25,13 @@ import {
 import { isIamAuthConnection, resolveIamCredentials } from './auth/iam-auth.js';
 import { sshTunnelManager } from './net/ssh-tunnel.js';
 import { resolvePostgresSsl, resolveMysqlSsl } from './auth/ssl.js';
+import oracledb from 'oracledb';
+import {
+  resolveOracleConnectOptions,
+  oracleFetchTypeHandler,
+  explainStatementId,
+  normalizeOracleStatement,
+} from './oracle.js';
 
 export class WorkspaceClient {
   private executablePath: string;
@@ -44,12 +51,22 @@ export class WorkspaceClient {
     this.workspacePath = workspacePath;
   }
 
-  async executeQuery(connection: DatabaseConnection, query: string): Promise<QueryResult> {
+  /**
+   * Run a query against a connection.
+   *
+   * `maxRows` caps the fetch for engines that bound rows in the driver rather
+   * than through a LIMIT/TOP clause the caller adds (Oracle).
+   */
+  async executeQuery(
+    connection: DatabaseConnection,
+    query: string,
+    options: { maxRows?: number } = {}
+  ): Promise<QueryResult> {
     const startTime = Date.now();
 
     try {
       // Use native database drivers; fall back to the CLI for unsupported drivers
-      const result = await this.executeWithNativeTool(connection, query);
+      const result = await this.executeWithNativeTool(connection, query, options.maxRows);
       result.executionTime = Date.now() - startTime;
       return result;
     } catch (error) {
@@ -179,11 +196,14 @@ export class WorkspaceClient {
 
   private async executeWithNativeTool(
     connection: DatabaseConnection,
-    query: string
+    query: string,
+    maxRows?: number
   ): Promise<QueryResult> {
     const driver = connection.driver.toLowerCase();
 
-    if (driver.includes('sqlite')) {
+    if (driver.includes('oracle')) {
+      return this.executeOracleQuery(connection, query, maxRows);
+    } else if (driver.includes('sqlite')) {
       return this.executeSQLiteQuery(connection, query);
     } else if (this.isPostgresCompatible(driver)) {
       return this.executePostgreSQLQuery(connection, query);
@@ -203,7 +223,7 @@ export class WorkspaceClient {
       } catch (cliError) {
         const driverName = connection.driver;
         const nativeDrivers =
-          'PostgreSQL (+ CockroachDB, TimescaleDB, Redshift, YugabyteDB, Supabase, Neon, Citus, AlloyDB), MySQL/MariaDB, SQL Server (MSSQL), SQLite';
+          'PostgreSQL (+ CockroachDB, TimescaleDB, Redshift, YugabyteDB, Supabase, Neon, Citus, AlloyDB), MySQL/MariaDB, SQL Server (MSSQL), SQLite, Oracle';
         const cliMsg = cliError instanceof Error ? cliError.message : String(cliError);
         // Custom drivers can carry an opaque id; surfacing it alongside the
         // provider makes an unresolved dialect obvious rather than mysterious.
@@ -600,6 +620,100 @@ export class WorkspaceClient {
     }
   }
 
+  /**
+   * Open an Oracle session for one unit of work and always close it.
+   */
+  private async withOracleConnection<T>(
+    connection: DatabaseConnection,
+    work: (conn: oracledb.Connection) => Promise<T>
+  ): Promise<T> {
+    const { host, port } = await this.resolveEndpoint(connection, 1521);
+    const options = resolveOracleConnectOptions(connection, host, port);
+    const user = connection.user || connection.properties?.user;
+    const password = connection.properties?.password;
+
+    if (!user) {
+      throw new Error('User is required for Oracle connection');
+    }
+
+    const conn = await oracledb.getConnection({
+      user,
+      password,
+      connectString: options.connectString,
+      configDir: options.configDir,
+      privilege: options.privilege,
+      connectTimeout: Math.max(1, Math.ceil(this.timeout / 1000)),
+    });
+    try {
+      // Bounds every round trip, so a slow query fails instead of hanging.
+      conn.callTimeout = this.timeout;
+      return await work(conn);
+    } finally {
+      try {
+        await conn.close();
+      } catch (closeError) {
+        console.error('Failed to close Oracle connection:', {
+          error: closeError instanceof Error ? closeError.message : String(closeError),
+          host,
+          connectString: options.connectString,
+        });
+      }
+    }
+  }
+
+  private async executeOracleQuery(
+    connection: DatabaseConnection,
+    query: string,
+    maxRows?: number
+  ): Promise<QueryResult> {
+    return this.withOracleConnection(connection, async (conn) => {
+      const res = await conn.execute<unknown[]>(normalizeOracleStatement(query), [], {
+        outFormat: oracledb.OUT_FORMAT_ARRAY,
+        autoCommit: true,
+        maxRows: maxRows ?? 0,
+        fetchTypeHandler: oracleFetchTypeHandler,
+      });
+
+      if (res.rows) {
+        const columns = (res.metaData || []).map((m) => m.name);
+        return { columns, rows: res.rows, rowCount: res.rows.length, executionTime: 0 };
+      }
+      return { columns: [], rows: [], rowCount: res.rowsAffected ?? 0, executionTime: 0 };
+    });
+  }
+
+  /**
+   * Estimated execution plan for an Oracle query.
+   *
+   * EXPLAIN PLAN only parses the statement, never runs it. The plan rows land
+   * in the session's PLAN_TABLE and are discarded by the rollback.
+   */
+  async explainOracleQuery(connection: DatabaseConnection, query: string): Promise<QueryResult> {
+    const startTime = Date.now();
+    return this.withOracleConnection(connection, async (conn) => {
+      const statementId = explainStatementId();
+      try {
+        await conn.execute(
+          `EXPLAIN PLAN SET STATEMENT_ID = '${statementId}' FOR ${normalizeOracleStatement(query)}`
+        );
+        const res = await conn.execute<unknown[]>(
+          `SELECT plan_table_output FROM TABLE(DBMS_XPLAN.DISPLAY('PLAN_TABLE', :id, 'TYPICAL'))`,
+          { id: statementId },
+          { outFormat: oracledb.OUT_FORMAT_ARRAY }
+        );
+        const rows = res.rows || [];
+        return {
+          columns: ['PLAN_TABLE_OUTPUT'],
+          rows,
+          rowCount: rows.length,
+          executionTime: Date.now() - startTime,
+        };
+      } finally {
+        await conn.rollback();
+      }
+    });
+  }
+
   private async executeCli(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.executablePath, args, { stdio: this.debug ? 'inherit' : 'ignore' });
@@ -722,6 +836,7 @@ export class WorkspaceClient {
             case 'nullable':
               columnInfo.nullable = value === 'YES' || value === 'Y' || value === true;
               break;
+            case 'data_default':
             case 'column_default':
             case 'default':
               columnInfo.defaultValue = value;
@@ -733,14 +848,17 @@ export class WorkspaceClient {
             case 'extra':
               columnInfo.isAutoIncrement = value && value.toLowerCase().includes('auto_increment');
               break;
+            case 'data_length':
             case 'character_maximum_length':
             case 'length':
               columnInfo.length = parseInt(value) || undefined;
               break;
+            case 'data_precision':
             case 'numeric_precision':
             case 'precision':
               columnInfo.precision = parseInt(value) || undefined;
               break;
+            case 'data_scale':
             case 'numeric_scale':
             case 'scale':
               columnInfo.scale = parseInt(value) || undefined;
@@ -806,7 +924,7 @@ export class WorkspaceClient {
       return result.rows.map((row) => {
         const tableObj: any = {};
         result.columns.forEach((col, idx) => {
-          tableObj[col] = row[idx];
+          tableObj[col.toLowerCase()] = row[idx];
         });
         return tableObj;
       });

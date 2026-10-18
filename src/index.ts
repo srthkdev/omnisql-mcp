@@ -1040,9 +1040,11 @@ class OmniSQLMCPServer {
     // Add LIMIT/TOP clause if not present and it's a SELECT query
     let finalQuery = query;
     const lowerQuery = query.toLowerCase().trimStart();
+    const driver = connection.driver.toLowerCase();
+    // Oracle has no LIMIT; the driver caps the fetch instead (maxRows below).
+    const isOracle = driver.includes('oracle');
 
-    if (lowerQuery.startsWith('select')) {
-      const driver = connection.driver.toLowerCase();
+    if (lowerQuery.startsWith('select') && !isOracle) {
       const isSqlServer =
         driver.includes('mssql') || driver.includes('sqlserver') || driver.includes('microsoft');
 
@@ -1064,7 +1066,7 @@ class OmniSQLMCPServer {
       }
     }
 
-    const result = await this.workspaceClient.executeQuery(connection, finalQuery);
+    const result = await this.workspaceClient.executeQuery(connection, finalQuery, { maxRows });
 
     const response = {
       query: finalQuery,
@@ -1325,13 +1327,14 @@ class OmniSQLMCPServer {
     const maxRows = Math.min(Math.max(1, requestedRows), MAX_EXPORT_ROWS);
     const format = args.format || 'csv';
 
-    // Add LIMIT clause if not present
+    // Add LIMIT clause if not present (Oracle has none; its driver caps the fetch)
     let finalQuery = query;
-    if (!query.toLowerCase().includes('limit')) {
+    const isOracle = connection.driver.toLowerCase().includes('oracle');
+    if (!isOracle && !query.toLowerCase().includes('limit')) {
       finalQuery = `${query} LIMIT ${maxRows}`;
     }
 
-    const result = await this.workspaceClient.executeQuery(connection, finalQuery);
+    const result = await this.workspaceClient.executeQuery(connection, finalQuery, { maxRows });
 
     if (format === 'csv') {
       const csvData = convertToCSV(result.columns, result.rows);
@@ -1581,6 +1584,14 @@ class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
+    if (args.analyze && connection.driver.toLowerCase().includes('oracle')) {
+      // An actual plan would mean running the statement; EXPLAIN PLAN never does.
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'analyze is not supported for Oracle: only the estimated plan (EXPLAIN PLAN) is available'
+      );
+    }
+
     const format = args.format || 'text';
     const explainQuery = buildExplainQuery(
       connection.driver,
@@ -1589,7 +1600,10 @@ class OmniSQLMCPServer {
       format
     );
 
-    const result = await this.workspaceClient.executeQuery(connection, explainQuery);
+    // Oracle needs two statements in one session (EXPLAIN PLAN, then DBMS_XPLAN).
+    const result = connection.driver.toLowerCase().includes('oracle')
+      ? await this.workspaceClient.explainOracleQuery(connection, args.query)
+      : await this.workspaceClient.executeQuery(connection, explainQuery);
     const explainResult = parseExplainOutput(connection.driver, result.rows, args.query, format);
 
     return {

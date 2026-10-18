@@ -74,6 +74,7 @@
     "csv-stringify": "^6.4.6",
     "mssql": "^12.2.0",
     "mysql2": "^3.16.0",
+    "oracledb": "^6.10.0",
     "pg": "^8.13.1",
     "ssh2": "^1.17.0",
     "xml2js": "^0.6.2"
@@ -82,6 +83,7 @@
     "@eslint/js": "^9.39.2",
     "@types/mssql": "^9.1.8",
     "@types/node": "^20.0.0",
+    "@types/oracledb": "^6.10.4",
     "@types/pg": "^8.11.6",
     "@types/ssh2": "^1.15.5",
     "@types/xml2js": "^0.4.14",

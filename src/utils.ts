@@ -598,7 +598,8 @@ export function getTestQuery(driver: string): string {
   } else if (driverLower.includes('mysql')) {
     return 'SELECT version();';
   } else if (driverLower.includes('oracle')) {
-    return 'SELECT * FROM dual;';
+    // v$version is granted to PUBLIC, so any session can read it.
+    return 'SELECT banner FROM v$version WHERE ROWNUM = 1';
   } else if (driverLower.includes('sqlite')) {
     return 'SELECT sqlite_version();';
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
@@ -618,10 +619,56 @@ export function getTestQuery(driver: string): string {
 }
 
 /**
+ * Column query for an Oracle table, optionally schema-qualified ("OWNER.TABLE").
+ *
+ * all_tab_columns spans every schema the session can see, so a bare name is
+ * pinned to the session's own schema. Each part is validated on its own;
+ * names are stored upper-case unless quoted.
+ */
+function buildOracleSchemaQuery(tableName: string): string {
+  const parts = tableName.trim().split('.');
+  if (parts.length > 2) {
+    throw new Error('Identifier contains invalid characters');
+  }
+  const table = sanitizeIdentifier(parts[parts.length - 1]);
+  const owner =
+    parts.length === 2
+      ? `UPPER('${sanitizeIdentifier(parts[0])}')`
+      : `SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')`;
+
+  return `
+      SELECT
+        c.column_name,
+        c.data_type,
+        c.nullable,
+        c.data_default,
+        c.data_length,
+        c.data_precision,
+        c.data_scale,
+        CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' END AS column_key
+      FROM all_tab_columns c
+      LEFT JOIN (
+        SELECT cc.owner, cc.table_name, cc.column_name
+        FROM all_constraints k
+        JOIN all_cons_columns cc
+          ON cc.owner = k.owner AND cc.constraint_name = k.constraint_name
+        WHERE k.constraint_type = 'P'
+      ) pk
+        ON pk.owner = c.owner AND pk.table_name = c.table_name AND pk.column_name = c.column_name
+      WHERE c.owner = ${owner}
+        AND c.table_name = UPPER('${table}')
+      ORDER BY c.column_id;
+    `;
+}
+
+/**
  * Build schema query based on database driver
  */
 export function buildSchemaQuery(driver: string, tableName: string): string {
   const driverLower = driver.toLowerCase();
+  if (driverLower.includes('oracle')) {
+    return buildOracleSchemaQuery(tableName);
+  }
   const safeTableName = sanitizeIdentifier(tableName);
 
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
@@ -656,20 +703,6 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
     `;
   } else if (driverLower.includes('sqlite')) {
     return `PRAGMA table_info(${safeTableName});`;
-  } else if (driverLower.includes('oracle')) {
-    return `
-      SELECT
-        column_name,
-        data_type,
-        nullable,
-        data_default,
-        data_length,
-        data_precision,
-        data_scale
-      FROM user_tab_columns
-      WHERE table_name = UPPER('${safeTableName}')
-      ORDER BY column_id;
-    `;
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
     return `
       SELECT
@@ -761,6 +794,12 @@ export function buildListTablesQuery(
     `;
     return query;
   } else if (driverLower.includes('oracle')) {
+    // Without a schema, skip the schemas Oracle maintains itself (SYS, SYSTEM,
+    // ...): they hold thousands of dictionary tables that would bury the rest.
+    const ownerFilter = safeSchema
+      ? ` WHERE owner = UPPER('${safeSchema}')`
+      : ` WHERE owner NOT IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y')`;
+
     let query = `
       SELECT
         table_name,
@@ -768,10 +807,7 @@ export function buildListTablesQuery(
         owner as table_schema
       FROM all_tables
     `;
-
-    if (safeSchema) {
-      query += ` WHERE owner = UPPER('${safeSchema}')`;
-    }
+    query += ownerFilter;
 
     if (includeViews) {
       query += `
@@ -782,13 +818,10 @@ export function buildListTablesQuery(
           owner as table_schema
         FROM all_views
       `;
-
-      if (safeSchema) {
-        query += ` WHERE owner = UPPER('${safeSchema}')`;
-      }
+      query += ownerFilter;
     }
 
-    query += ` ORDER BY table_name;`;
+    query += ` ORDER BY table_schema, table_name`;
     return query;
   } else {
     // Generic fallback

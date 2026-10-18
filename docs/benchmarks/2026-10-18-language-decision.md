@@ -35,10 +35,16 @@ Milliseconds below are medians; memory uses decimal MB. RSS is one process peak 
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Node 24.7.0 | 74.86 ms | 9.14 ms | 52.79 ms | 83.99 ms | 172.79 MB |
 | Bun 1.4.3 | 42.09 ms | 9.20 ms | 54.80 ms | 44.51 ms | 149.45 MB |
-| Rust 1.99.0 | 2.96 ms | 8.73 ms | 52.63 ms | 52.38 ms | 7.42 MB |
+| Rust 1.99.0 | 2.97 ms | 8.73 ms | 52.63 ms | 52.38 ms | 7.42 MB |
 | Go 1.27.2 | 4.28 ms | 8.45 ms | 55.93 ms | 153.39 ms | 21.53 MB |
 
 The differences between roughly 8–9 ms aggregate calls and 53–56 ms stream calls do not establish a practically important database execution speedup. Rust's startup and memory advantages are much larger in this prototype. Bun is about 15% lower-latency than Rust on this generic line-by-line JSON processing task. Rust's generic serde JSON path was not replaced with a typed struct or SIMD parser to manufacture a preferred result.
+
+### Captured report
+
+This is a screenshot of the actual Terminal window running `show-report.py` against the committed raw observations. It is a benchmark report, not a production application or Codex UI demonstration.
+
+![Actual Terminal benchmark report with timing, memory, size and correctness tables](assets/language-spike.webp)
 
 Timeout recovery passed in all four candidates, around the requested native deadline plus overhead. One sample per candidate is a correctness observation, not a cancellation benchmark. This does not test client-request cancellation or a broken network.
 

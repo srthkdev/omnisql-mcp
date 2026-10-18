@@ -22,9 +22,9 @@
   <a href="CHANGELOG.md">releases</a>
 </p>
 
-<p align="center"><img src="assets/codex-session.gif" alt="Real Codex CLI session: OmniSQL lists SQLite connections, inspects tables, and queries paid revenue" width="100%"></p>
+<p align="center"><a href="assets/codex-session.mp4"><img src="assets/mcp-instance-calls.webp" alt="Real Codex CLI window: one OmniSQL server compares sales and warehouse" width="100%"></a></p>
 
-<p align="center">Recorded in Codex CLI against synthetic SQLite data. <a href="assets/codex-session.mp4">Watch the recording</a>.</p>
+<p align="center">Captured from the real Codex CLI window against synthetic SQLite instances. <a href="assets/codex-session.mp4">Watch the recording</a> · <a href="assets/codex-session.gif">GIF preview</a>.</p>
 
 ## What you can do
 
@@ -55,7 +55,7 @@
 
 ## Requirements
 
-- Bun 1.4.3+ or Node.js 22+
+- Bun 1.4.3+ or Node.js 22.15+
 - A local DB client (DBeaver-compatible) with at least one configured connection
 
 ## Quick setup
@@ -218,11 +218,17 @@ Restrict which workspace connections are visible. Accepts connection IDs or disp
 ### Data Operations
 - `execute_query` - Run read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE only)
 - `write_query` - Run INSERT/UPDATE/DELETE
-- `export_data` - Export to CSV/JSON
+- `export_data` - Export to CSV/JSON, with optional gzip, Brotli, or zstd
+- `read_result` - Read a page of stored rows and columns
+- `read_result_cell` - Read a long cell in chunks
+- `read_export` - Read a stored export in bounded base64 chunks
+
+Exports support optional gzip, Brotli, and zstd downloads through `export_data.compression`. Ordinary queries remain paginated JSON. [Measured compression and media changes](docs/benchmarks/2026-10-18-compression.md).
 
 ### Schema Management
 - `list_tables` - List tables and views
-- `get_table_schema` - Get table structure
+- `get_table_schema` - Get columns, indexes, and constraints
+- `get_table_stats` - Get catalog row estimates and data/index storage
 - `create_table` - Create tables
 - `alter_table` - Modify tables
 - `drop_table` - Drop tables (requires confirmation)

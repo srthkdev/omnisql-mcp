@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { output, base, build, pages, root } from './build.mjs';
 
-build();
+await build();
 const files = [];
 function walk(dir) {
   for (const name of readdirSync(dir)) {
@@ -46,7 +46,8 @@ assert.equal(
 for (const asset of [
   'logo.svg',
   'codex-session.mp4',
-  'codex-session-poster.png',
+  'mcp-instance-calls.webp',
+  'mcp-multiple-instances.webp',
   'social-card.png',
 ])
   assert(existsSync(join(output, 'media', asset)), `Missing asset: ${asset}`);

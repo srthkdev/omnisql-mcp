@@ -94,7 +94,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/mssql": "^9.1.8",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22",
     "@types/oracledb": "^6.10.4",
     "@types/pg": "^8.11.6",
     "@types/pg-cursor": "^2.7.2",
@@ -108,7 +108,7 @@
     "typescript-eslint": "^8.53.0"
   },
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=22.15.0",
     "bun": ">=1.4.3"
   },
   "repository": {

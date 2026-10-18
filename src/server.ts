@@ -1,3 +1,8 @@
+import {
+  compressExport,
+  compressionExtension,
+  type ExportCompression,
+} from './runtime/compression.js';
 import { PrivateNotes } from './runtime/notes.js';
 import { ResultArtifacts, type ArtifactSource } from './runtime/artifacts.js';
 import { AccessPolicy } from './policy/access.js';
@@ -628,6 +633,13 @@ export class OmniSQLMCPServer {
               enum: ['csv', 'json'],
               description: 'Export format (csv or json)',
               default: 'csv',
+            },
+            compression: {
+              type: 'string',
+              enum: ['none', 'gzip', 'brotli', 'zstd'],
+              default: 'none',
+              description:
+                'Optional download compression. Compressed exports return a read_export handle; concatenate decoded base64 chunks, then decompress.',
             },
             includeHeaders: {
               type: 'boolean',
@@ -1594,6 +1606,7 @@ export class OmniSQLMCPServer {
     database?: string;
     query: string;
     format?: string;
+    compression?: ExportCompression;
     includeHeaders?: boolean;
     maxRows?: number;
   }) {
@@ -1630,14 +1643,22 @@ export class OmniSQLMCPServer {
                   Object.fromEntries(result.columns.map((name, i) => [name, row[i]]))
                 )
           );
-    if (Buffer.byteLength(text) > 65536) {
-      const stored = await this.artifacts.export(text, format, {
+    const compression = args.compression ?? 'none';
+    const bytes = Buffer.byteLength(text);
+    if (compression !== 'none' || bytes > 65536) {
+      const data =
+        compression === 'none'
+          ? text
+          : await compressExport(text, compression, connection.limits?.timeoutMs);
+      const stored = await this.artifacts.export(data, format + compressionExtension[compression], {
         connectionId: args.connectionId,
         database: args.database,
         query,
       });
       const response = {
         ...stored,
+        compression,
+        uncompressedBytes: bytes,
         truncated: result.truncated === true,
         rowCount: result.rows.length,
         downloadTool: 'read_export',

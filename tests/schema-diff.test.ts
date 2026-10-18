@@ -23,6 +23,51 @@ function schema(tableName = 'public.orders', length = 10): SchemaInfo {
   };
 }
 describe('accurate schema differences', () => {
+  it('compares nested warehouse types and preserves enum literal case and spaces', async () => {
+    const a = schema(),
+      b = schema();
+    a.columns[0].type = 'Array(Nullable(String))';
+    b.columns[0].type = 'Array(Nullable(UInt64))';
+    expect(
+      (await compareSchemas([comparableSchema(a)], [comparableSchema(b)], 'a', 'b')).summary
+        .tablesModified
+    ).toBe(1);
+    a.columns[0].type = "Enum8('Paid A'=1)";
+    b.columns[0].type = "Enum8('paid A'=1)";
+    expect(
+      (await compareSchemas([comparableSchema(a)], [comparableSchema(b)], 'a', 'b')).summary
+        .tablesModified
+    ).toBe(1);
+  });
+  it('reports physical key changes and rejects incomplete catalogs', async () => {
+    const a = schema(),
+      b = schema();
+    a.physicalKeys = { sorting: 'a,b' };
+    b.physicalKeys = { sorting: 'b,a' };
+    const diff = await compareSchemas([comparableSchema(a)], [comparableSchema(b)], 'a', 'b');
+    expect(diff.differences[0].physicalKeyDiffs).toEqual([
+      { kind: 'sorting', before: 'a,b', after: 'b,a' },
+    ]);
+    b.partial = true;
+    expect(() => comparableSchema(b)).toThrow(/incomplete/);
+  });
+  it('keeps every migration-review line commented despite embedded newlines', async () => {
+    const a = schema(),
+      b = schema();
+    b.columns[0].type = 'text\nDROP TABLE important;';
+    b.columns[0].name = 'other\nDROP TABLE important;';
+    const diff = await compareSchemas(
+      [comparableSchema(a)],
+      [comparableSchema(b)],
+      'source\nDROP TABLE important;',
+      'target'
+    );
+    expect(
+      generateMigrationScript(diff, 'postgres')
+        .split('\n')
+        .every((line) => !line || line.startsWith('--'))
+    ).toBe(true);
+  });
   it('retains length, decimal precision and zero scale', async () => {
     const a = schema(),
       b = schema('public.orders', 100);

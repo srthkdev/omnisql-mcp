@@ -1,0 +1,12 @@
+{
+  "baseline": {
+    "size": 726288,
+    "unpackedSize": 2784346,
+    "entryCount": 50
+  },
+  "clickhouse": {
+    "size": 731372,
+    "unpackedSize": 2807337,
+    "entryCount": 51
+  }
+}

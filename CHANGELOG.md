@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- ClickHouse HTTP/HTTPS queries, native read-only modes, verified TLS/client certificates, zstd/gzip transport, bounded results, catalogs, skipping indexes, physical keys, and estimated plans.
 - DuckDB local-file queries, metadata, plans, exact nested numeric values, coordinated file access, and locked external-access controls. The installed DuckDB CLI 1.5.6+ keeps its native binary outside the npm package.
 - Optional gzip, Brotli, and zstd exports with private chunked download handles.
 - Ordered index and key metadata, catalog table/storage estimates, and a `get_table_stats` tool.
@@ -30,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- Incomplete catalog details are marked partial; schema comparisons reject incomplete inputs. Nested warehouse types and enum literal case survive comparisons, and embedded newlines cannot escape migration-review comments.
 - CTE aliases use dialect-specific ASCII folding; differently cased physical references cannot disappear from table policy analysis.
 - Access policies resolve actual catalog identities and native case rules, cover qualified denies and selected-database scope, and recheck stored results/exports.
 - Policy lookups share one round trip for joins and reuse transaction leases, including pools limited to one connection.

@@ -1,5 +1,5 @@
 import {
-  compressExport,
+  compressText,
   compressionExtension,
   type ExportCompression,
 } from './runtime/compression.js';
@@ -882,7 +882,7 @@ export class OmniSQLMCPServer {
     tools.push({
       name: 'list_databases',
       description:
-        'List databases accessible through a saved PostgreSQL, MySQL/MariaDB, or SQL Server connection',
+        'List databases accessible through a saved PostgreSQL, MySQL/MariaDB, SQL Server, or ClickHouse connection',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1649,7 +1649,7 @@ export class OmniSQLMCPServer {
       const data =
         compression === 'none'
           ? text
-          : await compressExport(text, compression, connection.limits?.timeoutMs);
+          : await compressText(text, compression, connection.limits?.timeoutMs);
       const stored = await this.artifacts.export(data, format + compressionExtension[compression], {
         connectionId: args.connectionId,
         database: args.database,

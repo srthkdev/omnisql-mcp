@@ -119,7 +119,7 @@ export function loadConfiguredConnections(
       )
         throw new Error(`Connection ${id}: unsupported URL protocol`);
       parsed = {
-        host: url.hostname,
+        host: url.hostname.replace(/^\[|\]$/g, ''),
         port: url.port ? Number(url.port) : undefined,
         database: decodeURIComponent(url.pathname.slice(1)) || undefined,
         user: decodeURIComponent(url.username) || undefined,

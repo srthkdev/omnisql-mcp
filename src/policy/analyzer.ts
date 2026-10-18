@@ -32,7 +32,13 @@ export function analyzeSql(query: string, driver: string): SqlAnalysis {
   sqlTokens(query);
   native ??= require('../native/omnisql_sql_policy.js');
   try {
-    return JSON.parse(native!.analyze_sql(query, sqlDialect(driver))) as SqlAnalysis;
+    const dialect = sqlDialect(driver);
+    // sqlparser lacks ClickHouse's fixed EXPLAIN JSON option. Parse its unchanged body.
+    const source =
+      dialect === 'clickhouse'
+        ? query.replace(/^\s*EXPLAIN\s+json\s*=\s*1\s+/i, 'EXPLAIN ')
+        : query;
+    return JSON.parse(native!.analyze_sql(source, dialect)) as SqlAnalysis;
   } catch {
     throw new Error('SQL cannot be analyzed safely for this database dialect');
   }

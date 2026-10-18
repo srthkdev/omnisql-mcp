@@ -1,5 +1,19 @@
 import type { DatabaseConnection, QueryResult } from '../types.js';
 
+/** Do not replace non-UTF-8 database bytes with a different value. */
+export class ResultTextDecoder {
+  private decoder = new TextDecoder('utf-8', { fatal: true });
+  decode(chunk?: Uint8Array): string {
+    try {
+      return this.decoder.decode(chunk, { stream: chunk !== undefined });
+    } catch {
+      throw new Error(
+        'Database result contains invalid UTF-8; select hex/base64 text for binary values'
+      );
+    }
+  }
+}
+
 /** Shared row and byte budget, applied while each native driver fetches rows. */
 export class ResultCollector {
   readonly rows: unknown[][] = [];
@@ -73,10 +87,7 @@ export class ResultCollector {
 }
 
 /** Preserve repeated column names and integers beyond Number's exact range. */
-export function parseJsonRows(
-  text: string,
-  decimalText = false
-): { columns: string[]; rows: unknown[][] } {
+function jsonReader(text: string, decimalText: boolean) {
   let offset = 0;
   const skip = () => {
     while (/\s/.test(text[offset] ?? '') && offset < text.length) offset++;
@@ -138,44 +149,69 @@ export function parseJsonRows(
     if (decimalText && /^-?\d/.test(token) && /[.eE]/.test(token)) return token;
     return JSON.parse(token);
   };
+  return {
+    skip,
+    take,
+    value,
+    get offset() {
+      return offset;
+    },
+    set offset(value: number) {
+      offset = value;
+    },
+  };
+}
+export function parseJsonValue(text: string, decimalText = false): unknown {
+  const reader = jsonReader(text, decimalText);
+  const value = reader.value();
+  reader.skip();
+  if (reader.offset !== text.length) throw new Error('Trailing database JSON');
+  return value;
+}
+export function parseJsonRows(
+  text: string,
+  decimalText = false
+): { columns: string[]; rows: unknown[][] } {
+  const reader = jsonReader(text, decimalText);
   if (!text.trim()) return { columns: [], rows: [] };
-  take('[');
+  reader.take('[');
   const rows: unknown[][] = [];
   let columns: string[] = [];
-  skip();
-  while (text[offset] !== ']') {
-    take('{');
+  reader.skip();
+  while (text[reader.offset] !== ']') {
+    reader.take('{');
     const names: string[] = [];
     const row: unknown[] = [];
-    skip();
-    while (text[offset] !== '}') {
-      const key = value();
+    reader.skip();
+    while (text[reader.offset] !== '}') {
+      const key = reader.value();
       if (typeof key !== 'string') throw new Error('Invalid database column');
-      take(':');
+      reader.take(':');
       names.push(key);
-      row.push(value());
-      skip();
-      if (text[offset] !== ',') break;
-      offset++;
+      row.push(reader.value());
+      reader.skip();
+      if (text[reader.offset] !== ',') break;
+      reader.offset++;
     }
-    take('}');
+    reader.take('}');
     if (!columns.length) columns = names;
     else if (JSON.stringify(columns) !== JSON.stringify(names))
       throw new Error('Inconsistent database columns');
     rows.push(row);
-    skip();
-    if (text[offset] !== ',') break;
-    offset++;
+    reader.skip();
+    if (text[reader.offset] !== ',') break;
+    reader.offset++;
   }
-  take(']');
-  skip();
-  if (offset !== text.length) throw new Error('Trailing database output');
+  reader.take(']');
+  reader.skip();
+  if (reader.offset !== text.length) throw new Error('Trailing database output');
   return { columns, rows };
 }
 
 /** Incremental CLI JSON framing. Retains at most one unfinished row. */
 export class JsonRowStream {
   private buffer = '';
+  private bufferBytes = 0;
   private scan = 0;
   private start = -1;
   private depth = 0;
@@ -187,6 +223,7 @@ export class JsonRowStream {
   ) {}
   write(chunk: string): boolean {
     this.buffer += chunk;
+    this.bufferBytes += Buffer.byteLength(chunk);
     while (this.scan < this.buffer.length) {
       const c = this.buffer[this.scan];
       if (this.quoted) {
@@ -206,6 +243,7 @@ export class JsonRowStream {
           );
           if (!this.collector.columns.length) this.collector.columns = parsed.columns;
           if (!this.collector.add(parsed.rows[0])) return false;
+          this.bufferBytes -= Buffer.byteLength(this.buffer.slice(0, this.scan + 1));
           this.buffer = this.buffer.slice(this.scan + 1);
           this.scan = -1;
           this.start = -1;
@@ -213,10 +251,56 @@ export class JsonRowStream {
       }
       this.scan++;
     }
-    if (Buffer.byteLength(this.buffer) > this.collector.maxBytes)
+    if (this.bufferBytes > this.collector.maxBytes)
       throw new Error(
         'Database row exceeds the result byte limit; select fewer or smaller columns'
       );
+    return true;
+  }
+}
+
+/** Positional NDJSON with name/type header rows; repeated column names stay intact. */
+export class CompactRowStream {
+  private buffer = '';
+  private scan = 0;
+  private bufferBytes = 0;
+  private headers = 0;
+  constructor(private collector: ResultCollector) {}
+  write(chunk: string): boolean {
+    this.buffer += chunk;
+    this.bufferBytes += Buffer.byteLength(chunk);
+    let newline: number;
+    while ((newline = this.buffer.indexOf('\n', this.scan)) >= 0) {
+      this.bufferBytes -= Buffer.byteLength(this.buffer.slice(0, newline + 1));
+      const line = this.buffer.slice(0, newline).trim();
+      this.buffer = this.buffer.slice(newline + 1);
+      this.scan = 0;
+      if (line && !this.line(line)) return false;
+    }
+    this.scan = this.buffer.length;
+    if (this.bufferBytes > this.collector.maxBytes)
+      throw new Error('Database row exceeds the result byte limit');
+    return true;
+  }
+  finish(allowEmpty = false): void {
+    if (this.buffer.trim() && !this.line(this.buffer.trim())) return;
+    if (this.headers === 1) throw new Error('Incomplete database result headers');
+    if (!allowEmpty && this.headers === 0) throw new Error('Missing database result headers');
+  }
+  private line(text: string): boolean {
+    if (/^Code:\s*\d+/.test(text)) throw new Error(text.slice(0, 4096));
+    const row = parseJsonValue(text, true);
+    if (!Array.isArray(row)) throw new Error('Invalid positional database result');
+    if (this.headers === 0) {
+      if (row.some((v) => typeof v !== 'string')) throw new Error('Invalid database column names');
+      this.collector.columns = row as string[];
+      this.collector.result();
+    } else if (row.length !== this.collector.columns.length)
+      throw new Error('Inconsistent database result width');
+    else if (this.headers === 1) {
+      if (row.some((v) => typeof v !== 'string')) throw new Error('Invalid database column types');
+    } else return this.collector.add(row);
+    this.headers++;
     return true;
   }
 }

@@ -4,7 +4,7 @@ import { QueryGate } from './concurrency.js';
 export type ExportCompression = 'none' | 'gzip' | 'brotli' | 'zstd';
 const gate = new QueryGate(2, 8);
 /** Explicit download compression; MCP messages always remain ordinary JSON. */
-export async function compressExport(
+export async function compressText(
   text: string,
   compression: Exclude<ExportCompression, 'none'>,
   timeout = 30000
@@ -12,7 +12,7 @@ export async function compressExport(
   const release = await gate.acquire(timeout);
   try {
     if (Buffer.byteLength(text) > 16 * 1024 * 1024)
-      throw new Error('Export exceeds the 16 MiB compression limit');
+      throw new Error('Text exceeds the 16 MiB compression limit');
     const data = Buffer.from(text);
     return await new Promise<Buffer>((resolve, reject) => {
       const done = (error: Error | null, result: Buffer) =>

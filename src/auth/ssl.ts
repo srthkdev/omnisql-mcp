@@ -6,6 +6,8 @@
  */
 
 import fs from 'fs';
+import { isIP } from 'node:net';
+import { checkServerIdentity, type ConnectionOptions } from 'node:tls';
 import type { DatabaseConnection } from '../types.js';
 import { readConnectionProp } from './connection-props.js';
 
@@ -51,6 +53,25 @@ function buildSslMaterial(
   if (certPem) material.cert = certPem;
   if (keyPem) material.key = keyPem;
   return material;
+}
+
+/** HTTP database TLS always verifies the original target, including through SSH. */
+export function resolveHttpTls(connection: DatabaseConnection): ConnectionOptions {
+  const host =
+    readConnectionProp(connection, 'ssl.serverName') ||
+    connection.host ||
+    readConnectionProp(connection, 'host');
+  if (!host) throw new Error('HTTPS database connections require a hostname');
+  return {
+    ...buildSslMaterial(
+      readConnectionProp(connection, 'sslrootcert', 'ssl.ca'),
+      readConnectionProp(connection, 'sslcert', 'ssl.cert'),
+      readConnectionProp(connection, 'sslkey', 'ssl.key')
+    ),
+    rejectUnauthorized: true,
+    ...(isIP(host) ? {} : { servername: host }),
+    checkServerIdentity: (_, certificate) => checkServerIdentity(host, certificate),
+  };
 }
 
 /**

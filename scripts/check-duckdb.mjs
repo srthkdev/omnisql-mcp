@@ -1,12 +1,11 @@
+import { benchmarkReadScopes } from './benchmark-mcp.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { performance } from 'node:perf_hooks';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { startFixture } from './mcp-fixture.mjs';
 
 const command = process.env.OMNISQL_DUCKDB_CLI || 'duckdb';
 const dir = mkdtempSync(join(tmpdir(), 'omnisql-duckdb-'));
@@ -61,28 +60,16 @@ try {
   const configure = () =>
     writeFileSync(file, JSON.stringify({ version: 1, connections }), { mode: 0o600 });
   configure();
-  client = new Client({ name: 'omnisql-duckdb-check', version: '1' });
-  await client.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: [resolve('dist/index.js')],
-      stderr: 'pipe',
-      env: {
-        ...process.env,
-        OMNISQL_CONFIG_FILE: file,
-        OMNISQL_WORKSPACE: dir,
-        OMNISQL_ALLOWED_CONNECTIONS: Object.keys(connections).join(','),
-        OMNISQL_READ_ONLY: 'false',
-        OMNISQL_DISABLED_TOOLS: '',
-        OMNISQL_UPDATE_NOTIFIER: 'false',
-      },
-    })
-  );
-  const call = async (name, args) => {
-    const response = await client.callTool({ name, arguments: args });
-    assert(!response.isError, JSON.stringify(response.content));
-    return JSON.parse(response.content[0].text);
-  };
+  const fixture = await startFixture({
+    OMNISQL_CONFIG_FILE: file,
+    OMNISQL_WORKSPACE: dir,
+    OMNISQL_ALLOWED_CONNECTIONS: Object.keys(connections).join(','),
+    OMNISQL_READ_ONLY: 'false',
+    OMNISQL_DISABLED_TOOLS: '',
+    OMNISQL_UPDATE_NOTIFIER: 'false',
+  });
+  client = fixture.client;
+  const call = fixture.call;
   const query = (connectionId, text) =>
     call('execute_query', { connectionId, query: text, maxRows: 10000 });
   assert.equal((await call('list_connections', {})).length, 6);
@@ -208,40 +195,11 @@ try {
   ]);
   const updated = await query('sales', 'SELECT status FROM orders WHERE id=1');
   assert.equal(updated.rows[0][0], 'changed');
-  if (process.env.OMNISQL_BENCHMARK_REPORT_DIR) {
-    const values = { raw: [], sales: [] };
-    for (let i = 0; i < 33; i++)
-      for (const id of i % 2 ? ['raw', 'sales'] : ['sales', 'raw']) {
-        const start = performance.now();
-        await query(id, 'SELECT SUM(total) FROM orders');
-        if (i >= 3) values[id].push(performance.now() - start);
-      }
-    const summary = (samples) => ({
-      p50Ms: [...samples].sort((a, b) => a - b)[14],
-      p95Ms: [...samples].sort((a, b) => a - b)[28],
-      samplesMs: samples,
-    });
-    const report = {
-      runtime: process.versions.bun ? `Bun ${process.versions.bun}` : `Node ${process.version}`,
-      platform: process.platform,
-      arch: process.arch,
-      samples: 30,
-      warmupPairs: 3,
-      unrestricted: summary(values.raw),
-      restricted: summary(values.sales),
-      scope:
-        'Warm MCP SUM(total) calls over 10,000 seeded DuckDB rows, including a CLI process per query and one additional batched catalog process for table policies. Excludes client initialization and first version/parser loading. Same query and file; alternating order.',
-    };
-    const directory = resolve(process.env.OMNISQL_BENCHMARK_REPORT_DIR);
-    mkdirSync(directory, { recursive: true });
-    writeFileSync(
-      join(
-        directory,
-        `${new Date().toISOString().slice(0, 10)}-duckdb-${process.versions.bun ? 'bun' : 'node'}.json`
-      ),
-      JSON.stringify(report, null, 2) + '\n'
-    );
-  }
+  await benchmarkReadScopes(
+    query,
+    'duckdb',
+    'Warm MCP SUM(total) calls over 10,000 seeded DuckDB rows, including a CLI process per query and one additional batched catalog process for table policies. Excludes client initialization and first version/parser loading. Same query and file; alternating order.'
+  );
   await assert.rejects(
     () => call('begin_transaction', { connectionId: 'edits' }),
     /not supported|unsupported/i

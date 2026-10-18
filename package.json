@@ -51,7 +51,9 @@
     "test:results": "bun run build && bun scripts/check-results.mjs",
     "docs:tools": "bun run build && bun scripts/export-tools.mjs",
     "test:tls": "bun run build && bun scripts/check-tls.mjs",
-    "test:duckdb": "bun run build && bun scripts/check-duckdb.mjs"
+    "test:duckdb": "bun run build && bun scripts/check-duckdb.mjs",
+    "test:clickhouse": "bun run build && bun scripts/check-clickhouse.mjs",
+    "test:http": "bun run build && bun scripts/check-http-transport.mjs"
   },
   "lint-staged": {
     "*.ts": [

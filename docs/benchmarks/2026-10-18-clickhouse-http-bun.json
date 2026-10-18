@@ -1,0 +1,21 @@
+{
+  "identity": {
+    "encoding": "identity",
+    "wireBytes": 1108933,
+    "decodedBytes": 1108933,
+    "sha256": "5d2a34a69f8c31be49306d890213eb9d4e4d7a0ef9feffa07a2404a743b497c6"
+  },
+  "gzip": {
+    "encoding": "gzip",
+    "wireBytes": 28640,
+    "decodedBytes": 1108933,
+    "sha256": "5d2a34a69f8c31be49306d890213eb9d4e4d7a0ef9feffa07a2404a743b497c6"
+  },
+  "zstd": {
+    "encoding": "zstd",
+    "wireBytes": 12262,
+    "decodedBytes": 1108933,
+    "sha256": "5d2a34a69f8c31be49306d890213eb9d4e4d7a0ef9feffa07a2404a743b497c6"
+  },
+  "scope": "Three native HTTP transfers of the same sorted 10,000-row synthetic ClickHouse result with a repeated 100-character payload. Counts response-body wire bytes, excluding headers; decoded SHA-256 must match. Server gzip/zstd settings remain at their fixture defaults. No latency or general workload speedup claim."
+}

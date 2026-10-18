@@ -20,6 +20,8 @@ export async function tableStatistics(
   let sql: string;
   if (dialect === 'postgres')
     sql = `SELECT CASE WHEN t.reltuples>=0 THEN t.reltuples::bigint ELSE NULL END AS row_estimate,pg_table_size(t.oid)::text AS data_bytes,pg_indexes_size(t.oid)::text AS index_bytes,pg_total_relation_size(t.oid)::text AS total_bytes FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname=${schema} AND t.relname='${table}' AND t.relkind IN ('r','m','p')`;
+  else if (dialect === 'clickhouse')
+    sql = `SELECT total_rows AS row_estimate,NULL AS data_bytes,NULL AS index_bytes,total_bytes FROM system.tables WHERE database=currentDatabase() AND database=${schema} AND name='${table}'`;
   else if (dialect === 'duckdb')
     sql = `SELECT estimated_size::VARCHAR AS row_estimate,NULL AS data_bytes,NULL AS index_bytes,NULL AS total_bytes FROM duckdb_tables() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', schema)} AND ${duckdbNameEquals('table_name', `'${table}'`)}`;
   else if (dialect === 'mysql')
@@ -81,6 +83,9 @@ export async function visibleStorage(
   let sql: string;
   if (dialect === 'postgres')
     sql = `SELECT n.nspname AS table_schema,t.relname AS table_name,pg_total_relation_size(t.oid)::text AS total_bytes FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace WHERE t.relkind IN ('r','m','p') AND n.nspname NOT IN ('pg_catalog','information_schema')`;
+  else if (dialect === 'clickhouse')
+    sql =
+      'SELECT database AS table_schema,name AS table_name,total_bytes FROM system.tables WHERE database=currentDatabase()';
   else if (dialect === 'duckdb')
     return {
       totalSizeBytes: null,

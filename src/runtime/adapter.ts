@@ -7,7 +7,7 @@ export interface SqlAdapter {
   id: string;
   capabilities: {
     databaseOverride: boolean;
-    readOnly: 'transaction' | 'file' | 'permissions';
+    readOnly: 'transaction' | 'file' | 'permissions' | 'server';
     transactions: boolean;
   };
   execute(
@@ -15,6 +15,7 @@ export interface SqlAdapter {
     query: string,
     options: QueryOptions
   ): Promise<QueryResult>;
+  close?(): void;
 }
 export class AdapterRegistry {
   private adapters = new Map<string, SqlAdapter>();
@@ -26,5 +27,8 @@ export class AdapterRegistry {
   }
   get(id: string): SqlAdapter | undefined {
     return this.adapters.get(id);
+  }
+  close(): void {
+    for (const adapter of this.adapters.values()) adapter.close?.();
   }
 }

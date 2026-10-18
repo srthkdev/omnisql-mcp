@@ -8,6 +8,7 @@ import type {
 } from '../types.js';
 
 interface TableSchema {
+  physicalKeys?: Record<string, string>;
   tableName: string;
   columns: Map<string, ColumnSchema>;
   indexes: Map<string, IndexSchema>;
@@ -64,13 +65,31 @@ export async function compareSchemas(
         targetTable.constraints ?? new Map()
       );
 
-      if (columnDiffs.length > 0 || indexDiffs.length > 0 || constraintDiffs.length > 0) {
+      const physicalKeyDiffs = [
+        ...new Set([
+          ...Object.keys(sourceTable.physicalKeys ?? {}),
+          ...Object.keys(targetTable.physicalKeys ?? {}),
+        ]),
+      ]
+        .filter((kind) => sourceTable.physicalKeys?.[kind] !== targetTable.physicalKeys?.[kind])
+        .map((kind) => ({
+          kind,
+          before: sourceTable.physicalKeys?.[kind],
+          after: targetTable.physicalKeys?.[kind],
+        }));
+      if (
+        columnDiffs.length > 0 ||
+        indexDiffs.length > 0 ||
+        constraintDiffs.length > 0 ||
+        physicalKeyDiffs.length > 0
+      ) {
         differences.push({
           tableName: sourceTable.tableName,
           status: 'modified',
           columnDiffs,
           indexDiffs,
           constraintDiffs,
+          ...(physicalKeyDiffs.length ? { physicalKeyDiffs } : {}),
         });
       }
     }
@@ -244,7 +263,30 @@ function compareConstraints(
  * Normalize SQL type for comparison (handles variations like INT vs INTEGER)
  */
 function normalizeType(type: string): string {
-  const normalized = type.toLowerCase().trim();
+  let normalized = '',
+    quote = '',
+    gap = false;
+  for (let i = 0; i < type.length; i++) {
+    const char = type[i];
+    if (quote) {
+      normalized += char;
+      if (char === '\\' && i + 1 < type.length) normalized += type[++i];
+      else if (char === quote) {
+        if (type[i + 1] === quote) normalized += type[++i];
+        else quote = '';
+      }
+    } else if (char === "'" || char === '"' || char === '`') {
+      quote = char;
+      normalized += char;
+      gap = false;
+    } else if (/\s/.test(char)) gap = true;
+    else {
+      if (gap && /[a-zA-Z0-9_]/.test(normalized.at(-1) ?? '') && /[a-zA-Z0-9_]/.test(char))
+        normalized += ' ';
+      normalized += char.replace(/[A-Z]/g, (c) => c.toLowerCase());
+      gap = false;
+    }
+  }
 
   const typeMap: Record<string, string> = {
     int: 'integer',
@@ -260,13 +302,15 @@ function normalizeType(type: string): string {
     'timestamp with time zone': 'timestamptz',
   };
 
-  const match = normalized.match(/^(.*?)(\([^)]*\))?$/)!;
-  const baseType = match[1].trim();
-  const dimensions = (match[2] ?? '').replace(/\s+/g, '');
-  return (typeMap[baseType] || baseType) + dimensions;
+  const alias = normalized.match(/^([a-z][a-z ]*)(?=\(|$)/)?.[1];
+  return alias && typeMap[alias] ? typeMap[alias] + normalized.slice(alias.length) : normalized;
 }
 
 export function comparableSchema(schema: SchemaInfo): TableSchema {
+  if (schema.partial)
+    throw new Error(
+      'Cannot compare incomplete schema metadata; grant the required catalog access or narrow the scope'
+    );
   const type = (column: SchemaInfo['columns'][number]) => {
     if (column.type.includes('(')) return column.type;
     if (
@@ -282,6 +326,7 @@ export function comparableSchema(schema: SchemaInfo): TableSchema {
   };
   return {
     tableName: schema.tableName,
+    physicalKeys: schema.physicalKeys,
     constraints: new Map(schema.constraints.map((k) => [k.name, k])),
     columns: new Map(
       schema.columns.map((c) => [
@@ -357,10 +402,12 @@ export function generateMigrationScript(diff: SchemaDiff, driver: string): strin
           '-- Generate a migration from the complete target schema before applying this change.'
         );
     }
+    for (const k of t.physicalKeyDiffs ?? [])
+      lines.push(`-- Changed ${quote(k.kind)} storage key: review target expression.`);
     for (const c of t.constraintDiffs ?? [])
       lines.push(`-- ${c.status} constraint ${quote(c.constraintName)}: review target definition.`);
     for (const i of t.indexDiffs ?? [])
       lines.push(`-- ${i.status} index ${quote(i.indexName)}: review complete index definition.`);
   }
-  return lines.join('\n');
+  return lines.map((line) => line.replace(/[\r\n\u2028\u2029]/g, ' ')).join('\n');
 }

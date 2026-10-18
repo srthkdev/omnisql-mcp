@@ -34,6 +34,9 @@ export function buildExplainQuery(
     throw new Error('SQL Server plans require the dedicated pinned-session execution path');
   } else if (driverLower.includes('sqlite')) {
     return `EXPLAIN QUERY PLAN ${query}`;
+  } else if (driverLower.includes('clickhouse')) {
+    if (analyze) throw new Error('ClickHouse EXPLAIN ANALYZE is unavailable; use estimated plans');
+    return `EXPLAIN ${format === 'json' ? 'json=1 ' : ''}${query}`;
   } else if (driverLower.includes('duckdb')) {
     return `EXPLAIN (${analyze ? 'ANALYZE, ' : ''}FORMAT ${format === 'json' ? 'JSON' : 'TEXT'}) ${query}`;
   } else {
@@ -78,6 +81,18 @@ export function parseExplainOutput(
     };
   } else if (driverLower.includes('sqlite')) {
     return parseSqliteExplain(output, query);
+  } else if (driverLower.includes('clickhouse')) {
+    const text = output.map((row) => String(row[0])).join('\n');
+    return {
+      query,
+      format,
+      plan: [
+        {
+          operation: 'ClickHouse estimated plan',
+          details: format === 'json' ? { plan: JSON.parse(text) } : { text },
+        },
+      ],
+    };
   } else if (driverLower.includes('duckdb')) {
     if (format === 'json')
       return {

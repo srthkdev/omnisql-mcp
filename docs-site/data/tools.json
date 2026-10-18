@@ -652,7 +652,7 @@
   },
   {
     "name": "list_databases",
-    "description": "List databases accessible through a saved PostgreSQL, MySQL/MariaDB, or SQL Server connection",
+    "description": "List databases accessible through a saved PostgreSQL, MySQL/MariaDB, SQL Server, or ClickHouse connection",
     "inputSchema": {
       "type": "object",
       "properties": {

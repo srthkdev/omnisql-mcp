@@ -9,6 +9,7 @@ describe('listDatabases', () => {
     ['mysql8', /SHOW DATABASES/],
     ['mariadb', /SHOW DATABASES/],
     ['sqlserver', /HAS_DBACCESS/],
+    ['clickhouse', /system.databases/],
   ])('discovers accessible databases for %s', async (driver, expected) => {
     const client = new WorkspaceClient();
     const connection: DatabaseConnection = { id: 'saved', name: 'saved', driver, url: '' };

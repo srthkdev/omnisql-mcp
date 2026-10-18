@@ -6,6 +6,17 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { runJsonCli } from '../dist/runtime/cli.js';
+// CLI versions differ in how they encode BLOBs. Exercise malformed byte streams directly.
+const cliConnection = { id: 'synthetic', name: 'synthetic', driver: 'sqlite', url: '' };
+for (const [program, expected] of [
+  ["process.stdout.write(Buffer.from('5b7b226e223a22ff227d5d','hex'))", /invalid UTF-8/],
+  ['process.stdout.write(\'[{"n":1}\')', /Incomplete database JSON/],
+])
+  await assert.rejects(
+    () => runJsonCli(cliConnection, process.execPath, ['-e', program], 'Fixture CLI', 5000),
+    expected
+  );
 const dir = mkdtempSync(join(tmpdir(), 'omnisql-result-check-'));
 let client;
 try {
@@ -59,10 +70,6 @@ try {
     connectionId: 'fixture',
     query: 'SELECT * FROM messages',
   });
-  await assert.rejects(
-    () => call('execute_query', { connectionId: 'fixture', query: "SELECT X'FF' AS binary" }),
-    /invalid UTF-8/
-  );
   assert.equal(result.storedRows, 2);
   assert.equal(result.clippedCells[0].length, 100000);
   const page = await call('read_result', { resultId: result.resultId, offset: 1, limit: 1 });

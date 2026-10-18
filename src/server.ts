@@ -4,7 +4,7 @@ import {
   type ExportCompression,
 } from './runtime/compression.js';
 import { PrivateNotes } from './runtime/notes.js';
-import { ResultArtifacts, type ArtifactSource } from './runtime/artifacts.js';
+import { ResultArtifacts, type ArtifactSource, type ArtifactScope } from './runtime/artifacts.js';
 import { connectionFingerprint } from './runtime/connection-identity.js';
 import { AccessPolicy } from './policy/access.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -416,17 +416,19 @@ export class OmniSQLMCPServer {
           }
           if (this.disabledTools.includes('list_tables'))
             throw new Error('Table listing is disabled');
+          const source = this.catalogSource(connection);
           const tables = await this.workspaceClient.listTables(connection, undefined, true);
           const result = tables.map((t) => ({
             ...t,
             schemaUri: `omnisql:///connections/${encodeURIComponent(connection.id)}/tables/${encodeURIComponent([t.table_schema, t.name].filter(Boolean).join('.'))}/schema`,
           }));
+          const document = await this.presentDocument(result, source);
           return {
             contents: [
               {
                 uri: request.params.uri,
                 mimeType: 'application/json',
-                text: JSON.stringify(result),
+                text: document.content[0].text,
               },
             ],
           };
@@ -448,14 +450,16 @@ export class OmniSQLMCPServer {
           throw new Error(`Connection not found: ${connectionId}`);
         }
 
+        const source = this.catalogSource(connection);
         const schema = await this.workspaceClient.getTableSchema(connection, tableName);
+        const document = await this.presentDocument(schema, source);
 
         return {
           contents: [
             {
               uri: request.params.uri,
               mimeType: 'application/json',
-              text: JSON.stringify(schema, null, 2),
+              text: document.content[0].text,
             },
           ],
         };
@@ -1038,21 +1042,23 @@ export class OmniSQLMCPServer {
               args.database as string | undefined
             );
             if (!connection) throw new Error('Connection not found');
+            const source = this.catalogSource(connection);
             const result = await this.workspaceClient.getTableStats(
               connection,
               args.tableName as string
             );
-            return {
-              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-              structuredContent: result,
-            };
+            return this.presentDocument(result, source);
           }
           case 'read_result':
           case 'read_result_cell':
           case 'read_export': {
             const source = this.artifacts.source(args.resultId as string);
-            const connection = await this.resultConnection(source);
-            await this.workspaceClient.assertQueryAccess(connection, source.query, false);
+            const connections = await this.resultConnections(source);
+            for (const [i, connection] of connections.entries()) {
+              const access = source.scopes[i].access;
+              if (access.kind === 'sql')
+                await this.workspaceClient.assertQueryAccess(connection, access.query, false);
+            }
             const result =
               name === 'read_result'
                 ? await this.artifacts.page(
@@ -1075,7 +1081,7 @@ export class OmniSQLMCPServer {
                       args.offset as number | undefined,
                       args.length as number | undefined
                     );
-            await this.resultConnection(source);
+            await this.resultConnections(source);
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(result) }],
               structuredContent: result,
@@ -1242,8 +1248,9 @@ export class OmniSQLMCPServer {
     if (!connection) {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
+    const source = this.catalogSource(connection);
     const databases = await this.workspaceClient.listDatabases(connection);
-    return { content: [{ type: 'text' as const, text: JSON.stringify(databases, null, 2) }] };
+    return this.presentDocument(databases, source);
   }
 
   private async handleListConnections(args: { includeDetails?: boolean }) {
@@ -1354,24 +1361,73 @@ export class OmniSQLMCPServer {
     return this.presentResult(result, source, { query, connection: connection.name });
   }
 
-  private artifactSource(connection: DatabaseConnection, query: string): ArtifactSource {
+  private artifactScope(
+    connection: DatabaseConnection,
+    access: ArtifactScope['access'],
+    policyRevision = this.accessPolicy.revision()
+  ): ArtifactScope {
     return {
       connectionId: connection.id,
-      query,
+      access,
       connectionFingerprint: connectionFingerprint(connection),
-      policyRevision: this.accessPolicy.revision(),
+      policyRevision,
     };
   }
-
-  private async resultConnection(source: ArtifactSource): Promise<DatabaseConnection> {
-    const connection = await this.getConnection(source.connectionId, source.database);
-    if (!connection) throw new Error('Result connection is no longer accessible');
-    if (
-      connectionFingerprint(connection) !== source.connectionFingerprint ||
-      this.accessPolicy.revision() !== source.policyRevision
-    )
-      throw new Error('Result connection or access policy changed; run the query again');
-    return connection;
+  private artifactSource(
+    connection: DatabaseConnection,
+    query: string,
+    policyRevision?: string
+  ): ArtifactSource {
+    return { scopes: [this.artifactScope(connection, { kind: 'sql', query }, policyRevision)] };
+  }
+  private catalogSource(...connections: DatabaseConnection[]): ArtifactSource {
+    return {
+      scopes: connections.map((connection) => this.artifactScope(connection, { kind: 'catalog' })),
+    };
+  }
+  private async resultConnections(source: ArtifactSource): Promise<DatabaseConnection[]> {
+    const connections = [];
+    for (const scope of source.scopes) {
+      const connection = await this.getConnection(scope.connectionId, scope.database);
+      if (!connection) throw new Error('Result connection is no longer accessible');
+      if (
+        connectionFingerprint(connection) !== scope.connectionFingerprint ||
+        this.accessPolicy.revision() !== scope.policyRevision
+      )
+        throw new Error('Result connection or access policy changed; run the query again');
+      connections.push(connection);
+    }
+    return connections;
+  }
+  private async presentDocument(value: object, source: ArtifactSource) {
+    const text = JSON.stringify(value);
+    const bytes = Buffer.byteLength(text);
+    if (bytes <= 65536)
+      return {
+        content: [{ type: 'text' as const, text }],
+        ...(!Array.isArray(value) ? { structuredContent: value as Record<string, unknown> } : {}),
+      };
+    if (bytes > 16 * 1024 * 1024)
+      throw new Error(
+        'Catalog document exceeds 16 MiB; narrow the request with schema or table policies'
+      );
+    if (this.disabledTools.includes('read_result_cell'))
+      throw new Error(
+        'Large catalog documents require read_result_cell; enable it or narrow the request'
+      );
+    const stored = await this.artifacts.save(
+      { columns: ['document'], rows: [[value]], rowCount: 1, executionTime: 0 },
+      source
+    );
+    const response = {
+      kind: 'document',
+      ...(await this.artifacts.page(stored.resultId, 0, 1)),
+      readTool: 'read_result_cell',
+    };
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+      structuredContent: response,
+    };
   }
 
   private async presentResult(
@@ -1613,20 +1669,14 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
+    const source = this.catalogSource(connection);
     const schema = await this.workspaceClient.getTableSchema(connection, args.tableName);
 
     if (args.includeIndexes === false) {
       (schema as any).indexes = undefined;
     }
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(schema, null, 2),
-        },
-      ],
-    };
+    return this.presentDocument(schema, source);
   }
 
   private async handleExportData(args: {
@@ -1739,16 +1789,9 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
+    const source = this.catalogSource(connection);
     const stats = await this.workspaceClient.getDatabaseStats(connection);
-
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(stats, null, 2),
-        },
-      ],
-    };
+    return this.presentDocument(stats, source);
   }
 
   private async handleListTables(args: {
@@ -1764,20 +1807,14 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
+    const source = this.catalogSource(connection);
     const tables = await this.workspaceClient.listTables(
       connection,
       args.schema,
       args.includeViews || false
     );
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(tables, null, 2),
-        },
-      ],
-    };
+    return this.presentDocument(tables, source);
   }
 
   private async handleAppendInsight(args: {
@@ -1908,10 +1945,7 @@ export class OmniSQLMCPServer {
     const transaction = this.transactionManager.getTransaction(args.transactionId);
     if (!transaction) throw new Error('Transaction not found or expired');
     const scope = this.transactionManager.resultScope(args.transactionId);
-    const source = {
-      ...this.artifactSource(scope.connection, args.query),
-      policyRevision: scope.policyRevision,
-    };
+    const source = this.artifactSource(scope.connection, args.query, scope.policyRevision);
     const result = await this.transactionManager.executeInTransaction(
       args.transactionId,
       args.query
@@ -1993,19 +2027,47 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Target connection not found: ${targetConnId}`);
     }
 
-    // Get tables from both connections
+    const source = this.catalogSource(sourceConn, targetConn);
+    const defaultTimeout = integerSetting(process.env.OMNISQL_TIMEOUT, 'OMNISQL_TIMEOUT', 30000);
+    const deadline =
+      Date.now() +
+      Math.min(
+        sourceConn.limits?.timeoutMs ?? defaultTimeout,
+        targetConn.limits?.timeoutMs ?? defaultTimeout
+      );
+    const checkDeadline = () => {
+      if (Date.now() >= deadline)
+        throw new Error(
+          'Schema comparison budget exhausted; narrow the request with table policies'
+        );
+    };
+    // Bound total catalog work as well as each native metadata query.
     const sourceTables = await this.workspaceClient.listTables(sourceConn);
+    checkDeadline();
     const targetTables = await this.workspaceClient.listTables(targetConn);
+    if (sourceTables.length > 1000 || targetTables.length > 1000)
+      throw new Error(
+        'Schema comparison table limit is 1000 per connection; narrow the request with table policies'
+      );
 
+    let bytes = 0;
     const load = async (connection: DatabaseConnection, tables: any[]) => {
       const schemas = [];
       for (let offset = 0; offset < tables.length; offset += 4) {
+        checkDeadline();
         const batch = await Promise.all(
           tables.slice(offset, offset + 4).map(async (table) => {
             const name = [table.table_schema, table.name].filter(Boolean).join('.');
-            return comparableSchema(await this.workspaceClient.getTableSchema(connection, name));
+            const schema = await this.workspaceClient.getTableSchema(connection, name);
+            bytes += Buffer.byteLength(JSON.stringify(schema));
+            if (bytes > 16 * 1024 * 1024)
+              throw new Error(
+                'Schema comparison catalog exceeds 16 MiB; narrow the request with table policies'
+              );
+            return comparableSchema(schema);
           })
         );
+        checkDeadline();
         schemas.push(...batch);
       }
       return schemas;
@@ -2013,6 +2075,7 @@ export class OmniSQLMCPServer {
     const sourceSchemas = await load(sourceConn, sourceTables);
     const targetSchemas = await load(targetConn, targetTables);
 
+    checkDeadline();
     const diff = await compareSchemas(sourceSchemas, targetSchemas, sourceConnId, targetConnId);
 
     const response: { diff: SchemaDiff; migrationScript?: string } = { diff };
@@ -2021,14 +2084,7 @@ export class OmniSQLMCPServer {
       response.migrationScript = generateMigrationScript(diff, targetConn.driver);
     }
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(response, null, 2),
-        },
-      ],
-    };
+    return this.presentDocument(response, source);
   }
 
   // Pool management handlers

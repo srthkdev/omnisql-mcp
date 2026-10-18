@@ -807,6 +807,10 @@ export class WorkspaceClient {
       );
     }
     const result = await this.executeQuery(connection, query, { trustedMetadata: true });
+    if (result.truncated)
+      throw new Error(
+        'Database catalog is incomplete at the result limit; narrow the request with database policies'
+      );
     return result.rows
       .map((row) => String(row[0]))
       .filter((database) => this.policy.allowsDatabase(connection, database));
@@ -848,6 +852,10 @@ export class WorkspaceClient {
         buildListTablesQuery(connection.driver, schema, includeViews)
       );
       const result = await this.executeQuery(connection, query, { trustedMetadata: true });
+      if (result.truncated)
+        throw new Error(
+          'Table catalog is incomplete at the result limit; narrow the request with a schema or table policies'
+        );
 
       // Convert result to table objects
       return result.rows

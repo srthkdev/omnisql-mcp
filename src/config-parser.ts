@@ -465,8 +465,34 @@ export class WorkspaceConfigParser {
     return connections;
   }
 
-  async getConnection(connectionId: string): Promise<DatabaseConnection | null> {
-    const { baseId, databaseOverride } = parseConnectionId(connectionId);
+  async getConnection(connectionId: string, database?: string): Promise<DatabaseConnection | null> {
+    const parsed = parseConnectionId(connectionId);
+    const { baseId } = parsed;
+    if (
+      database !== undefined &&
+      (typeof database !== 'string' ||
+        !database.trim() ||
+        database.length > 128 ||
+        Array.from(database).some(
+          (char) =>
+            char === '/' ||
+            char.charCodeAt(0) === 92 ||
+            char.charCodeAt(0) < 32 ||
+            char.charCodeAt(0) === 127
+        ))
+    ) {
+      throw new Error(
+        'database must be a non-empty name up to 128 characters, without path separators or control characters'
+      );
+    }
+    if (
+      database !== undefined &&
+      parsed.databaseOverride !== null &&
+      parsed.databaseOverride !== database
+    ) {
+      throw new Error('database conflicts with the database in connectionId');
+    }
+    const databaseOverride = database ?? parsed.databaseOverride;
 
     let match: DatabaseConnection | null = null;
     try {

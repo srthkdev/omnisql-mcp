@@ -911,6 +911,30 @@ export class WorkspaceClient {
     }
   }
 
+  async listDatabases(connection: DatabaseConnection): Promise<string[]> {
+    const driver = connection.driver.toLowerCase();
+    let query: string;
+    if (this.isPostgresCompatible(driver)) {
+      query =
+        "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn AND has_database_privilege(datname, 'CONNECT') ORDER BY datname";
+    } else if (driver.includes('mysql') || driver.includes('mariadb')) {
+      query = 'SHOW DATABASES';
+    } else if (
+      driver.includes('mssql') ||
+      driver.includes('sqlserver') ||
+      driver.includes('microsoft')
+    ) {
+      query =
+        'SELECT name FROM sys.databases WHERE state = 0 AND HAS_DBACCESS(name) = 1 ORDER BY name';
+    } else {
+      throw new Error(
+        'list_databases supports PostgreSQL, MySQL/MariaDB, and SQL Server connections'
+      );
+    }
+    const result = await this.executeQuery(connection, query);
+    return result.rows.map((row) => String(row[0]));
+  }
+
   async listTables(
     connection: DatabaseConnection,
     schema?: string,

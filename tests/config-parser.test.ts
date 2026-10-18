@@ -356,6 +356,39 @@ describe('WorkspaceConfigParser', () => {
       expect(baseConnection.properties.database).toBe('postgres');
     });
 
+    it('accepts an explicit database and keeps credentials and transport settings', async () => {
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
+      const saved = {
+        ...baseConnection,
+        sshTunnel: { enabled: true, host: 'jump', port: 22 },
+        properties: { ...baseConnection.properties, password: 'secret', authModelId: 'iam' },
+      };
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([saved]);
+      const alternate = await parser.getConnection('conn-1', 'app.logs 2026');
+      expect(alternate).toMatchObject({
+        ...saved,
+        id: 'conn-1/app.logs 2026',
+        database: 'app.logs 2026',
+        properties: { ...saved.properties, database: 'app.logs 2026' },
+      });
+      expect(await parser.getConnection('conn-1')).toEqual(saved);
+    });
+
+    it('rejects conflicting targets, empty names, and file-backed database overrides', async () => {
+      const { WorkspaceConfigParser } = await import('../src/config-parser.js');
+      const parser = new WorkspaceConfigParser({});
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([baseConnection]);
+      await expect(parser.getConnection('conn-1/first', 'second')).rejects.toThrow(/conflicts/);
+      for (const database of ['', '../other', 'a\\b', 'a\u0000b']) {
+        await expect(parser.getConnection('conn-1', database)).rejects.toThrow(/database must/);
+      }
+      vi.spyOn(parser, 'parseConnections').mockResolvedValue([
+        { ...baseConnection, driver: 'sqlite' },
+      ]);
+      await expect(parser.getConnection('conn-1', 'other')).rejects.toThrow(/file-backed/);
+    });
+
     it('should return null when the base id does not match', async () => {
       const { WorkspaceConfigParser } = await import('../src/config-parser.js');
       const parser = new WorkspaceConfigParser({});

@@ -13,7 +13,7 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
-import { DatabaseConnection, SshTunnelConfig } from '../types.js';
+import type { DatabaseConnection, SshTunnelConfig } from '../types.js';
 import { keyFingerprint, knownHostsPath, loadKnownHosts, verifyHostKey } from './known-hosts.js';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 20000;

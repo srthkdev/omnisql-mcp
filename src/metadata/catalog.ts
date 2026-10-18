@@ -1,6 +1,6 @@
 import { sanitizeIdentifier } from '../utils.js';
 import { sqlDialect } from '../policy/analyzer.js';
-import { DatabaseConnection, QueryResult, IndexInfo, ConstraintInfo } from '../types.js';
+import type { DatabaseConnection, QueryResult, IndexInfo, ConstraintInfo } from '../types.js';
 export type CatalogQuery = (sql: string) => Promise<QueryResult>;
 export function records(result: QueryResult): Record<string, unknown>[] {
   return result.rows.map((row) =>

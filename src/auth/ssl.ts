@@ -6,7 +6,7 @@
  */
 
 import fs from 'fs';
-import { DatabaseConnection } from '../types.js';
+import type { DatabaseConnection } from '../types.js';
 import { readConnectionProp } from './connection-props.js';
 
 /** Modes that authenticate the server certificate, rather than merely encrypting. */

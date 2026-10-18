@@ -9,7 +9,7 @@ import type { Pool as PgPool } from 'pg';
 import type mysql from 'mysql2/promise';
 import type { Pool as MySqlPool } from 'mysql2/promise';
 import type { ConnectionPool as MssqlPool } from 'mssql';
-import { DatabaseConnection, PoolConfig, PoolStats } from '../types.js';
+import type { DatabaseConnection, PoolConfig, PoolStats } from '../types.js';
 import { isIamAuthConnection, resolveIamCredentials } from '../auth/iam-auth.js';
 import { sshTunnelManager } from '../net/ssh-tunnel.js';
 import { resolvePostgresSsl, resolveMysqlSsl } from '../auth/ssl.js';

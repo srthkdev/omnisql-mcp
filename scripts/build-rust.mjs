@@ -32,8 +32,8 @@ pkg.type = 'commonjs';
 writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
 
 const format = spawnSync(
-  'npm',
-  ['exec', '--', 'prettier', '--write', 'src/native/*.d.ts', 'src/native/*.js'],
+  'bun',
+  ['x', '--no-install', 'prettier', '--write', 'src/native/*.d.ts', 'src/native/*.js'],
   { stdio: 'inherit' }
 );
 if (format.status !== 0) process.exit(format.status ?? 1);

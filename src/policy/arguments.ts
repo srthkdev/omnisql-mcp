@@ -1,4 +1,4 @@
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 /** MCP tool schemas are advertised to clients, but arguments still need server-side validation. */
 export function validateToolArguments(tool: Tool, input: unknown): Record<string, unknown> {

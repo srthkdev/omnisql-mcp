@@ -18,13 +18,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && node scripts/finalize-build.mjs",
-    "dev": "tsc --watch",
-    "start": "node dist/index.js",
-    "clean": "rimraf dist",
-    "prepare": "node scripts/prepare.mjs",
-    "watch": "tsc --watch",
-    "example": "node examples/example.js",
+    "build": "bun scripts/build.mjs",
+    "dev": "bun --watch src/index.ts",
+    "start": "bun dist/index.js",
+    "clean": "bun -e \"await import('node:fs/promises').then(fs => fs.rm('dist', {recursive:true, force:true}))\"",
+    "prepare": "bun scripts/prepare.mjs",
+    "watch": "bun --watch src/index.ts",
+    "example": "bun examples/example.js",
     "bump": "bumpp",
     "bump:patch": "bumpp patch",
     "bump:minor": "bumpp minor",
@@ -33,24 +33,24 @@
     "publish:minor": "npm version minor && npm publish",
     "publish:major": "npm version major && npm publish",
     "publish": "echo 'Use ./scripts/publish.sh or npm run publish:patch/minor/major instead'",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm test",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "bun run lint && bun run typecheck && bun run test",
+    "test": "bun test --isolate tests",
+    "test:watch": "bun test --isolate --watch tests",
+    "test:coverage": "bun test --isolate --coverage tests",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
     "typecheck": "tsc --noEmit",
-    "prepack": "npm run clean && npm run build",
-    "test:package": "node scripts/check-package.mjs",
-    "demo": "node scripts/demo.mjs",
-    "test:integration": "npm run build && node scripts/integration.mjs",
-    "build:rust": "node scripts/build-rust.mjs",
+    "prepack": "bun run build",
+    "test:package": "bun scripts/check-package.mjs",
+    "demo": "bun scripts/demo.mjs",
+    "test:integration": "bun run build && bun scripts/integration.mjs",
+    "build:rust": "bun scripts/build-rust.mjs",
     "test:rust": "cargo test --locked --manifest-path native/sql-policy/Cargo.toml",
-    "test:results": "npm run build && node scripts/check-results.mjs",
-    "docs:tools": "npm run build && node scripts/export-tools.mjs",
-    "test:tls": "npm run build && node scripts/check-tls.mjs"
+    "test:results": "bun run build && bun scripts/check-results.mjs",
+    "docs:tools": "bun run build && bun scripts/export-tools.mjs",
+    "test:tls": "bun run build && bun scripts/check-tls.mjs"
   },
   "lint-staged": {
     "*.ts": [
@@ -100,18 +100,16 @@
     "@types/pg-cursor": "^2.7.2",
     "@types/ssh2": "^1.15.5",
     "@types/xml2js": "^0.4.14",
-    "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.39.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
-    "rimraf": "^5.0.5",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.53.0",
-    "vitest": "^4.0.17"
+    "typescript-eslint": "^8.53.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0",
+    "bun": ">=1.4.3"
   },
   "repository": {
     "type": "git",
@@ -120,5 +118,9 @@
   "bugs": {
     "url": "https://github.com/srthkdev/omnisql-mcp/issues"
   },
-  "homepage": "https://github.com/srthkdev/omnisql-mcp#readme"
+  "homepage": "https://github.com/srthkdev/omnisql-mcp#readme",
+  "packageManager": "bun@1.4.3",
+  "workspaces": [
+    "docs-site"
+  ]
 }

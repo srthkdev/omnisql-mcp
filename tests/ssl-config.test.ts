@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { resolvePostgresSsl, resolveMysqlSsl } from '../src/auth/ssl.js';
 import { DatabaseConnection } from '../src/types.js';
 

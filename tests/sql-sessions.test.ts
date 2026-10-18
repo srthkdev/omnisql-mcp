@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'bun:test';
 import type sql from 'mssql';
 import { readSqlServer } from '../src/runtime/sql-sessions.js';
 import { withDeadline } from '../src/runtime/lease.js';
@@ -54,11 +54,10 @@ describe('driver deadlines', () => {
     const abort = vi.fn(() => {
       throw new Error('closed already');
     });
-    const operation = expect(withDeadline(new Promise(() => {}), 20, abort)).rejects.toThrow(
-      /timed out/
-    );
-    await vi.advanceTimersByTimeAsync(21);
-    await operation;
+    const operation = withDeadline(new Promise(() => {}), 20, abort).catch((error) => error);
+    vi.advanceTimersByTime(21);
+    await Promise.resolve();
+    expect((await operation).message).toMatch(/timed out/);
     expect(abort).toHaveBeenCalledOnce();
   });
 });

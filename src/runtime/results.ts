@@ -1,4 +1,4 @@
-import { DatabaseConnection, QueryResult } from '../types.js';
+import type { DatabaseConnection, QueryResult } from '../types.js';
 
 /** Shared row and byte budget, applied while each native driver fetches rows. */
 export class ResultCollector {

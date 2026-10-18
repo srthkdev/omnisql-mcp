@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "dev": "node scripts/dev.mjs",
-    "start": "node scripts/dev.mjs",
-    "test": "node scripts/check.mjs",
-    "tools:refresh": "node scripts/export-tools.mjs"
+    "build": "bun scripts/build.mjs",
+    "dev": "bun scripts/dev.mjs",
+    "start": "bun scripts/dev.mjs",
+    "test": "bun scripts/check.mjs",
+    "tools:refresh": "bun scripts/export-tools.mjs"
   },
   "devDependencies": {
     "markdown-it": "^14.1.0",
@@ -16,5 +16,6 @@
   },
   "engines": {
     "node": ">=22"
-  }
+  },
+  "packageManager": "bun@1.4.3"
 }

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 let cached: typeof import('oracledb') | undefined;
 const oracleDriver = () => (cached ??= require('oracledb') as typeof import('oracledb'));
-import { DatabaseConnection } from './types.js';
+import type { DatabaseConnection } from './types.js';
 
 /**
  * Oracle connection settings derived from a workspace connection.

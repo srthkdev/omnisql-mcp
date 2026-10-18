@@ -1,4 +1,5 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { setEnv, restoreEnv } from './support/environment.js';
+import { afterEach, describe, it, expect } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import { AccessPolicy } from '../src/policy/access.js';
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'omnisql-config-test-'));
 const file = path.join(directory, 'connections.json');
 afterEach(() => {
-  vi.unstubAllEnvs();
+  restoreEnv();
   fs.rmSync(file, { force: true });
 });
 function load(connections: object, defaults?: object) {
@@ -16,8 +17,8 @@ function load(connections: object, defaults?: object) {
 }
 describe('one server, independent database instances', () => {
   it('keeps credentials, databases, policies and limits separate', () => {
-    vi.stubEnv('TEST_SALES_PASSWORD', 'sales-only');
-    vi.stubEnv(
+    setEnv('TEST_SALES_PASSWORD', 'sales-only');
+    setEnv(
       'TEST_METRICS_URL',
       'postgresql://metrics:metrics-only@localhost:5433/reporting?sslmode=verify-full'
     );

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { DatabaseConnection } from './types.js';
+import type { DatabaseConnection } from './types.js';
 import { validateAccessRule } from './policy/access.js';
 
 const KEYS = [

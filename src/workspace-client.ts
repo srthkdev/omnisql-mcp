@@ -1,6 +1,6 @@
 import { acquireLease } from './runtime/lease.js';
 import { readPostgres, readMysql, readSqlServer } from './runtime/sql-sessions.js';
-import { tableStatistics, TableStatistics, visibleStorage } from './metadata/statistics.js';
+import { tableStatistics, type TableStatistics, visibleStorage } from './metadata/statistics.js';
 import { indexesAndConstraints } from './metadata/catalog.js';
 import { QueryGate } from './runtime/concurrency.js';
 import { AdapterRegistry } from './runtime/adapter.js';
@@ -13,7 +13,7 @@ import { Pool as PgPool } from 'pg';
 import { ConnectionPoolManager } from './pools/connection-pool.js';
 import type sql from 'mssql';
 import mysql from 'mysql2/promise';
-import {
+import type {
   DatabaseConnection,
   QueryResult,
   SchemaInfo,

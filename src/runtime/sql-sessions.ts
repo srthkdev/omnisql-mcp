@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import type { PoolConnection } from 'mysql2/promise';
 import type sql from 'mssql';
 import type { Readable } from 'node:stream';
-import { DatabaseConnection, QueryResult } from '../types.js';
+import type { DatabaseConnection, QueryResult } from '../types.js';
 import { ResultCollector } from './results.js';
 export interface SessionOptions {
   connection: DatabaseConnection;

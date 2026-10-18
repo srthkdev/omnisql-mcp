@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'bun:test';
 import { QueryGate } from '../src/runtime/concurrency.js';
 describe('shared query concurrency', () => {
   it('holds a fixed number of active slots and transfers released slots once', async () => {
@@ -24,9 +24,10 @@ describe('shared query concurrency', () => {
     try {
       const gate = new QueryGate(1, 1);
       const release = await gate.acquire(50);
-      const waiting = expect(gate.acquire(50)).rejects.toThrow(/timed out/);
-      await vi.advanceTimersByTimeAsync(51);
-      await waiting;
+      const waiting = gate.acquire(50).catch((error) => error);
+      vi.advanceTimersByTime(51);
+      await Promise.resolve();
+      expect((await waiting).message).toMatch(/timed out/);
       release();
       (await gate.acquire(50))();
     } finally {

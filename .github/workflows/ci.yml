@@ -1,117 +1,72 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   build:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [22.x, 24.x]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run linter
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-      - name: Install SQLite for integration tests
-        run: command -v sqlite3 || (sudo apt-get update && sudo apt-get install -y sqlite3)
-
-      - name: Run tests
-        run: npm test
-
-      - name: Check result artifacts through MCP
-        run: node scripts/check-results.mjs
-
-      - name: Verify npm package
-        run: npm run test:package
-
-      - name: Check for vulnerabilities
-        run: npm audit --audit-level=high
-
-      - name: Validate installer
-        run: bash -n scripts/install.sh && bash scripts/install.sh --help
-
-      - name: Upload compiled server
-        if: matrix.node-version == '22.x'
-        uses: actions/upload-artifact@v4
-        with:
-          name: compiled-server
-          path: dist/
-
-  runtime:
-    needs: build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-      - run: npm ci --omit=dev --ignore-scripts
-      - uses: actions/download-artifact@v4
-        with:
-          name: compiled-server
-          path: dist/
-      - name: Verify runtime compatibility
-        run: npm run test:package
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-          cache: 'npm'
-      - run: npm ci
-      - name: Type check
-        run: npm run typecheck
-
-  docs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-          cache: npm
-          cache-dependency-path: docs-site/package-lock.json
-      - run: npm ci --prefix docs-site
-      - name: Check site pages, links, and media
-        run: npm test --prefix docs-site
-      - run: npm audit --prefix docs-site --audit-level=high
-
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run build
+      - name: Install SQLite
+        run: command -v sqlite3 || (sudo apt-get update && sudo apt-get install -y sqlite3)
+      - run: bun run test
+      - name: Check MCP result readers on both runtimes
+        run: bun scripts/check-results.mjs && node scripts/check-results.mjs
+      - name: Verify packed npm CLI on both runtimes
+        run: bun scripts/check-package.mjs && node scripts/check-package.mjs
+      - run: bun audit --audit-level=high
+      - run: bash -n scripts/install.sh && bash scripts/install.sh --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiled-server
+          path: dist/
+  node:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: [22.x, 24.x, 26.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.version }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun install --production --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-server
+          path: dist/
+      - run: node scripts/check-package.mjs
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd docs-site test
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -119,16 +74,18 @@ jobs:
       fail-fast: false
       matrix:
         engine: [postgres, mysql, mariadb, mssql, oracle]
+        runtime: [bun, node]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-          cache: npm
-      - run: npm ci
-      - name: Exercise a seeded database through MCP
-        run: npm run test:integration -- --engines=${{ matrix.engine }}
-
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: ${{ matrix.runtime }} scripts/integration.mjs --engines=${{ matrix.engine }}
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -140,31 +97,32 @@ jobs:
       - run: cargo fmt --manifest-path native/sql-policy/Cargo.toml --check
       - run: cargo clippy --locked --manifest-path native/sql-policy/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path native/sql-policy/Cargo.toml
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22.x'
+          bun-version: '1.4.3'
       - run: cargo install wasm-pack --version 0.15.0 --locked
-      - run: npm ci
-      - run: npm run build:rust
-      - name: Check generated bindings
-        run: git diff --exit-code -- 'src/native/*.js' 'src/native/*.d.ts' src/native/package.json
-      - name: Exercise rebuilt Rust policy in Node
-        run: npx vitest run tests/access-policy.test.ts tests/security-policy.test.ts tests/connections-config.test.ts
-      - name: Upload Linux portable runtime
-        uses: actions/upload-artifact@v4
+      - run: bun install --frozen-lockfile
+      - run: bun run build:rust
+      - run: git diff --exit-code -- 'src/native/*.js' 'src/native/*.d.ts' src/native/package.json
+      - run: bun test --isolate tests/access-policy.test.ts tests/security-policy.test.ts tests/connections-config.test.ts
+      - uses: actions/upload-artifact@v4
         with:
           name: rust-wasm-linux
           path: src/native/
-
   tls:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      matrix:
+        runtime: [bun, node]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-          cache: npm
-      - run: npm ci
-      - name: Verify database TLS through an authenticated SSH forward
-        run: npm run test:tls
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: ${{ matrix.runtime }} scripts/check-tls.mjs

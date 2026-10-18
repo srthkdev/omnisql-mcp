@@ -1,6 +1,6 @@
 # Install & connect
 
-You need Node.js 18 or newer with npm, an MCP client, and a DBeaver-compatible workspace with at least one saved, working connection. Use a current Node.js LTS release for a new installation.
+You need Bun 1.4.3 or newer, or Node.js 22 or newer with npm, an MCP client, and either an instance configuration file or a DBeaver-compatible workspace with saved, working connections. The standalone installer uses Bun; npm/npx setups use Node.
 
 ## Guided setup
 
@@ -81,7 +81,7 @@ For macOS and Linux, including machines without Node.js:
 curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
 ```
 
-This installs under `~/.local/share/omnisql-mcp` and creates a launcher at `~/.local/bin/omnisql-mcp`. If Node.js or npm is missing, the installer downloads a private Node.js 22 runtime and verifies its SHA-256 checksum. It does not use sudo.
+This installs under `~/.local/share/omnisql-mcp` and creates a launcher at `~/.local/bin/omnisql-mcp`. If Bun 1.4.3+ is unavailable, the installer downloads a private Bun runtime and verifies its SHA-256 checksum. It does not use sudo.
 
 Use the printed absolute launcher path as your MCP client's command. Rerun the installer to update, or specify a version:
 
@@ -94,3 +94,11 @@ curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash -s -- 2.2.0
 ## Check the connection
 
 Ask your assistant to call `list_connections`, then `test_connection` on a connection you intend to expose. If the connection is missing, check the [workspace settings](configuration.md). If authentication fails, test it in DBeaver first and follow the [troubleshooting guide](../troubleshooting.md).
+
+## Run with Bun
+
+```sh
+bunx --bun omnisql-mcp@latest install
+```
+
+Bun setup registers the absolute Bun executable and uses `bun x --bun --yes omnisql-mcp@latest` so GUI clients do not need a shell PATH entry for Bun. Node-based setup continues to register `npx`. The standalone curl installer uses an existing Bun 1.4.3+ runtime or downloads a private, checksum-verified one; it does not change your global runtime.

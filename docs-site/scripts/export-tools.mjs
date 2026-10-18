@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-// Requires npm ci && npm run build in the repository root. No database is opened.
+// Requires bun install --frozen-lockfile && bun run build in the repository root. No database is opened.
 const workspace = mkdtempSync(join(tmpdir(), 'omnisql-docs-'));
 mkdirSync(join(workspace, 'General/.dbeaver'), { recursive: true });
 writeFileSync(join(workspace, 'General/.dbeaver/data-sources.json'), '{"connections":{}}');

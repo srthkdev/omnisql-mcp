@@ -9,7 +9,7 @@ node --version
 npx -y omnisql-mcp@latest --help
 ```
 
-Use Node.js 18 or newer with npm. If the command works in a terminal but fails in a desktop client, the client may not inherit your shell's PATH. Use an absolute executable path, or the standalone installer's printed launcher path.
+Use Bun 1.4.3 or newer, or Node.js 22 or newer with npm. If the command works in a terminal but fails in a desktop client, the client may not inherit your shell's PATH. Use an absolute executable path, or the standalone installer's printed launcher path.
 
 On Windows, a client that cannot launch `npx` directly can use `cmd /c npx` in its MCP entry. See [install and connect](getting-started/installation.md).
 

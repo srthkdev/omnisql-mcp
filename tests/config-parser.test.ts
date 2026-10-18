@@ -1,22 +1,25 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import fs from 'fs';
 import os from 'os';
 
-// Mock fs module
-vi.mock('fs');
-vi.mock('os');
+afterEach(() => vi.restoreAllMocks());
 
 describe('WorkspaceConfigParser', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
-    vi.mocked(os.platform).mockReturnValue('darwin');
-    vi.mocked(os.homedir).mockReturnValue('/Users/test');
+    vi.spyOn(os, 'platform').mockReturnValue('darwin');
+    vi.spyOn(os, 'homedir').mockReturnValue('/Users/test');
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue('');
+    vi.spyOn(fs, 'readdirSync').mockReturnValue([]);
+    vi.spyOn(fs, 'statSync').mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
   });
 
   describe('getDefaultWorkspacePath', () => {
     it('should return macOS path on darwin', async () => {
-      vi.mocked(os.platform).mockReturnValue('darwin');
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      os.platform.mockReturnValue('darwin');
+      fs.existsSync.mockReturnValue(false);
 
       // Dynamic import to get fresh instance
       const { WorkspaceConfigParser } = await import('../src/config-parser.js');
@@ -28,7 +31,7 @@ describe('WorkspaceConfigParser', () => {
 
   describe('parseConnections', () => {
     it('should return empty array when no config exists', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      fs.existsSync.mockReturnValue(false);
 
       const { WorkspaceConfigParser } = await import('../src/config-parser.js');
       const parser = new WorkspaceConfigParser({});
@@ -42,8 +45,8 @@ describe('WorkspaceConfigParser', () => {
     /** Stand up a parser over a synthetic data-sources.json. */
     async function parseWith(connections: Record<string, unknown>) {
       const dataSources = '/Users/test/workspace6/General/.dbeaver/data-sources.json';
-      vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === dataSources);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ connections }) as never);
+      fs.existsSync.mockImplementation((p) => String(p) === dataSources);
+      fs.readFileSync.mockReturnValue(JSON.stringify({ connections }) as never);
 
       const { WorkspaceConfigParser } = await import('../src/config-parser.js');
       const parser = new WorkspaceConfigParser({ workspacePath: '/Users/test/workspace6' });
@@ -157,8 +160,8 @@ describe('WorkspaceConfigParser', () => {
   describe('SSH tunnel connections (#28)', () => {
     it('should carry the tunnel handler onto the connection', async () => {
       const dataSources = '/Users/test/workspace6/General/.dbeaver/data-sources.json';
-      vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === dataSources);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      fs.existsSync.mockImplementation((p) => String(p) === dataSources);
+      fs.readFileSync.mockReturnValue(
         JSON.stringify({
           connections: {
             'pg-tunnel': {
@@ -222,14 +225,14 @@ describe('WorkspaceConfigParser', () => {
         }),
       };
 
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      fs.readdirSync.mockReturnValue([
         { name: 'DataPlatform', isDirectory: () => true },
         { name: 'General', isDirectory: () => true },
         { name: '.metadata', isDirectory: () => true },
         { name: 'notes.txt', isDirectory: () => false },
       ] as never);
-      vi.mocked(fs.existsSync).mockImplementation((p) => String(p) in files);
-      vi.mocked(fs.readFileSync).mockImplementation((p) => files[String(p)] as never);
+      fs.existsSync.mockImplementation((p) => String(p) in files);
+      fs.readFileSync.mockImplementation((p) => files[String(p)] as never);
     }
 
     it('should read connections from every project in the workspace', async () => {
@@ -256,8 +259,8 @@ describe('WorkspaceConfigParser', () => {
     });
 
     it('should fall back to General when nothing is discoverable', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      vi.mocked(fs.readdirSync).mockReturnValue([] as never);
+      fs.existsSync.mockReturnValue(false);
+      fs.readdirSync.mockReturnValue([] as never);
 
       const { WorkspaceConfigParser } = await import('../src/config-parser.js');
       const parser = new WorkspaceConfigParser({ workspacePath: '/Users/test/workspace6' });
@@ -271,7 +274,7 @@ describe('WorkspaceConfigParser', () => {
 
   describe('projectName', () => {
     it('should default to General when projectName is not provided', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      fs.existsSync.mockReturnValue(false);
 
       const { WorkspaceConfigParser } = await import('../src/config-parser.js');
       const parser = new WorkspaceConfigParser({ workspacePath: '/Users/test/workspace6' });
@@ -283,7 +286,7 @@ describe('WorkspaceConfigParser', () => {
     });
 
     it('should use a custom projectName when provided', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      fs.existsSync.mockReturnValue(false);
 
       const { WorkspaceConfigParser } = await import('../src/config-parser.js');
       const parser = new WorkspaceConfigParser({

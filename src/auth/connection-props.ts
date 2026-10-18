@@ -1,4 +1,4 @@
-import { DatabaseConnection } from '../types.js';
+import type { DatabaseConnection } from '../types.js';
 
 /**
  * Read a connection property, looking through both levels the workspace uses.

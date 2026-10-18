@@ -14,7 +14,7 @@
  */
 
 import { spawn } from 'child_process';
-import { DatabaseConnection } from '../types.js';
+import type { DatabaseConnection } from '../types.js';
 import { readConnectionProp } from './connection-props.js';
 
 /** Tokens valid for 15 minutes; refresh early so in-flight connects never race expiry. */

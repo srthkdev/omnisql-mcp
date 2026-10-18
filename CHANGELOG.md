@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- Page large catalog documents and bind schema comparisons to both source connections. Reject incomplete catalog discovery and bound comparison work by table count, catalog bytes, and checks between batches.
 - Bound concurrent cached-result reads, count escaped UTF-8 previews and headers, and label serialized JSON cells for exact reconstruction.
 - Preserve exact nested JSON numbers, PostgreSQL NUMERIC arrays, and sub-millisecond PostgreSQL/MySQL timestamps without global driver changes.
 - Read Oracle LOBs in bounded pieces, close skipped locators, and share the remaining query deadline across fetches.

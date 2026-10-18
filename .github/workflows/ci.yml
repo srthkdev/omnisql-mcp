@@ -30,6 +30,8 @@ jobs:
       - run: bun run test
       - name: Check MCP result readers on both runtimes
         run: bun scripts/check-results.mjs && node scripts/check-results.mjs
+      - name: Check large MCP catalogs on both runtimes
+        run: bun scripts/check-catalogs.mjs && node scripts/check-catalogs.mjs
       - name: Verify packed npm CLI on both runtimes
         run: bun scripts/check-package.mjs && node scripts/check-package.mjs
       - run: bun audit --audit-level=high

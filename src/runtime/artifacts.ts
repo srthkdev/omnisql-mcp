@@ -34,12 +34,15 @@ interface Entry extends ArtifactSource {
   truncated: boolean;
   format: string;
 }
-export interface ArtifactSource {
+export interface ArtifactScope {
   connectionId: string;
   database?: string;
-  query: string;
+  access: { kind: 'sql'; query: string } | { kind: 'catalog' };
   connectionFingerprint: string;
   policyRevision: string;
+}
+export interface ArtifactSource {
+  scopes: ArtifactScope[];
 }
 export class ResultArtifacts {
   private directory = mkdtempSync(join(tmpdir(), 'omnisql-results-'));
@@ -179,14 +182,9 @@ export class ResultArtifacts {
   }
   source(id: string): ArtifactSource {
     const e = this.get(id);
-    return {
-      connectionId: e.connectionId,
-      database: e.database,
-      query: e.query,
-      connectionFingerprint: e.connectionFingerprint,
-      policyRevision: e.policyRevision,
-    };
+    return { scopes: e.scopes.map((scope) => ({ ...scope, access: { ...scope.access } })) };
   }
+
   private get(id: string) {
     if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid result ID');
     const e = this.entries.get(id);

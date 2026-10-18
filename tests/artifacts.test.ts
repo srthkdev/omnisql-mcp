@@ -8,11 +8,16 @@ function store(ttl?: number, quota?: number) {
   return s;
 }
 const source = {
-  connectionId: 'fixture',
-  query: 'SELECT * FROM public.orders',
-  connectionFingerprint: 'private-fixture-identity',
-  policyRevision: 'private-fixture-revision',
+  scopes: [
+    {
+      connectionId: 'fixture',
+      access: { kind: 'sql' as const, query: 'SELECT * FROM public.orders' },
+      connectionFingerprint: 'private-fixture-identity',
+      policyRevision: 'private-fixture-revision',
+    },
+  ],
 };
+
 const result = {
   columns: ['id', 'note'],
   rows: [

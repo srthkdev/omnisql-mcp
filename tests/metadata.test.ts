@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, spyOn } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +6,24 @@ import { execFileSync } from 'node:child_process';
 import { WorkspaceClient } from '../src/workspace-client.js';
 import { buildSchemaQuery } from '../src/utils.js';
 describe('scoped catalog metadata', () => {
+  it('rejects truncated discovery instead of claiming the catalog is complete', async () => {
+    const client = new WorkspaceClient();
+    const c = { id: 'fixture', name: 'fixture', url: '', driver: 'postgresql' };
+    const query = spyOn(client, 'executeQuery').mockResolvedValue({
+      columns: ['name'],
+      rows: [['visible']],
+      rowCount: 1,
+      executionTime: 0,
+      truncated: true,
+    });
+    try {
+      await expect(client.listTables(c)).rejects.toThrow(/catalog.*incomplete|narrow/i);
+      await expect(client.listDatabases(c)).rejects.toThrow(/catalog.*incomplete|narrow/i);
+    } finally {
+      query.mockRestore();
+      await client.close();
+    }
+  });
   it('pins server catalogs to the selected schema and database', () => {
     expect(buildSchemaQuery('postgresql', 'private.orders')).toContain("table_schema = 'private'");
     expect(buildSchemaQuery('postgresql', 'orders')).toContain('current_schema()');

@@ -176,20 +176,20 @@ describe('Oracle metadata queries', () => {
 
   it('filters on the given schema', () => {
     const query = buildListTablesQuery('oracle_thin', 'hr', true);
-    expect(query).toContain("owner = UPPER('hr')");
+    expect(query).toContain("owner = 'hr'");
     expect(query).not.toContain('oracle_maintained');
   });
 
   it('describes a table in the current schema by default', () => {
     const query = buildSchemaQuery('oracle_thin', 'clients');
     expect(query).toContain("SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')");
-    expect(query).toContain("UPPER('clients')");
+    expect(query).toContain("c.table_name = 'clients'");
   });
 
   it('describes a table in another schema', () => {
     const query = buildSchemaQuery('oracle_thin', 'hr.employees');
-    expect(query).toContain("c.owner = UPPER('hr')");
-    expect(query).toContain("UPPER('employees')");
+    expect(query).toContain("c.owner = 'hr'");
+    expect(query).toContain("c.table_name = 'employees'");
   });
 });
 

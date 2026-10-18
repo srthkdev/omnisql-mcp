@@ -1,3 +1,9 @@
+import {
+  assertQueryAccess as authorizeQuery,
+  assertIdentityAccess,
+  identityPredicate,
+} from './policy/identities.js';
+import { devNull } from 'node:os';
 import { acquireLease } from './runtime/lease.js';
 import { readPostgres, readMysql, readSqlServer } from './runtime/sql-sessions.js';
 import { tableStatistics, type TableStatistics, visibleStorage } from './metadata/statistics.js';
@@ -106,7 +112,7 @@ export class WorkspaceClient {
         options.readOnly === true ||
         this.policy.isReadOnly(connection) ||
         booleanSetting(process.env.OMNISQL_READ_ONLY, 'OMNISQL_READ_ONLY');
-      if (!options.trustedMetadata) this.policy.assertQuery(connection, query, readOnly);
+      if (!options.trustedMetadata) await this.checkQueryAccess(connection, query, readOnly);
       else this.policy.assertConnection(connection);
       const target = options.trustedMetadata
         ? {
@@ -151,6 +157,55 @@ export class WorkspaceClient {
     }
   }
 
+  private metadataAccessQuery(connection: DatabaseConnection, query: string): Promise<QueryResult> {
+    return this.executeWithNativeTool(
+      {
+        ...connection,
+        limits: { ...connection.limits, maxRows: 10000, maxBytes: 8 * 1024 * 1024 },
+      },
+      query,
+      10000,
+      true
+    );
+  }
+  private checkQueryAccess(
+    connection: DatabaseConnection,
+    query: string,
+    readOnly: boolean
+  ): Promise<void> {
+    return authorizeQuery(this.policy, connection, query, readOnly, (sql) =>
+      this.metadataAccessQuery(connection, sql)
+    );
+  }
+  async assertQueryAccess(
+    connection: DatabaseConnection,
+    query: string,
+    readOnly: boolean
+  ): Promise<void> {
+    const release = await this.gate.acquire(connection.limits?.timeoutMs ?? this.timeout);
+    try {
+      await this.checkQueryAccess(connection, query, readOnly);
+    } finally {
+      release();
+    }
+  }
+  async assertTableAccess(connection: DatabaseConnection, name: string): Promise<void> {
+    this.policy.assertConnection(connection);
+    this.policy.assertTableScope(connection, name);
+    if (!this.policy.hasTableRestrictions(connection)) return;
+    const release = await this.gate.acquire(connection.limits?.timeoutMs ?? this.timeout);
+    try {
+      await assertIdentityAccess(
+        this.policy,
+        connection,
+        name.split('.').map((value) => ({ value, quoted: true })),
+        'table',
+        (sql) => this.metadataAccessQuery(connection, sql)
+      );
+    } finally {
+      release();
+    }
+  }
   async close(): Promise<void> {
     await this.poolManager.closeAllPools();
   }
@@ -183,7 +238,7 @@ export class WorkspaceClient {
   }
 
   async getTableSchema(connection: DatabaseConnection, tableName: string): Promise<SchemaInfo> {
-    this.policy.assertTable(connection, tableName);
+    await this.assertTableAccess(connection, tableName);
     const schemaQuery = this.buildSchemaQuery(connection.driver, tableName);
     const result = await this.executeQuery(connection, schemaQuery, { trustedMetadata: true });
 
@@ -293,6 +348,8 @@ export class WorkspaceClient {
       }
       const args = [
         '-safe',
+        '-init',
+        devNull,
         '-json',
         '-cmd',
         '.explain off',
@@ -559,7 +616,7 @@ export class WorkspaceClient {
     query: string,
     format: 'text' | 'json'
   ): Promise<QueryResult> {
-    this.policy.assertQuery(connection, query, true);
+    await this.assertQueryAccess(connection, query, true);
     const { default: sql } = await import('mssql');
     const entry = await this.poolManager.getPool(connection);
     const transaction = new sql.Transaction(entry!.pool as sql.ConnectionPool);
@@ -728,7 +785,7 @@ export class WorkspaceClient {
   }
 
   async getTableStats(connection: DatabaseConnection, tableName: string): Promise<TableStatistics> {
-    this.policy.assertTable(connection, tableName);
+    await this.assertTableAccess(connection, tableName);
     return tableStatistics(connection, tableName, (sql) =>
       this.executeQuery(connection, sql, { trustedMetadata: true, readOnly: true })
     );
@@ -789,13 +846,39 @@ export class WorkspaceClient {
       .filter((database) => this.policy.allowsDatabase(connection, database));
   }
 
+  private filterCatalogSql(connection: DatabaseConnection, sql: string): string {
+    if (
+      !this.policy.hasTableRestrictions(connection) ||
+      !['mysql', 'mssql', 'sqlite'].includes(sqlDialect(connection.driver))
+    )
+      return sql;
+    const dialect = sqlDialect(connection.driver);
+    const database =
+      dialect === 'mysql'
+        ? 'visible.table_schema'
+        : dialect === 'mssql'
+          ? '(SELECT name FROM sys.databases WHERE database_id=DB_ID())'
+          : "''";
+    const predicate = identityPredicate(
+      connection,
+      this.policy.rulesFor(connection),
+      { schema: 'visible.table_schema', name: 'visible.table_name', database },
+      'table',
+      true
+    );
+    const source = sql.replace(/;\s*$/, '').replace(/\s+ORDER BY[\s\S]*$/i, '');
+    return `SELECT * FROM (${source}) visible WHERE ${predicate}`;
+  }
   async listTables(
     connection: DatabaseConnection,
     schema?: string,
     includeViews: boolean = false
   ): Promise<any[]> {
     try {
-      const query = buildListTablesQuery(connection.driver, schema, includeViews);
+      const query = this.filterCatalogSql(
+        connection,
+        buildListTablesQuery(connection.driver, schema, includeViews)
+      );
       const result = await this.executeQuery(connection, query, { trustedMetadata: true });
 
       // Convert result to table objects
@@ -808,11 +891,16 @@ export class WorkspaceClient {
           tableObj.name = tableObj.table_name ?? tableObj.name;
           return tableObj;
         })
-        .filter((table) =>
-          this.policy.allowsTable(
-            connection,
-            [table.table_schema ?? table.schema, table.name].filter(Boolean).join('.')
-          )
+        .filter(
+          (table) =>
+            ['mysql', 'mssql', 'sqlite'].includes(sqlDialect(connection.driver)) ||
+            this.policy.allowsResolved(
+              connection,
+              table.table_schema ?? table.schema ?? '',
+              table.name,
+              'table',
+              true
+            )
         );
     } catch (error) {
       throw new Error(

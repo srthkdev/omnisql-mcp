@@ -1,3 +1,4 @@
+import { assertQueryAccess } from '../policy/identities.js';
 import { validateStatement } from '../policy/sql.js';
 import { AccessPolicy } from '../policy/access.js';
 import { randomBytes, createHash } from 'node:crypto';
@@ -122,7 +123,10 @@ export class TransactionManager {
       throw new Error('Access policy changed; transaction rolled back, start a new transaction');
     policy.assertConnection(active.connection);
     if (policy.isReadOnly(active.connection)) throw new Error('This connection is read-only');
-    if (query !== undefined) policy.assertQuery(active.connection, query, false);
+    if (query !== undefined)
+      await assertQueryAccess(policy, active.connection, query, false, (sql) =>
+        this.read(active, sql, true)
+      );
   }
 
   async executeInTransaction(id: string, query: string): Promise<QueryResult> {
@@ -142,18 +146,10 @@ export class TransactionManager {
         'explain',
       ]);
       if (error) throw new Error(error);
-      const options = {
-        connection: active.connection,
-        timeout: active.connection.limits?.timeoutMs ?? this.defaultTimeout,
-        preserveSession: true,
-        abort: () => this.destroy(active),
-      };
-      if (active.type === 'postgres')
-        return await readPostgres(active.client as PgPoolClient, query, options);
-      if (active.type === 'mysql')
-        return await readMysql(active.client as MySqlPoolConnection, query, options);
-      const { default: sql } = await import('mssql');
-      return await readSqlServer(new sql.Request(active.client as sql.Transaction), query, options);
+      const started = Date.now();
+      const result = await this.read(active, query);
+      result.executionTime = Date.now() - started;
+      return result;
     } catch (error) {
       await this.discard(active);
       this.transactions.delete(id);
@@ -161,6 +157,30 @@ export class TransactionManager {
     } finally {
       active.busy = false;
     }
+  }
+
+  private async read(
+    active: ActiveTransaction,
+    query: string,
+    metadata = false
+  ): Promise<QueryResult> {
+    const options = {
+      connection: metadata
+        ? {
+            ...active.connection,
+            limits: { ...active.connection.limits, maxRows: 10000, maxBytes: 8 * 1024 * 1024 },
+          }
+        : active.connection,
+      timeout: active.connection.limits?.timeoutMs ?? this.defaultTimeout,
+      preserveSession: true,
+      abort: () => this.destroy(active),
+    };
+    if (active.type === 'postgres')
+      return await readPostgres(active.client as PgPoolClient, query, options);
+    if (active.type === 'mysql')
+      return await readMysql(active.client as MySqlPoolConnection, query, options);
+    const { default: sql } = await import('mssql');
+    return await readSqlServer(new sql.Request(active.client as sql.Transaction), query, options);
   }
 
   private destroy(active: ActiveTransaction): void {

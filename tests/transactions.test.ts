@@ -47,15 +47,19 @@ describe('transaction lifecycle', () => {
     const { manager, client } = setup();
     const { transactionId } = await manager.beginTransaction(connection);
     let complete!: (value: any) => void;
+    let started!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     readPostgres.mockImplementationOnce(
       () =>
-        new Promise((r) => {
-          complete = r;
+        new Promise((resolve) => {
+          complete = resolve;
+          started();
         })
     );
     const running = manager.executeInTransaction(transactionId, 'SELECT 1');
-    await Promise.resolve();
-    expect(complete).toBeTypeOf('function');
+    await reading;
     await expect(manager.executeInTransaction(transactionId, 'SELECT 2')).rejects.toThrow(
       /operation in progress/
     );

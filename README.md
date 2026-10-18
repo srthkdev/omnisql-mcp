@@ -296,6 +296,8 @@ forward, and the connection's host/port are treated the way DBeaver treats them:
 - If a tunnel cannot be opened the connection fails with that reason. It never falls back to
   connecting directly to the recorded host, which would reach an unrelated local database.
 
+Table policies resolve real catalog names before checking access, including engine-specific case rules. Qualified denies also cover unqualified SQL; paged results and exports recheck permissions on every read. Restricted queries stay inside the selected database. See [access rules](https://srthkdev.github.io/omnisql-mcp/guides/access/) for configuration and limits.
+
 ### Querying another database on the same server
 
 Use `list_databases` with a saved `connectionId` to discover databases accessible on a PostgreSQL, MySQL/MariaDB, or SQL Server instance. Pass an optional `database` to `execute_query`, `export_data`, `explain_query`, `list_tables`, `get_table_schema`, `get_database_stats`, `test_connection`, or `get_pool_stats`:

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { benchmarkSessionReuse } from './benchmark-sessions.mjs';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -222,6 +223,16 @@ try {
         config.database = 'omnisql';
         admin = await connect(engine, config);
       }
+      if (process.env.OMNISQL_BENCHMARK_REPORT_DIR) {
+        const report = await benchmarkSessionReuse(engine, config, connect);
+        const output = resolve(process.env.OMNISQL_BENCHMARK_REPORT_DIR);
+        mkdirSync(output, { recursive: true });
+        writeFileSync(
+          join(output, `2026-10-18-sessions-${engine}.json`),
+          JSON.stringify(report, null, 2) + '\n'
+        );
+        console.log(`${engine}: session benchmark recorded`);
+      }
       for (const statement of [
         'CREATE TABLE customers(id INTEGER PRIMARY KEY, name VARCHAR(80) NOT NULL)',
         'CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total DECIMAL(12,2), status VARCHAR(16), FOREIGN KEY (customer_id) REFERENCES customers(id))',
@@ -441,6 +452,78 @@ try {
         query: 'SELECT COUNT(*) AS n FROM orders',
       });
       assert.equal(Number(count.rows[0][0]), 3);
+      const poolStats = await call(client, 'get_pool_stats', { connectionId: 'fixture' });
+      assert(poolStats.totalConnections >= 1 && poolStats.totalConnections <= 4);
+      assert.equal(poolStats.activeConnections, 0);
+      if (['postgres', 'mysql', 'mariadb', 'mssql'].includes(engine)) {
+        const begin = () => call(client, 'begin_transaction', { connectionId: 'fixture' });
+        const { transactionId } = await begin();
+        await call(client, 'execute_in_transaction', {
+          transactionId,
+          query: "UPDATE orders SET status='changed' WHERE id=1",
+        });
+        const aliases = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+        const query =
+          'SELECT a.id AS repeated,b.id AS repeated FROM ' +
+          aliases.map((alias) => 'orders ' + alias).join(' CROSS JOIN ');
+        const bounded = await call(client, 'execute_in_transaction', { transactionId, query });
+        assert.equal(bounded.rows.length, 1000);
+        assert.equal(bounded.truncated, true);
+        assert.deepEqual(bounded.columns, ['repeated', 'repeated']);
+        assert.equal(bounded.rows[0].length, 2);
+        const textExpression = engine === 'mssql' ? "REPLICATE('x',100)" : "REPEAT('x',100)";
+        const large = await call(client, 'execute_in_transaction', {
+          transactionId,
+          query: query.replace(
+            'a.id AS repeated,b.id AS repeated',
+            'a.id AS n,' + textExpression + ' AS payload'
+          ),
+        });
+        assert.match(large.resultId, /^[a-f0-9]{32}$/);
+        assert.equal(large.storedRows, 1000);
+        const page = await call(client, 'read_result', {
+          resultId: large.resultId,
+          offset: 990,
+          limit: 10,
+        });
+        assert.equal(page.rows.length, 10);
+        assert.equal(page.rows[0][1], 'x'.repeat(100));
+        // Truncating a read must keep the transaction usable and its writes uncommitted.
+        const afterCap = await call(client, 'execute_in_transaction', {
+          transactionId,
+          query: 'SELECT COUNT(*) AS n FROM orders',
+        });
+        assert.equal(Number(afterCap.rows[0][0]), 3);
+        await call(client, 'rollback_transaction', { transactionId });
+        assert.equal((await admin.query('SELECT status FROM orders WHERE id=1'))[0].status, 'paid');
+        const committed = await begin();
+        await call(client, 'execute_in_transaction', {
+          transactionId: committed.transactionId,
+          query: "UPDATE orders SET status='committed' WHERE id=1",
+        });
+        await call(client, 'commit_transaction', { transactionId: committed.transactionId });
+        assert.equal(
+          (await admin.query('SELECT status FROM orders WHERE id=1'))[0].status,
+          'committed'
+        );
+        await admin.query("UPDATE orders SET status='paid' WHERE id=1");
+        const failed = await begin();
+        await call(client, 'execute_in_transaction', {
+          transactionId: failed.transactionId,
+          query: "UPDATE orders SET status='must_rollback' WHERE id=1",
+        });
+        await assert.rejects(() =>
+          call(client, 'execute_in_transaction', {
+            transactionId: failed.transactionId,
+            query: 'SELECT * FROM missing_transaction_table',
+          })
+        );
+        await assert.rejects(
+          () => call(client, 'commit_transaction', { transactionId: failed.transactionId }),
+          /not found/
+        );
+        assert.equal((await admin.query('SELECT status FROM orders WHERE id=1'))[0].status, 'paid');
+      }
       await client.close();
       const instanceFile = join(workspace, 'instances.json');
       const nativeDriver = engine === 'postgres' ? 'postgresql' : engine;
@@ -543,6 +626,28 @@ try {
       console.log(
         `${engine}: independent instances, concurrent pools, table policies, resources, and read-only settings passed`
       );
+      await client.close();
+      client = await startMcp(workspace, false, {
+        OMNISQL_CONFIG_FILE: '',
+        OMNISQL_TIMEOUT: '200',
+      });
+      const operands = Array.from({ length: 18 }, (_, i) => `t${i}`);
+      const slow =
+        'SELECT SUM(' +
+        operands.map((alias) => alias + '.id').join('+') +
+        ') FROM ' +
+        operands.map((alias) => 'orders ' + alias).join(' CROSS JOIN ');
+      const beforeTimeout = Date.now();
+      await assert.rejects(
+        () => call(client, 'execute_query', { connectionId: 'fixture', query: slow }),
+        /timed?\s*out|deadline|cancel|ORA-03156|ORA-01013|DPI-1067|NJS-040/i
+      );
+      assert(Date.now() - beforeTimeout < 10000, 'Query cancellation must return promptly');
+      const recovery = await call(client, 'execute_query', {
+        connectionId: 'fixture',
+        query: 'SELECT COUNT(*) AS n FROM orders',
+      });
+      assert.equal(Number(recovery.rows[0][0]), 3);
       console.log(`${engine}: MCP discovery, schema, joins, and security regressions passed`);
     } finally {
       await client?.close();

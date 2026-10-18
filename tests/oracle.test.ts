@@ -216,7 +216,11 @@ describe('Oracle execution', () => {
     const { WorkspaceClient } = await import('../src/workspace-client.js');
     const execute = vi.fn().mockRejectedValue(new Error('ORA-00942'));
     const close = vi.fn().mockResolvedValue(undefined);
-    vi.spyOn(oracledb, 'getConnection').mockResolvedValue({ execute, close } as never);
+    const closePool = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(oracledb, 'createPool').mockResolvedValue({
+      getConnection: vi.fn().mockResolvedValue({ execute, close }),
+      close: closePool,
+    } as never);
     const client = new WorkspaceClient();
     await expect(
       client.executeQuery(oracleConnection({ user: 'app' }), 'SELECT * FROM missing;', {
@@ -229,5 +233,7 @@ describe('Oracle execution', () => {
       expect.objectContaining({ resultSet: true })
     );
     expect(close).toHaveBeenCalledOnce();
+    await client.close();
+    expect(closePool).toHaveBeenCalledOnce();
   });
 });

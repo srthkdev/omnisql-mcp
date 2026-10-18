@@ -3,10 +3,20 @@ import { DatabaseConnection, QueryResult } from '../types.js';
 /** Shared row and byte budget, applied while each native driver fetches rows. */
 export class ResultCollector {
   readonly rows: unknown[][] = [];
-  columns: string[] = [];
+  private names: string[] = [];
+  private nameBytes = 2;
+  get columns(): string[] {
+    return this.names;
+  }
+  set columns(value: string[]) {
+    const bytes = Buffer.byteLength(JSON.stringify(value));
+    this.bytes += bytes - this.nameBytes;
+    this.nameBytes = bytes;
+    this.names = value;
+  }
   truncated = false;
   limitReason?: 'rows' | 'bytes';
-  private bytes = 0;
+  private bytes = 2;
   readonly maxRows: number;
   readonly maxBytes: number;
   constructor(connection: DatabaseConnection, maxRows?: number) {
@@ -14,6 +24,7 @@ export class ResultCollector {
     this.maxBytes = connection.limits?.maxBytes ?? 1024 * 1024;
   }
   add(row: unknown[]): boolean {
+    this.checkColumns();
     if (this.rows.length >= this.maxRows) {
       this.truncated = true;
       this.limitReason = 'rows';
@@ -43,8 +54,7 @@ export class ResultCollector {
     return true;
   }
   result(affectedRows?: number): QueryResult {
-    if (Buffer.byteLength(JSON.stringify(this.columns)) > 65536)
-      throw new Error('Result column names exceed 64 KiB; select fewer columns or shorter aliases');
+    this.checkColumns();
     return {
       columns: this.columns,
       rows: this.rows,
@@ -53,6 +63,12 @@ export class ResultCollector {
       truncated: this.truncated,
       ...(this.limitReason ? { limitReason: this.limitReason } : {}),
     };
+  }
+  private checkColumns(): void {
+    if (this.nameBytes > 65536 || this.nameBytes > this.maxBytes)
+      throw new Error(
+        'Result column names exceed the byte limit; select fewer columns or shorter aliases'
+      );
   }
 }
 

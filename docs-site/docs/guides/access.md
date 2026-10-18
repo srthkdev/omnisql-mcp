@@ -93,3 +93,5 @@ The optional update check contacts npm for package version information. It sends
 Certificate-verification modes check the database hostname through SSH as well as on direct connections. An explicitly configured certificate or key path must be readable; OmniSQL fails instead of silently choosing another trust store. PostgreSQL SSL handler certificate properties are supported alongside driver properties. MySQL `VERIFY_IDENTITY` performs both chain and hostname checks; `VERIFY_CA` checks the chain only.
 
 IAM connections without an explicit TLS mode default to verified TLS. Configure the database CA bundle when the issuing CA is absent from the system trust store. Explicit mode choices retain their documented driver semantics; disabling TLS is incompatible with IAM authentication. `ssl.serverName` can select the certificate hostname when it differs from the database host recorded for an SSH target.
+
+Policy-file edits are reloaded before access checks. Invalid or missing configured policy files fail closed. Active transactions cannot commit after their policy or instance settings change; start a new transaction after reviewing the change.

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { DatabaseConnection } from '../types.js';
 import { analyzeSql, canonicalName } from './analyzer.js';
@@ -63,13 +64,18 @@ function includes(patterns: string[], name: string): boolean {
   return patterns.some((p) => matches(p, name));
 }
 export class AccessPolicy {
-  private readonly policy: PolicyFile;
-  constructor(file = process.env.OMNISQL_POLICY_FILE) {
-    if (!file) {
-      this.policy = { version: 1 };
-      return;
-    }
-    if (fs.statSync(file).size > 1_000_000) throw new Error('Policy file exceeds 1 MB');
+  private policy: PolicyFile = { version: 1 };
+  private stamp = '';
+  constructor(private file = process.env.OMNISQL_POLICY_FILE) {
+    this.reload();
+  }
+  private reload(): void {
+    if (!this.file) return;
+    const stat = fs.statSync(this.file, { bigint: true });
+    if (stat.size > 1_000_000n) throw new Error('Policy file exceeds 1 MB');
+    const stamp = `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    if (stamp === this.stamp) return;
+    const file = this.file;
     const p: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('Invalid access policy');
     const o = p as Record<string, unknown>;
@@ -85,8 +91,14 @@ export class AccessPolicy {
       Object.values(o.connections).forEach(validateAccessRule);
     }
     this.policy = o as unknown as PolicyFile;
+    this.stamp = stamp;
+  }
+  revision(): string {
+    this.reload();
+    return createHash('sha256').update(JSON.stringify(this.policy)).digest('hex');
   }
   private rules(c: DatabaseConnection): AccessRule[] {
+    this.reload();
     const base = c.id.split('/')[0];
     return [
       ...(c.accessRules ?? []),

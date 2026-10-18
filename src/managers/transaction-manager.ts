@@ -1,309 +1,255 @@
+import { validateStatement } from '../policy/sql.js';
 import { AccessPolicy } from '../policy/access.js';
-import crypto from 'crypto';
-import { PoolClient as PgPoolClient } from 'pg';
-import { PoolConnection as MySqlPoolConnection } from 'mysql2/promise';
+import { randomBytes, createHash } from 'node:crypto';
+import type { PoolClient as PgPoolClient } from 'pg';
+import type { PoolConnection as MySqlPoolConnection } from 'mysql2/promise';
 import type sql from 'mssql';
-import { Transaction, TransactionResult, DatabaseConnection } from '../types.js';
+import { Transaction, TransactionResult, DatabaseConnection, QueryResult } from '../types.js';
 import { ConnectionPoolManager } from '../pools/connection-pool.js';
+import { readPostgres, readMysql, readSqlServer } from '../runtime/sql-sessions.js';
+import { acquireLease, withDeadline } from '../runtime/lease.js';
 
 interface ActiveTransaction {
   connection: DatabaseConnection;
   transaction: Transaction;
   client: PgPoolClient | MySqlPoolConnection | sql.Transaction;
   type: 'postgres' | 'mysql' | 'mssql';
+  busy: boolean;
+  destroyed: boolean;
+  fingerprint: string;
+  policyRevision: string;
 }
+const fingerprint = (c: DatabaseConnection) =>
+  createHash('sha256').update(JSON.stringify(c)).digest('hex');
 
 export class TransactionManager {
-  private policy = new AccessPolicy();
-  private transactions: Map<string, ActiveTransaction> = new Map();
-  private poolManager: ConnectionPoolManager;
-  private debug: boolean;
+  private transactions = new Map<string, ActiveTransaction>();
+  private pending = 0;
 
-  constructor(poolManager: ConnectionPoolManager, debug = false) {
-    this.poolManager = poolManager;
-    this.debug = debug;
-  }
+  constructor(
+    private poolManager: ConnectionPoolManager,
+    private debug = false,
+    private resolveConnection?: (id: string) => Promise<DatabaseConnection | null>,
+    private defaultTimeout = 30000
+  ) {}
 
   private log(message: string): void {
-    if (this.debug) {
-      console.error(`[TransactionManager] ${message}`);
-    }
-  }
-
-  private generateTransactionId(): string {
-    return `txn_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    if (this.debug) console.error(`[TransactionManager] ${message}`);
   }
 
   async beginTransaction(connection: DatabaseConnection): Promise<TransactionResult> {
-    this.policy.assertConnection(connection);
-    if (this.policy.isReadOnly(connection)) throw new Error('This connection is read-only');
-    const transactionId = this.generateTransactionId();
-    const driver = connection.driver.toLowerCase();
-
-    this.log(`Beginning transaction ${transactionId} for ${connection.name}`);
-
+    const policy = new AccessPolicy();
+    policy.assertConnection(connection);
+    if (policy.isReadOnly(connection)) throw new Error('This connection is read-only');
+    if (this.transactions.size + this.pending >= 32)
+      throw new Error('Active transaction limit reached (32)');
+    this.pending++;
+    const id = `txn_${randomBytes(16).toString('hex')}`;
+    let active: ActiveTransaction | undefined;
     try {
-      const poolEntry = await this.poolManager.getPool(connection);
-
-      if (!poolEntry) {
-        throw new Error(`No pool available for driver: ${connection.driver}`);
-      }
-
-      let client: PgPoolClient | MySqlPoolConnection | sql.Transaction;
-      let type: 'postgres' | 'mysql' | 'mssql';
-
-      if (poolEntry.type === 'postgres') {
-        const pgPool = poolEntry.pool as import('pg').Pool;
-        const pgClient = await pgPool.connect();
-        await pgClient.query('BEGIN');
-        client = pgClient;
-        type = 'postgres';
-      } else if (driver.includes('mysql') || driver.includes('mariadb')) {
-        const mysqlPool = poolEntry.pool as import('mysql2/promise').Pool;
-        const mysqlConn = await mysqlPool.getConnection();
-        await mysqlConn.beginTransaction();
-        client = mysqlConn;
-        type = 'mysql';
-      } else if (driver.includes('mssql') || driver.includes('sqlserver')) {
-        const mssqlPool = poolEntry.pool as sql.ConnectionPool;
-        const { default: sql } = await import('mssql');
-        const mssqlTxn = new sql.Transaction(mssqlPool);
-        await mssqlTxn.begin();
-        client = mssqlTxn;
-        type = 'mssql';
-      } else {
+      const entry = await this.poolManager.getPool(connection);
+      if (!entry || entry.type === 'oracle')
         throw new Error(`Transactions not supported for driver: ${connection.driver}`);
-      }
-
-      const transaction: Transaction = {
-        id: transactionId,
-        connectionId: connection.id,
-        startedAt: new Date(),
-        status: 'active',
-      };
-
-      this.transactions.set(transactionId, { transaction, client, type, connection });
-
-      return {
-        transactionId,
-        status: 'started',
-        message: `Transaction ${transactionId} started successfully`,
-      };
-    } catch (error) {
-      this.log(`Failed to begin transaction: ${error}`);
-      throw error;
-    }
-  }
-
-  async executeInTransaction(
-    transactionId: string,
-    query: string
-  ): Promise<{ columns: string[]; rows: unknown[][]; rowCount: number }> {
-    const active = this.transactions.get(transactionId);
-
-    if (!active) {
-      throw new Error(`Transaction ${transactionId} not found or expired`);
-    }
-
-    if (active.transaction.status !== 'active') {
-      throw new Error(`Transaction ${transactionId} is ${active.transaction.status}`);
-    }
-
-    this.policy.assertQuery(active.connection, query, false);
-    this.log(`Executing query in transaction ${transactionId}`);
-
-    try {
-      if (active.type === 'postgres') {
-        const pgClient = active.client as PgPoolClient;
-        const result = await pgClient.query({ text: query, rowMode: 'array' });
-        return {
-          columns: result.fields?.map((f) => f.name) || [],
-          rows: result.rows,
-          rowCount: result.rowCount || 0,
-        };
-      } else if (active.type === 'mysql') {
-        const mysqlConn = active.client as MySqlPoolConnection;
-        const [rows, fields] = await mysqlConn.execute(query);
-        const rowArray = Array.isArray(rows) ? rows : [];
-        return {
-          columns: (fields as { name: string }[])?.map((f) => f.name) || [],
-          rows: rowArray.map((row) => Object.values(row as object)),
-          rowCount: rowArray.length,
-        };
-      } else if (active.type === 'mssql') {
-        const mssqlTxn = active.client as sql.Transaction;
+      const timeout = connection.limits?.timeoutMs ?? this.defaultTimeout;
+      let client: ActiveTransaction['client'];
+      if (entry.type === 'postgres') {
+        client = await acquireLease((entry.pool as import('pg').Pool).connect(), timeout, (c) =>
+          c.release()
+        );
+      } else if (entry.type === 'mysql') {
+        client = await acquireLease(
+          (entry.pool as import('mysql2/promise').Pool).getConnection(),
+          timeout,
+          (c) => c.release()
+        );
+      } else {
         const { default: sql } = await import('mssql');
-        const request = new sql.Request(mssqlTxn);
-        const result = await request.query(query);
-        const columns = result.recordset?.columns ? Object.keys(result.recordset.columns) : [];
-        return {
-          columns,
-          rows: result.recordset?.map((row) => Object.values(row)) || [],
-          rowCount: result.rowsAffected?.[0] || 0,
-        };
+        client = new sql.Transaction(entry.pool as sql.ConnectionPool);
       }
-
-      throw new Error('Unknown transaction type');
-    } catch (error) {
-      this.log(`Query execution failed in transaction: ${error}`);
-      throw error;
-    }
-  }
-
-  async commitTransaction(transactionId: string): Promise<TransactionResult> {
-    const active = this.transactions.get(transactionId);
-
-    if (!active) {
-      throw new Error(`Transaction ${transactionId} not found`);
-    }
-
-    if (active.transaction.status !== 'active') {
-      throw new Error(`Transaction ${transactionId} is already ${active.transaction.status}`);
-    }
-
-    this.log(`Committing transaction ${transactionId}`);
-
-    try {
-      if (active.type === 'postgres') {
-        const pgClient = active.client as PgPoolClient;
-        await pgClient.query('COMMIT');
-        pgClient.release();
-      } else if (active.type === 'mysql') {
-        const mysqlConn = active.client as MySqlPoolConnection;
-        await mysqlConn.commit();
-        mysqlConn.release();
-      } else if (active.type === 'mssql') {
-        const mssqlTxn = active.client as sql.Transaction;
-        await mssqlTxn.commit();
-      }
-
-      active.transaction.status = 'committed';
-      this.transactions.delete(transactionId);
-
+      active = {
+        connection,
+        client,
+        type: entry.type,
+        busy: false,
+        destroyed: false,
+        fingerprint: fingerprint(connection),
+        policyRevision: policy.revision(),
+        transaction: { id, connectionId: connection.id, startedAt: new Date(), status: 'active' },
+      };
+      if (active.type === 'postgres')
+        await withDeadline((client as PgPoolClient).query('BEGIN'), timeout, () =>
+          this.destroy(active!)
+        );
+      else if (active.type === 'mysql')
+        await withDeadline((client as MySqlPoolConnection).beginTransaction(), timeout, () =>
+          this.destroy(active!)
+        );
+      else await (client as sql.Transaction).begin();
+      this.transactions.set(id, active);
       return {
-        transactionId,
-        status: 'committed',
-        message: `Transaction ${transactionId} committed successfully`,
+        transactionId: id,
+        status: 'started',
+        message: `Transaction ${id} started successfully`,
       };
     } catch (error) {
-      this.log(`Failed to commit transaction: ${error}`);
-      // Release the client back to pool even on failure to prevent resource leak
-      this.releaseClient(active);
-      this.transactions.delete(transactionId);
+      if (active) await this.discard(active);
       throw error;
+    } finally {
+      this.pending--;
     }
   }
 
-  async rollbackTransaction(transactionId: string): Promise<TransactionResult> {
-    const active = this.transactions.get(transactionId);
+  private claim(id: string): ActiveTransaction {
+    const active = this.transactions.get(id);
+    if (!active) throw new Error(`Transaction ${id} not found or expired`);
+    if (active.busy) throw new Error(`Transaction ${id} already has an operation in progress`);
+    active.busy = true;
+    return active;
+  }
 
-    if (!active) {
-      throw new Error(`Transaction ${transactionId} not found`);
+  private async authorize(active: ActiveTransaction, query?: string): Promise<void> {
+    // A changed target, credential, limit or policy requires a new transaction.
+    // In particular, revocation must not leave an older write session usable.
+    if (this.resolveConnection) {
+      const current = await this.resolveConnection(active.connection.id);
+      if (!current || fingerprint(current) !== active.fingerprint)
+        throw new Error(
+          'Connection settings changed; transaction rolled back, start a new transaction'
+        );
     }
+    const policy = new AccessPolicy();
+    if (policy.revision() !== active.policyRevision)
+      throw new Error('Access policy changed; transaction rolled back, start a new transaction');
+    policy.assertConnection(active.connection);
+    if (policy.isReadOnly(active.connection)) throw new Error('This connection is read-only');
+    if (query !== undefined) policy.assertQuery(active.connection, query, false);
+  }
 
-    if (active.transaction.status !== 'active') {
-      throw new Error(`Transaction ${transactionId} is already ${active.transaction.status}`);
-    }
-
-    this.log(`Rolling back transaction ${transactionId}`);
-
+  async executeInTransaction(id: string, query: string): Promise<QueryResult> {
+    const active = this.claim(id);
     try {
-      if (active.type === 'postgres') {
-        const pgClient = active.client as PgPoolClient;
-        await pgClient.query('ROLLBACK');
-        pgClient.release();
-      } else if (active.type === 'mysql') {
-        const mysqlConn = active.client as MySqlPoolConnection;
-        await mysqlConn.rollback();
-        mysqlConn.release();
-      } else if (active.type === 'mssql') {
-        const mssqlTxn = active.client as sql.Transaction;
-        await mssqlTxn.rollback();
-      }
-
-      active.transaction.status = 'rolled_back';
-      this.transactions.delete(transactionId);
-
-      return {
-        transactionId,
-        status: 'rolled_back',
-        message: `Transaction ${transactionId} rolled back successfully`,
+      await this.authorize(active, query);
+      // MySQL DDL commits implicitly; do not promise rollback for schema operations.
+      const error = validateStatement(query, [
+        'select',
+        'with',
+        'insert',
+        'update',
+        'delete',
+        'show',
+        'describe',
+        'desc',
+        'explain',
+      ]);
+      if (error) throw new Error(error);
+      const options = {
+        connection: active.connection,
+        timeout: active.connection.limits?.timeoutMs ?? this.defaultTimeout,
+        preserveSession: true,
+        abort: () => this.destroy(active),
       };
+      if (active.type === 'postgres')
+        return await readPostgres(active.client as PgPoolClient, query, options);
+      if (active.type === 'mysql')
+        return await readMysql(active.client as MySqlPoolConnection, query, options);
+      const { default: sql } = await import('mssql');
+      return await readSqlServer(new sql.Request(active.client as sql.Transaction), query, options);
     } catch (error) {
-      this.log(`Failed to rollback transaction: ${error}`);
-      // Release the client back to pool even on failure to prevent resource leak
-      this.releaseClient(active);
-      this.transactions.delete(transactionId);
+      await this.discard(active);
+      this.transactions.delete(id);
       throw error;
+    } finally {
+      active.busy = false;
     }
   }
 
-  /**
-   * Safely release a transaction client back to the pool.
-   * Used as a safety net when commit/rollback fails.
-   */
-  private releaseClient(active: ActiveTransaction): void {
+  private destroy(active: ActiveTransaction): void {
+    if (active.destroyed) return;
+    active.destroyed = true;
+    if (active.type === 'postgres') (active.client as PgPoolClient).release(true);
+    else if (active.type === 'mysql') (active.client as MySqlPoolConnection).destroy();
+  }
+
+  private async discard(active: ActiveTransaction): Promise<void> {
+    if (active.destroyed) return;
+    if (active.type !== 'mssql') {
+      this.destroy(active); // Closing the physical session rolls back all uncommitted writes.
+    } else {
+      active.destroyed = true;
+      await (active.client as sql.Transaction)
+        .rollback()
+        .catch((error) => this.log(`Rollback failed: ${error}`));
+    }
+  }
+
+  private async finish(id: string, commit: boolean): Promise<TransactionResult> {
+    const active = this.claim(id);
     try {
+      if (commit) await this.authorize(active);
       if (active.type === 'postgres') {
-        (active.client as PgPoolClient).release(true); // true = destroy the connection
+        const client = active.client as PgPoolClient;
+        await withDeadline(
+          client.query(commit ? 'COMMIT' : 'ROLLBACK'),
+          active.connection.limits?.timeoutMs ?? this.defaultTimeout,
+          () => this.destroy(active)
+        );
+        client.release();
       } else if (active.type === 'mysql') {
-        (active.client as MySqlPoolConnection).destroy();
+        const client = active.client as MySqlPoolConnection;
+        await withDeadline(
+          commit ? client.commit() : client.rollback(),
+          active.connection.limits?.timeoutMs ?? this.defaultTimeout,
+          () => this.destroy(active)
+        );
+        client.release();
+      } else {
+        const client = active.client as sql.Transaction;
+        if (commit) await client.commit();
+        else await client.rollback();
       }
-      // MSSQL transactions don't hold a separate client reference
-    } catch (releaseError) {
-      this.log(`Failed to release client after error: ${releaseError}`);
+      active.destroyed = true;
+      const status = commit ? 'committed' : 'rolled_back';
+      active.transaction.status = status;
+      return { transactionId: id, status, message: `Transaction ${id} ${status} successfully` };
+    } catch (error) {
+      await this.discard(active);
+      throw error;
+    } finally {
+      this.transactions.delete(id);
     }
   }
 
-  /**
-   * Roll back all active transactions. Called during shutdown.
-   */
+  commitTransaction(id: string): Promise<TransactionResult> {
+    return this.finish(id, true);
+  }
+  rollbackTransaction(id: string): Promise<TransactionResult> {
+    return this.finish(id, false);
+  }
+
   async rollbackAll(): Promise<number> {
-    let count = 0;
-    const ids = Array.from(this.transactions.keys());
-    for (const id of ids) {
-      try {
-        await this.rollbackTransaction(id);
-        count++;
-      } catch {
-        // Already cleaned up or failed - force remove
-        this.transactions.delete(id);
-        count++;
-      }
-    }
-    return count;
+    const active = [...this.transactions.values()];
+    this.transactions.clear();
+    await Promise.all(active.map((a) => this.discard(a)));
+    return active.length;
   }
 
-  getTransaction(transactionId: string): Transaction | null {
-    const active = this.transactions.get(transactionId);
-    return active?.transaction || null;
+  getTransaction(id: string): Transaction | null {
+    const active = this.transactions.get(id);
+    return active ? { ...active.transaction } : null;
   }
 
   getActiveTransactions(): Transaction[] {
-    return Array.from(this.transactions.values())
-      .filter((t) => t.transaction.status === 'active')
-      .map((t) => t.transaction);
+    return [...this.transactions.values()].map((a) => ({ ...a.transaction }));
   }
 
-  async cleanupStaleTransactions(maxAgeMs: number = 3600000): Promise<number> {
-    const now = Date.now();
-    let cleaned = 0;
-
-    for (const [id, active] of this.transactions) {
-      const age = now - active.transaction.startedAt.getTime();
-      if (age > maxAgeMs) {
-        this.log(`Cleaning up stale transaction ${id} (age: ${age}ms)`);
-        try {
-          await this.rollbackTransaction(id);
-          cleaned++;
-        } catch {
-          // Already cleaned up or failed
-          this.transactions.delete(id);
-          cleaned++;
-        }
-      }
+  async cleanupStaleTransactions(maxAgeMs = 3600000): Promise<number> {
+    const stale = [...this.transactions.values()].filter(
+      (a) => !a.busy && Date.now() - a.transaction.startedAt.getTime() > maxAgeMs
+    );
+    for (const a of stale) {
+      this.transactions.delete(a.transaction.id);
+      await this.discard(a);
     }
-
-    return cleaned;
+    return stale.length;
   }
 }

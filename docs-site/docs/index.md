@@ -43,6 +43,6 @@ Write tools, transaction support, and schema changes are available when enabled 
 
 ## Explore the tools
 
-There are 22 tools, covering connection discovery, queries, schemas, exports, execution plans, transactions, and local analysis notes.
+The tool reference covers connection discovery, queries, schemas, exports, execution plans, transactions, and local analysis notes.
 
 The [tool reference](guides/available-tools.md) contains the input schemas exported from the server. [Queries and workflows](guides/usage-examples.md) shows how they fit together.

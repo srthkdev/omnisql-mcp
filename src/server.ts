@@ -1,5 +1,5 @@
 import { PrivateNotes } from './runtime/notes.js';
-import { ResultArtifacts } from './runtime/artifacts.js';
+import { ResultArtifacts, ArtifactSource } from './runtime/artifacts.js';
 import { AccessPolicy } from './policy/access.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -19,7 +19,7 @@ import { validateStatement } from './policy/sql.js';
 import { checkForUpdate } from './update-check.js';
 import { WorkspaceConfigParser } from './config-parser.js';
 import { WorkspaceClient } from './workspace-client.js';
-import { BusinessInsight, DatabaseConnection, SchemaDiff } from './types.js';
+import { BusinessInsight, DatabaseConnection, SchemaDiff, QueryResult } from './types.js';
 import {
   validateQuery,
   enforceReadOnly,
@@ -169,7 +169,12 @@ export class OmniSQLMCPServer {
       this.poolManager
     );
 
-    this.transactionManager = new TransactionManager(this.poolManager, this.debug);
+    this.transactionManager = new TransactionManager(
+      this.poolManager,
+      this.debug,
+      (id) => this.getConnection(id),
+      integerSetting(process.env.OMNISQL_TIMEOUT, 'OMNISQL_TIMEOUT', 30000)
+    );
 
     this.loadInsights();
     this.setupResourceHandlers();
@@ -1030,7 +1035,7 @@ export class OmniSQLMCPServer {
             const source = this.artifacts.source(args.resultId as string);
             const connection = await this.getConnection(source.connectionId, source.database);
             if (!connection) throw new Error('Result connection is no longer accessible');
-            this.accessPolicy.assertQuery(connection, source.query, true);
+            this.accessPolicy.assertQuery(connection, source.query, false);
             const result =
               name === 'read_result'
                 ? await this.artifacts.page(
@@ -1327,42 +1332,30 @@ export class OmniSQLMCPServer {
       readOnly: true,
     });
 
-    if (Buffer.byteLength(JSON.stringify(result)) > 65536) {
-      const stored = await this.artifacts.save(result, {
-        connectionId: args.connectionId,
-        database: args.database,
-        query,
-      });
-      const preview = await this.artifacts.page(stored.resultId, 0, 25);
-      const response = {
-        query,
-        connection: connection.name,
-        executionTime: result.executionTime,
-        ...preview,
-      };
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(response) }],
-        structuredContent: response,
-      };
-    }
-    const response = {
-      query,
-      connection: connection.name,
-      executionTime: result.executionTime,
-      rowCount: result.rowCount,
-      columns: result.columns,
-      rows: result.rows,
-      truncated: result.truncated === true,
-      ...(result.limitReason ? { limitReason: result.limitReason } : {}),
-    };
+    return this.presentResult(
+      result,
+      { connectionId, database: args.database, query },
+      { query, connection: connection.name }
+    );
+  }
 
+  private async presentResult(
+    result: QueryResult,
+    source: ArtifactSource,
+    metadata: Record<string, unknown> = {}
+  ) {
+    let response: Record<string, unknown>;
+    if (Buffer.byteLength(JSON.stringify(result)) > 65536) {
+      const stored = await this.artifacts.save(result, source);
+      response = {
+        ...metadata,
+        executionTime: result.executionTime,
+        ...(await this.artifacts.page(stored.resultId, 0, 25)),
+      };
+    } else response = { ...metadata, ...result, truncated: result.truncated === true };
     return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(response, null, 2),
-        },
-      ],
+      content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+      structuredContent: response,
     };
   }
 
@@ -1862,19 +1855,17 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, validationError);
     }
 
+    const transaction = this.transactionManager.getTransaction(args.transactionId);
+    if (!transaction) throw new Error('Transaction not found or expired');
     const result = await this.transactionManager.executeInTransaction(
       args.transactionId,
       args.query
     );
-
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
-    };
+    return this.presentResult(
+      result,
+      { connectionId: transaction.connectionId, query: args.query },
+      { transactionId: args.transactionId }
+    );
   }
 
   // Query analysis handlers
@@ -2000,7 +1991,7 @@ export class OmniSQLMCPServer {
 
     // Initialize pool if needed
     await this.poolManager.getPool(connection);
-    const stats = await this.poolManager.getStats(connection.id);
+    const stats = await this.poolManager.getStats(connection);
 
     if (!stats) {
       return {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,17 +12,37 @@ const c: DatabaseConnection = {
   database: 'app',
   url: '',
 };
+const directories: string[] = [];
+afterEach(() => {
+  for (const dir of directories.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 function policy(rule: object, connections?: object): AccessPolicy {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnisql-policy-test-'));
   const file = path.join(dir, 'policy.json');
-  try {
-    fs.writeFileSync(file, JSON.stringify({ version: 1, defaults: rule, connections }));
-    return new AccessPolicy(file);
-  } finally {
-    fs.rmSync(dir, { recursive: true });
-  }
+  directories.push(dir);
+  fs.writeFileSync(file, JSON.stringify({ version: 1, defaults: rule, connections }));
+  return new AccessPolicy(file);
 }
 describe('access policies', () => {
+  it('reloads changed policies and fails closed for malformed or removed files', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnisql-policy-reload-'));
+    directories.push(dir);
+    const file = path.join(dir, 'policy.json');
+    fs.writeFileSync(file, JSON.stringify({ version: 1 }));
+    const p = new AccessPolicy(file);
+    const revision = p.revision();
+    expect(p.allowsTable(c, 'public.orders')).toBe(true);
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, defaults: { denyTables: ['public.orders'] } })
+    );
+    expect(p.allowsTable(c, 'public.orders')).toBe(false);
+    expect(p.revision()).not.toBe(revision);
+    fs.writeFileSync(file, '{broken');
+    expect(() => p.allowsTable(c, 'public.orders')).toThrow();
+    fs.unlinkSync(file);
+    expect(() => p.allowsTable(c, 'public.orders')).toThrow();
+  });
   it('checks every source in joins, subqueries, CTEs, and unions', () => {
     const p = policy({ allowTables: ['public.orders', 'public.customers'] });
     expect(() =>

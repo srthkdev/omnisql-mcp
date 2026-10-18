@@ -254,6 +254,17 @@
           "description": "Export format (csv or json)",
           "default": "csv"
         },
+        "compression": {
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "brotli",
+            "zstd"
+          ],
+          "default": "none",
+          "description": "Optional download compression. Compressed exports return a read_export handle; concatenate decoded base64 chunks, then decompress."
+        },
         "includeHeaders": {
           "type": "boolean",
           "description": "Include column headers in export",

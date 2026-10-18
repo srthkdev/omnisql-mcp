@@ -76,8 +76,8 @@ export class ResultArtifacts {
       format: 'jsonl',
     });
   }
-  async export(text: string, format: 'csv' | 'json', source: ArtifactSource) {
-    return this.write(Buffer.from(text), {
+  async export(text: string | Buffer, format: string, source: ArtifactSource) {
+    return this.write(typeof text === 'string' ? Buffer.from(text) : text, {
       ...source,
       offsets: [],
       columns: [],

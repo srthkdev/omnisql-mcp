@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
+import { resolve } from 'node:path';
 const require = createRequire(import.meta.url);
 const queries = [
   'SELECT 1',
@@ -17,7 +18,9 @@ if (kind === 'javascript') {
   const p = new Parser();
   parse = (q) => p.astify(q, { database: 'Postgresql' });
 } else {
-  const m = require('../src/native/omnisql_sql_policy.js');
+  const m = require(
+    process.argv[3] ? resolve(process.argv[3]) : '../src/native/omnisql_sql_policy.js'
+  );
   parse = (q) => JSON.parse(m.analyze_sql(q, 'postgres'));
 }
 for (const q of queries) parse(q);

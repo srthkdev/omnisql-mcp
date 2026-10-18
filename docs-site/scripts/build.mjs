@@ -152,7 +152,7 @@ function home() {
     'Your connections, already configured',
     'An MCP server that reuses your saved database connections. PostgreSQL, MySQL, SQLite, SQL Server, and Oracle.',
     `<main id="main">
-  <section class="hero section-wrap"><div class="hero-copy"><p class="eyebrow"><span class="accent-square"></span> LOCAL CONNECTIONS / MCP SERVER</p><h1>Your databases.<br>Already <em>connected.</em></h1><p class="hero-description">The connections you saved in DBeaver, available in Claude Code, Codex, and OpenCode. Same credentials. Same tunnels. One small server.</p><div class="hero-actions"><a class="button primary" href="${base}docs/getting-started/installation/">Connect your assistant <span>↗</span></a><a class="text-link" href="#workspace">See how it works ↓</a></div><div class="install-line"><span aria-hidden="true">$</span><code>npx -y omnisql-mcp@latest install</code><button data-copy="npx -y omnisql-mcp@latest install" aria-label="Copy setup command">copy</button></div><p class="hero-note">Open source · runs on your machine · Bun or Node.js 22+</p></div>
+  <section class="hero section-wrap"><div class="hero-copy"><p class="eyebrow"><span class="accent-square"></span> LOCAL CONNECTIONS / MCP SERVER</p><h1>Your databases.<br>Already <em>connected.</em></h1><p class="hero-description">The connections you saved in DBeaver, available in Claude Code, Codex, and OpenCode. Same credentials. Same tunnels. One small server.</p><div class="hero-actions"><a class="button primary" href="${base}docs/getting-started/installation/">Connect your assistant <span>↗</span></a><a class="text-link" href="#workspace">See how it works ↓</a></div><div class="install-line"><span aria-hidden="true">$</span><code>npx -y omnisql-mcp@latest install</code><button data-copy="npx -y omnisql-mcp@latest install" aria-label="Copy setup command">copy</button></div><p class="hero-note">Open source · runs on your machine · Bun or Node.js 22.15+</p></div>
   <div class="workspace-panel" id="workspace"><div class="panel-heading"><span>WORKSPACE / EXAMPLE</span><span class="small-status">read-only</span></div><div class="panel-layout"><div class="connection-list"><span class="micro-label">CONNECTIONS</span><button class="connection active" data-example="revenue" aria-pressed="true"><span class="connection-icon">S</span><span>sales<small>SQLite · local</small></span><span class="connection-count">02</span></button><button class="connection" data-example="events" aria-pressed="false"><span class="connection-icon">P</span><span>app_logs<small>PostgreSQL · local</small></span><span class="connection-count">01</span></button><div class="connection-note">Saved once.<br>Reused by your assistant.</div></div><div class="query-area"><div class="query-tab"><span id="query-label">sales / paid revenue</span><span>.sql</span></div><pre id="sample-query"><span class="sql-keyword">SELECT</span> c.name, <span class="sql-function">SUM</span>(o.total) <span class="sql-keyword">AS</span> revenue
 <span class="sql-keyword">FROM</span> customers c
 <span class="sql-keyword">JOIN</span> orders o <span class="sql-keyword">ON</span> c.id = o.customer_id
@@ -162,7 +162,7 @@ function home() {
   <div class="engine-strip section-wrap"><span class="micro-label">NATIVE DRIVERS</span><span>PostgreSQL</span><span>MySQL / MariaDB</span><span>SQLite</span><span>SQL Server</span><span>Oracle</span><a href="${base}docs/guides/databases/">Compatibility ↗</a></div>
   <section class="section-wrap explanation"><div><p class="eyebrow">01 / LESS SETUP</p><h2>You already did<br>the configuration.</h2><p>OmniSQL reads the connection settings in your local workspace. It opens a direct database connection using the saved host, credentials, and network settings.</p><p>There is no hosted proxy to set up. Your MCP client starts the server when it needs it.</p><a class="text-link" href="${base}docs/guides/databases/">Read the connection guide ↗</a></div><div class="connection-diagram"><div class="diagram-node"><span class="micro-label">SAVED WORKSPACE</span><strong>DBeaver</strong><small>hosts · credentials · TLS · SSH</small></div><div class="diagram-line"><span>read settings</span><i>↓</i></div><div class="diagram-node diagram-omni">${mark}<strong>omnisql</strong><small>native database drivers</small></div><div class="diagram-line"><span>MCP over stdio</span><i>↓</i></div><div class="diagram-clients"><span>Claude Code</span><span>Codex</span><span>OpenCode</span></div></div></section>
   <section class="section-wrap capabilities"><div class="section-heading"><div><p class="eyebrow">02 / THE WORK</p><h2>From “what’s in here?”<br>to a useful answer.</h2></div><a class="text-link" href="${base}docs/guides/available-tools/">All ${tools.length} tools ↗</a></div><div class="capability-rows"><a href="${base}docs/guides/usage-examples/#inspect-before-querying"><span class="row-number">01</span><div><h3>Find your way around</h3><p>List connections, browse tables, and inspect columns before writing a query.</p></div><code>list_tables</code><span>↗</span></a><a href="${base}docs/guides/usage-examples/#query-another-database"><span class="row-number">02</span><div><h3>One server. Another database.</h3><p>Discover accessible databases and choose a target without adding another saved connection.</p></div><code>list_databases</code><span>↗</span></a><a href="${base}docs/guides/usage-examples/#export-a-result"><span class="row-number">03</span><div><h3>Take the result with you</h3><p>Export CSV or JSON, inspect a query plan, or compare two schemas.</p></div><code>export_data</code><span>↗</span></a><a href="${base}docs/guides/access/"><span class="row-number">04</span><div><h3>Decide what is accessible</h3><p>Use read-only mode, allow specific connections, and turn off individual tools.</p></div><code>OMNISQL_READ_ONLY</code><span>↗</span></a></div></section>
-  <section class="session-section section-wrap" id="session"><div class="section-heading"><div><p class="eyebrow">03 / IN USE</p><h2>The actual conversation.</h2></div><p>A real Codex CLI session, querying the isolated sample databases through OmniSQL. No simulated assistant responses.</p></div>${video ? `<video controls preload="metadata" poster="${base}media/codex-session-poster.png" aria-label="Real Codex CLI session using OmniSQL MCP"><source src="${base}media/codex-session.mp4" type="video/mp4"><a href="${base}media/codex-session.mp4">Download the recording</a></video>` : '<p class="recording-pending">Session recording is being prepared.</p>'}<p class="figure-note">Synthetic customers and orders. Read-only access. <a href="${base}media/codex-session.cast" download>Download the terminal capture ↗</a></p></section>
+  <section class="session-section section-wrap" id="session"><div class="section-heading"><div><p class="eyebrow">03 / IN USE</p><h2>The actual conversation.</h2></div><p>A real Codex CLI session, querying the isolated sample databases through OmniSQL. No simulated assistant responses.</p></div>${video ? `<video controls preload="none" poster="${base}media/mcp-instance-calls.webp" aria-label="Real Codex CLI session using OmniSQL MCP"><source src="${base}media/codex-session.mp4" type="video/mp4"><a href="${base}media/codex-session.mp4">Download the recording</a></video>` : '<p class="recording-pending">Session recording is being prepared.</p>'}<p class="figure-note">Synthetic customers and orders. Read-only access. <a href="${base}media/codex-session.gif" download>Download the GIF preview ↗</a></p></section>
   <section class="section-wrap start-section"><div><p class="eyebrow">GET CONNECTED</p><h2>Keep your workspace.<br>Add your assistant.</h2></div><div class="setup-box"><div class="client-tabs" role="tablist" aria-label="Setup client"><button role="tab" id="client-guided" aria-controls="setup-details" aria-selected="true" tabindex="0" data-client="guided">Guided</button><button role="tab" id="client-claude" aria-controls="setup-details" aria-selected="false" tabindex="-1" data-client="claude">Claude Code</button><button role="tab" id="client-codex" aria-controls="setup-details" aria-selected="false" tabindex="-1" data-client="codex">Codex</button><button role="tab" id="client-opencode" aria-controls="setup-details" aria-selected="false" tabindex="-1" data-client="opencode">OpenCode</button></div><div id="setup-details" role="tabpanel" aria-labelledby="client-guided"><div class="setup-command"><span>$</span><code id="install-command">npx -y omnisql-mcp@latest install</code><button id="copy-install" aria-label="Copy selected install command">copy</button></div><p id="install-caption">Choose a client, a workspace, and the access you want to allow.</p><a class="text-link" href="${base}docs/getting-started/installation/">Full setup instructions ↗</a></div></div></section></main>`
   );
 }
@@ -171,7 +171,11 @@ function write(path, contents) {
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, contents);
 }
-export function build() {
+export async function build() {
+  const bundle = await Bun.build({ entrypoints: [join(root, 'styles/site.css'), join(root, 'client/site.js')], target: 'browser', minify: true, write: false });
+  if (!bundle.success) throw new AggregateError(bundle.logs, 'Website asset build failed');
+  const files = new Map(await Promise.all(bundle.outputs.map(async (file) => [file.path.split('/').at(-1), await file.text()])));
+
   rmSync(output, { recursive: true, force: true });
   mkdirSync(output, { recursive: true });
   write('index.html', home());
@@ -209,17 +213,17 @@ export function build() {
       text: tool.description + ' ' + Object.keys(tool.inputSchema.properties ?? {}).join(' '),
     });
   write('search.json', JSON.stringify(searchIndex));
-  write('site.css', readFileSync(join(root, 'styles/site.css')));
-  write('site.js', readFileSync(join(root, 'client/site.js')));
+  write('site.css', files.get('site.css'));
+  write('site.js', files.get('site.js'));
   write('install.sh', readFileSync(join(root, '../scripts/install.sh')));
   for (const name of [
     'logo.svg',
     'wordmark.svg',
     'codex-session.mp4',
     'codex-session.gif',
-    'codex-session-poster.png',
+    'mcp-instance-calls.webp',
+    'mcp-multiple-instances.webp',
     'social-card.png',
-    'codex-session.cast',
   ]) {
     const asset = join(root, '../assets', name);
     if (existsSync(asset)) {
@@ -244,4 +248,4 @@ export function build() {
     `Built custom OmniSQL site: ${pages.length + 1} pages, ${tools.length} tool references.`
   );
 }
-if (process.argv[1] === fileURLToPath(import.meta.url)) build();
+if (process.argv[1] === fileURLToPath(import.meta.url)) await build();

@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync, watch } from 'node:fs';
 import { join, extname, resolve } from 'node:path';
 import { build, output, base, root } from './build.mjs';
-build();
+await build();
 const mime = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css',
@@ -10,6 +10,9 @@ const mime = {
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.jxl': 'image/jxl',
   '.gif': 'image/gif',
   '.mp4': 'video/mp4',
   '.sh': 'text/plain',
@@ -52,9 +55,9 @@ let pending;
 for (const directory of ['docs', 'styles', 'client', 'data', 'scripts'])
   watch(join(root, directory), { recursive: true }, () => {
     clearTimeout(pending);
-    pending = setTimeout(() => {
+    pending = setTimeout(async () => {
       try {
-        build();
+        await build();
       } catch (error) {
         console.error(error.message);
       }

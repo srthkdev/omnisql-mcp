@@ -1,6 +1,6 @@
 # Install & connect
 
-You need Bun 1.4.3 or newer, or Node.js 22 or newer with npm, an MCP client, and either an instance configuration file or a DBeaver-compatible workspace with saved, working connections. The standalone installer uses Bun; npm/npx setups use Node.
+You need Bun 1.4.3 or newer, or Node.js 22.15 or newer with npm, an MCP client, and either an instance configuration file or a DBeaver-compatible workspace with saved, working connections. The standalone installer uses Bun; npm/npx setups use Node.
 
 ## Guided setup
 

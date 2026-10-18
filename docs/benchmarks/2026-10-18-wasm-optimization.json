@@ -1,0 +1,349 @@
+{
+  "optimizer": "wasm-opt 117 -Oz --enable-bulk-memory",
+  "samples": {
+    "before": [
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 10.705417000000004,
+        "perQueryMsP50": 0.012152833333336352,
+        "perQueryMsP95": 0.019763999999999744,
+        "peakRssBytes": 87212032
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 8.763499999999999,
+        "perQueryMsP50": 0.012000000000000455,
+        "perQueryMsP95": 0.01917349999999966,
+        "peakRssBytes": 82542592
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 8.666708,
+        "perQueryMsP50": 0.011833333333332993,
+        "perQueryMsP95": 0.019131999999999632,
+        "peakRssBytes": 84459520
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 8.915583000000002,
+        "perQueryMsP50": 0.011930666666666903,
+        "perQueryMsP95": 0.01909716666666661,
+        "peakRssBytes": 85180416
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 9.178749999999999,
+        "perQueryMsP50": 0.012069500000000252,
+        "perQueryMsP95": 0.016930499999999665,
+        "peakRssBytes": 87228416
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 8.840459000000001,
+        "perQueryMsP50": 0.01183333333333536,
+        "perQueryMsP95": 0.01951383333333349,
+        "peakRssBytes": 84328448
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 8.804624999999998,
+        "perQueryMsP50": 0.011833333333332993,
+        "perQueryMsP95": 0.019590333333333376,
+        "peakRssBytes": 83099648
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 8.836666000000001,
+        "perQueryMsP50": 0.01231250000000017,
+        "perQueryMsP95": 0.019145833333332973,
+        "peakRssBytes": 85393408
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 10.220666,
+        "perQueryMsP50": 0.012111166666665932,
+        "perQueryMsP95": 0.019284833333333157,
+        "peakRssBytes": 86392832
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 8.891292,
+        "perQueryMsP50": 0.011916666666666723,
+        "perQueryMsP95": 0.019423666666666506,
+        "peakRssBytes": 82149376
+      }
+    ],
+    "after": [
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 14.683583999999998,
+        "perQueryMsP50": 0.011055500000000032,
+        "perQueryMsP95": 0.02200699999999974,
+        "peakRssBytes": 198049792
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 14.586334,
+        "perQueryMsP50": 0.01093050000000062,
+        "perQueryMsP95": 0.022097166666667317,
+        "peakRssBytes": 188416000
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 15.051959,
+        "perQueryMsP50": 0.010902833333332751,
+        "perQueryMsP95": 0.028888833333333253,
+        "peakRssBytes": 185155584
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 14.647416999999999,
+        "perQueryMsP50": 0.011194499999999627,
+        "perQueryMsP95": 0.047256999999999515,
+        "peakRssBytes": 180879360
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 15.059667000000001,
+        "perQueryMsP50": 0.01082633333333168,
+        "perQueryMsP95": 0.04875699999999957,
+        "peakRssBytes": 179765248
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 15.014584,
+        "perQueryMsP50": 0.011013833333334352,
+        "perQueryMsP95": 0.021180666666667253,
+        "peakRssBytes": 201261056
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 14.951832999999999,
+        "perQueryMsP50": 0.010784666666665998,
+        "perQueryMsP95": 0.022298666666666616,
+        "peakRssBytes": 183304192
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 15.267834,
+        "perQueryMsP50": 0.01112499999999983,
+        "perQueryMsP95": 0.04848616666666672,
+        "peakRssBytes": 196771840
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 15.120207999999998,
+        "perQueryMsP50": 0.010889000000001184,
+        "perQueryMsP95": 0.022812499999999385,
+        "peakRssBytes": 189202432
+      },
+      {
+        "kind": "rust",
+        "node": "v24.7.0",
+        "queries": [
+          "SELECT 1",
+          "SELECT id,name FROM public.customers WHERE id=42",
+          "SELECT c.name,SUM(o.total) AS revenue FROM public.customers c JOIN public.orders o ON c.id=o.customer_id WHERE o.status='paid' GROUP BY c.name ORDER BY revenue DESC LIMIT 50",
+          "WITH report AS (SELECT customer_id,SUM(total) AS total FROM public.orders GROUP BY customer_id) SELECT * FROM report WHERE total>100",
+          "SELECT * FROM public.orders WHERE customer_id IN (SELECT id FROM public.customers WHERE active=true)",
+          "SELECT id FROM public.orders UNION ALL SELECT id FROM public.archived_orders"
+        ],
+        "iterations": 6000,
+        "moduleLoadAndFirstSixMs": 15.045457999999998,
+        "perQueryMsP50": 0.011014000000000598,
+        "perQueryMsP95": 0.04869449999999986,
+        "peakRssBytes": 180469760
+      }
+    ]
+  }
+}

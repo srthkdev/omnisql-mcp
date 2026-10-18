@@ -1,0 +1,16 @@
+[
+  {
+    "name": "mcp-multiple-instances",
+    "capturePngBytes": 84220,
+    "webpBytes": 20070,
+    "pixelSha256": "4843716300f3e74fd59d33829b3c3c2d9e06ad3d5e82cba0b8175964e7c33745",
+    "pixelIdentical": true
+  },
+  {
+    "name": "mcp-instance-calls",
+    "capturePngBytes": 127770,
+    "webpBytes": 25560,
+    "pixelSha256": "bcebc73daa4e1d25301a633e12387b1d23abd8848b43f86cfedbc6a1255f021f",
+    "pixelIdentical": true
+  }
+]

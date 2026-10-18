@@ -1,3 +1,4 @@
+import { gunzipSync, brotliDecompressSync, zstdDecompressSync } from 'node:zlib';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -82,6 +83,48 @@ try {
     offset = chunk.nextOffset;
   } while (offset !== null);
   assert.equal(Buffer.concat(data).toString(), '1,' + 'x'.repeat(100000) + '\n2,second\n');
+  const decoders = { gzip: gunzipSync, brotli: brotliDecompressSync, zstd: zstdDecompressSync };
+  const compressedHandles = [];
+  for (const [compression, decompress] of Object.entries(decoders)) {
+    const archive = await call('export_data', {
+      connectionId: 'fixture',
+      query: 'SELECT * FROM messages',
+      format: 'csv',
+      includeHeaders: false,
+      compression,
+    });
+    assert.equal(archive.compression, compression);
+    assert.equal(
+      archive.uncompressedBytes,
+      Buffer.byteLength('1,' + 'x'.repeat(100000) + '\n2,second\n')
+    );
+    assert(archive.bytes < archive.uncompressedBytes);
+    const buffers = [];
+    let next = 0;
+    do {
+      const part = await call('read_export', {
+        resultId: archive.resultId,
+        offset: next,
+        length: 13,
+      });
+      buffers.push(Buffer.from(part.data, 'base64'));
+      next = part.nextOffset;
+    } while (next !== null);
+    assert.equal(
+      decompress(Buffer.concat(buffers)).toString(),
+      '1,' + 'x'.repeat(100000) + '\n2,second\n'
+    );
+    compressedHandles.push(archive.resultId);
+  }
+  await assert.rejects(
+    () =>
+      call('export_data', {
+        connectionId: 'fixture',
+        query: 'SELECT * FROM messages',
+        compression: 'unknown',
+      }),
+    /compression/
+  );
   await assert.rejects(() => call('read_result', { resultId: '../../etc/passwd' }));
   await call('append_insight', { connection: 'fixture', insight: 'Synthetic test note' });
   assert.equal((await call('list_insights', {})).length, 1);
@@ -94,6 +137,8 @@ try {
     })
   );
   await assert.rejects(() => call('read_result', { resultId: result.resultId }), /policy/);
+  for (const resultId of compressedHandles)
+    await assert.rejects(() => call('read_export', { resultId }), /policy/);
   assert.equal((await call('list_insights', {})).length, 0);
   console.log('Stored MCP result pages, long cells, exports, and access revocation passed.');
 } finally {

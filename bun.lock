@@ -18,7 +18,7 @@
       "devDependencies": {
         "@eslint/js": "^9.39.2",
         "@types/mssql": "^9.1.8",
-        "@types/node": "^20.0.0",
+        "@types/node": "^22",
         "@types/oracledb": "^6.10.4",
         "@types/pg": "^8.11.6",
         "@types/pg-cursor": "^2.7.2",
@@ -122,7 +122,7 @@
 
     "@types/mssql": ["@types/mssql@9.1.8", "", { "dependencies": { "@types/node": "*", "tarn": "^3.0.1", "tedious": "*" } }, "sha512-mt9h5jWj+DYE5jxnKaWSV/GqDf9FV52XYVk6T3XZF69noEe+JJV6MKirii48l81+cjmAkSq+qeKX+k61fHkYrQ=="],
 
-    "@types/node": ["@types/node@20.19.29", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-YrT9ArrGaHForBaCNwFjoqJWmn8G1Pr7+BH/vwyLHciA9qT/wSiuOhxGCT50JA5xLvFBd6PIiGkE3afxcPE1nw=="],
+    "@types/node": ["@types/node@22.20.5", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA=="],
 
     "@types/oracledb": ["@types/oracledb@6.10.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-VztLwr8PQsStRD5MEr6FVRv9LN+JeeTrTGVUFenAmTP/8X+mfNYwz02qvMc8B41CVeDdR3enQhaWmT9iBgNJSA=="],
 

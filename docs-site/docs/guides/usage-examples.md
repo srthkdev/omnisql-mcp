@@ -143,3 +143,15 @@ Resource discovery lists connections without opening every database. Read a conn
 `explain_query` uses a pinned SQL Server session for estimated plans so SHOWPLAN cannot leak to another query. SQL Server JSON output parses its XML plan into the common response. SQL Server and Oracle actual-plan execution is unavailable through `analyze`. MySQL ANALYZE uses text format; MariaDB uses its own ANALYZE syntax. Oracle NUMBER values are returned as strings to preserve decimal and large-integer precision.
 
 SQL Server driver decimals whose scaled values exceed JavaScript's exact integer range are rejected with a CAST instruction. Use `CAST(expression AS VARCHAR(50))` for exact high-precision output. Unsafe integer values from any driver are rejected instead of silently returning rounded data. Binary values use explicit base64 objects; timestamps use ISO strings.
+
+## Compressed exports
+
+For a file download, request a codec explicitly:
+
+```json
+{"connectionId":"reports","query":"SELECT * FROM orders","format":"csv","compression":"zstd"}
+```
+
+`compression` accepts `none` (default), `gzip`, `brotli`, or `zstd`. Compressed exports return a `resultId`, `compression`, `uncompressedBytes`, and a format such as `csv.zst`. Call `read_export`, concatenate each base64-decoded chunk in order, then decompress the completed file. Use `gzip -d`, `brotli -d`, or `zstd -d`, or the matching library decoder. Node requires 22.15+; Bun requires 1.4.3+.
+
+For agent analysis, ordinary row and cell pages avoid putting a compressed file into the conversation. All stored handles remain private, expire, and recheck the current table policy on each read.

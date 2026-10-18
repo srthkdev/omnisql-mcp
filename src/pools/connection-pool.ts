@@ -1,3 +1,4 @@
+import { sqlDialect } from '../policy/analyzer.js';
 import { createHash } from 'node:crypto';
 import { readConnectionProp } from '../auth/connection-props.js';
 import { booleanSetting } from '../runtime-config.js';
@@ -60,11 +61,12 @@ export class ConnectionPoolManager {
   }
 
   async getPool(connection: DatabaseConnection): Promise<PoolEntry | null> {
-    const port = this.isPostgresCompatible(connection.driver)
-      ? 5432
-      : /mysql|mariadb/.test(connection.driver)
-        ? 3306
-        : 1433;
+    const port =
+      sqlDialect(connection.driver) === 'postgres'
+        ? 5432
+        : sqlDialect(connection.driver) === 'mysql'
+          ? 3306
+          : 1433;
     const endpoint = await this.resolveEndpoint(connection, port);
     const poolKey = createHash('sha256')
       .update(
@@ -134,19 +136,7 @@ export class ConnectionPoolManager {
    * Includes CockroachDB, TimescaleDB, Redshift, YugabyteDB, AlloyDB, Aurora Postgres, etc.
    */
   isPostgresCompatible(driver: string): boolean {
-    const d = driver.toLowerCase();
-    return (
-      d.includes('postgres') ||
-      d.includes('cockroach') ||
-      d.includes('timescale') ||
-      d.includes('redshift') ||
-      d.includes('yugabyte') ||
-      d.includes('alloydb') ||
-      (d.includes('aurora') && d.includes('postgres')) ||
-      d.includes('supabase') ||
-      d.includes('neon') ||
-      d.includes('citus')
-    );
+    return sqlDialect(driver) === 'postgres';
   }
 
   /**

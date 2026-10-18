@@ -144,6 +144,8 @@ export function oracleFetchTypeHandler(
   metadata: OracleTypes.Metadata<unknown>
 ): OracleTypes.FetchTypeResponse | undefined {
   switch (metadata.dbType) {
+    case oracleDriver().DB_TYPE_NUMBER:
+      return { type: oracleDriver().DB_TYPE_VARCHAR };
     case oracleDriver().DB_TYPE_CLOB:
     case oracleDriver().DB_TYPE_NCLOB:
       return { type: oracleDriver().DB_TYPE_LONG };

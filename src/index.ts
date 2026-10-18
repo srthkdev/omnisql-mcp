@@ -32,7 +32,6 @@ Options:
   --debug        Enable debug logging
 
 Environment Variables:
-  OMNISQL_CLI_PATH             Path to local DB client CLI executable (for unsupported-driver fallback)
   OMNISQL_CONFIG_FILE          JSON file containing database instances and their settings
   OMNISQL_POLICY_FILE          Additional operator access rules
   OMNISQL_WORKSPACE            Path to local DB client workspace directory

@@ -19,12 +19,18 @@ export class ResultCollector {
       this.limitReason = 'rows';
       return false;
     }
+    if (row.some((v) => typeof v === 'number' && Number.isInteger(v) && !Number.isSafeInteger(v)))
+      throw new Error(
+        'Driver returned an inexact integer; CAST this expression to a string in SQL'
+      );
     const normalized = row.map((v) =>
-      typeof v === 'bigint'
-        ? v.toString()
-        : Buffer.isBuffer(v)
-          ? { encoding: 'base64', data: v.toString('base64') }
-          : v
+      v instanceof Date
+        ? v.toISOString()
+        : typeof v === 'bigint'
+          ? v.toString()
+          : Buffer.isBuffer(v)
+            ? { encoding: 'base64', data: v.toString('base64') }
+            : v
     );
     const size = Buffer.byteLength(JSON.stringify(normalized));
     if (this.bytes + size > this.maxBytes) {

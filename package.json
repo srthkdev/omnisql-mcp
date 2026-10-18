@@ -82,8 +82,6 @@
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
-    "csv-parser": "^3.0.0",
-    "csv-stringify": "^6.4.6",
     "mssql": "^12.2.0",
     "mysql2": "^3.16.0",
     "oracledb": "^6.10.0",

@@ -161,7 +161,7 @@ describe('oracleFetchTypeHandler', () => {
   });
 
   it('leaves other types to the driver', () => {
-    expect(handle(oracledb.DB_TYPE_NUMBER)).toBeUndefined();
+    expect(handle(oracledb.DB_TYPE_NUMBER)).toEqual({ type: oracledb.DB_TYPE_VARCHAR });
   });
 });
 

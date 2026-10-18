@@ -127,3 +127,19 @@ Handles expire after 15 minutes, belong to the current server process, and are c
 Large CSV and JSON exports return a handle. `read_export` returns base64 chunks with byte offsets. Concatenate the decoded bytes before decoding UTF-8 or saving the file. Exports never accept an arbitrary filesystem path. CSV respects `includeHeaders: false`. JSON uses positional columns and rows when column names repeat, preserving every value.
 
 Result files use a process-private temporary directory and are removed on shutdown. On Unix, directories use mode 0700 and files 0600. Query output may contain sensitive database values; it is still sent to your MCP client when read.
+
+## Inspect indexes and table size
+
+`get_table_schema` returns columns, ordered index keys, primary/foreign/unique/check constraints, and available definitions. Indexes are included by default; `includeIndexes: false` removes them. Use `schema.table` to disambiguate objects on server databases. SQLite foreign-key names are generated because PRAGMA metadata does not expose declared constraint names.
+
+`get_table_stats` reads catalog row estimates and data/index byte counts without scanning the application table. `get_database_stats` sums visible table storage using a bounded catalog query. Missing catalog permissions produce null size values and explanatory notes. Row estimates depend on database statistics; they are not exact counts. Oracle storage covers the connected user's visible segments and may omit LOB segments. PostgreSQL partitioned parents exclude child storage; visible child relations are counted separately.
+
+Schema comparison keeps schema-qualified names, identifier case, lengths, numeric precision/scale, indexes, and constraints. Cross-database type spellings can still differ. Migration output is a commented review outline: it does not generate incomplete executable DDL or apply changes.
+
+## Browse resources on demand
+
+Resource discovery lists connections without opening every database. Read a connection resource for its public settings and `tablesUri`. Reading that URI lists allowed tables and their `schemaUri` links. Table schema templates also support direct access to a selected table. The same connection and table policies apply to resources and tools.
+
+`explain_query` uses a pinned SQL Server session for estimated plans so SHOWPLAN cannot leak to another query. SQL Server JSON output parses its XML plan into the common response. SQL Server and Oracle actual-plan execution is unavailable through `analyze`. MySQL ANALYZE uses text format; MariaDB uses its own ANALYZE syntax. Oracle NUMBER values are returned as strings to preserve decimal and large-integer precision.
+
+SQL Server driver decimals whose scaled values exceed JavaScript's exact integer range are rejected with a CAST instruction. Use `CAST(expression AS VARCHAR(50))` for exact high-precision output. Unsafe integer values from any driver are rejected instead of silently returning rounded data. Binary values use explicit base64 objects; timestamps use ISO strings.

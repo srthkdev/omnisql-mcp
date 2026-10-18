@@ -224,7 +224,7 @@ try {
       }
       for (const statement of [
         'CREATE TABLE customers(id INTEGER PRIMARY KEY, name VARCHAR(80) NOT NULL)',
-        'CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id), total DECIMAL(12,2), status VARCHAR(16))',
+        'CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total DECIMAL(12,2), status VARCHAR(16), FOREIGN KEY (customer_id) REFERENCES customers(id))',
         'CREATE INDEX orders_customer_idx ON orders(customer_id)',
         "INSERT INTO customers VALUES (1, 'Asha Rao')",
         "INSERT INTO customers VALUES (2, 'Noah Chen')",
@@ -233,6 +233,7 @@ try {
         "INSERT INTO orders VALUES (3, 2, 95, 'pending')",
       ])
         await admin.query(statement);
+      await assert.rejects(() => admin.query("INSERT INTO orders VALUES(99,999,1,'invalid')"));
       if (engine === 'oracle') await delay(1500); // Oracle read-only snapshots cannot span recent DDL timestamps.
       const workspace = join(directory, engine);
       const project = join(workspace, 'Synthetic/.dbeaver');
@@ -259,6 +260,58 @@ try {
         tableName: engine === 'oracle' ? 'CUSTOMERS' : 'customers',
       });
       assert(schema.columns.some((column) => column.name.toLowerCase() === 'name'));
+      const ordersSchema = await call(client, 'get_table_schema', {
+        connectionId: 'fixture',
+        tableName: engine === 'oracle' ? 'ORDERS' : 'orders',
+      });
+      assert(ordersSchema.indexes.some((i) => i.name.toLowerCase() === 'orders_customer_idx'));
+      assert(
+        ordersSchema.constraints.some(
+          (k) =>
+            k.type === 'FOREIGN_KEY' && k.columns.some((c) => c.toLowerCase() === 'customer_id')
+        )
+      );
+      assert(ordersSchema.columns.find((c) => c.name.toLowerCase() === 'id').isPrimaryKey);
+      const plan = await call(client, 'explain_query', {
+        connectionId: 'fixture',
+        query: 'SELECT * FROM orders WHERE id=1',
+        format: 'text',
+      });
+      assert(plan.plan.length > 0);
+      if (engine === 'mssql') assert(plan.plan.some((p) => /select|scan|seek/i.test(p.operation)));
+      if (['postgres', 'mysql', 'mariadb'].includes(engine)) {
+        const actual = await call(client, 'explain_query', {
+          connectionId: 'fixture',
+          query: 'SELECT * FROM orders WHERE id=1',
+          analyze: true,
+          format: 'text',
+        });
+        assert(actual.plan.length > 0);
+      }
+      if (['postgres', 'mysql', 'mariadb', 'mssql'].includes(engine)) {
+        const jsonPlan = await call(client, 'explain_query', {
+          connectionId: 'fixture',
+          query: 'SELECT * FROM orders WHERE id=1',
+          format: 'json',
+        });
+        assert(jsonPlan.plan.length > 0);
+      }
+      if (engine === 'oracle') {
+        const precise = await call(client, 'execute_query', {
+          connectionId: 'fixture',
+          query: 'SELECT 9007199254740993 AS precise FROM dual',
+        });
+        assert.equal(precise.rows[0][0], '9007199254740993');
+      }
+      const tableStats = await call(client, 'get_table_stats', {
+        connectionId: 'fixture',
+        tableName: engine === 'oracle' ? 'ORDERS' : 'orders',
+      });
+      assert.equal(tableStats.estimated, true);
+      if (tableStats.totalBytes !== null) assert(BigInt(tableStats.totalBytes) >= 0n);
+      const dbStats = await call(client, 'get_database_stats', { connectionId: 'fixture' });
+      assert.equal(dbStats.tableCount, 2);
+      assert.equal(dbStats.serverVersion !== 'Unavailable', true);
       const result = await call(client, 'execute_query', {
         connectionId: 'fixture',
         query:
@@ -325,6 +378,21 @@ try {
             }),
           /read.only/
         );
+      }
+      if (engine === 'mssql') {
+        await assert.rejects(
+          () =>
+            call(client, 'execute_query', {
+              connectionId: 'fixture',
+              query: 'SELECT CAST(9007199254740993 AS DECIMAL(38,0)) AS precise',
+            }),
+          /precision|inexact integer/
+        );
+        const precise = await call(client, 'execute_query', {
+          connectionId: 'fixture',
+          query: 'SELECT CAST(CAST(9007199254740993 AS DECIMAL(38,0)) AS VARCHAR(50)) AS precise',
+        });
+        assert.equal(precise.rows[0][0], '9007199254740993');
       }
       if (engine === 'mssql') {
         const [primary, other] = await Promise.all([

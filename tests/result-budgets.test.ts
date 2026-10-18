@@ -33,6 +33,10 @@ describe('bounded results', () => {
     expect(JSON.stringify(r.result())).toContain('9007199254740993');
     expect(r.rows[0][1]).toEqual({ encoding: 'base64', data: 'aGVsbG8=' });
   });
+  it('rejects unsafe driver numbers instead of returning rounded integers', () => {
+    const r = new ResultCollector(connection);
+    expect(() => r.add([Number('9007199254740993')])).toThrow(/inexact integer/);
+  });
   it('preserves SQLite duplicate columns and large integers', () => {
     expect(
       parseSQLiteRows('[{"id":1,"id":9007199254740993,"text":"a,\\n\\"b\\"","nothing":null}]')

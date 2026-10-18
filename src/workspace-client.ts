@@ -1,3 +1,5 @@
+import { tableStatistics, TableStatistics, visibleStorage } from './metadata/statistics.js';
+import { indexesAndConstraints } from './metadata/catalog.js';
 import { QueryGate } from './runtime/concurrency.js';
 import { AdapterRegistry } from './runtime/adapter.js';
 import { sqlDialect } from './policy/analyzer.js';
@@ -5,11 +7,6 @@ import { ResultCollector, SQLiteRowStream } from './runtime/results.js';
 import { AccessPolicy } from './policy/access.js';
 import { booleanSetting } from './runtime-config.js';
 import { spawn } from 'child_process';
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import csv from 'csv-parser';
 import { Pool as PgPool } from 'pg';
 import { ConnectionPoolManager } from './pools/connection-pool.js';
 import type sql from 'mssql';
@@ -18,12 +15,10 @@ import {
   DatabaseConnection,
   QueryResult,
   SchemaInfo,
-  ExportOptions,
   ConnectionTest,
   DatabaseStats,
 } from './types.js';
 import {
-  findCliExecutable,
   getTestQuery,
   parseVersionFromResult,
   buildSchemaQuery,
@@ -71,26 +66,22 @@ export class WorkspaceClient {
   getCapabilities(connection: DatabaseConnection) {
     return this.adapters.get(sqlDialect(connection.driver))?.capabilities ?? null;
   }
-  private executablePath: string;
   private timeout: number;
   private debug: boolean;
-  private workspacePath?: string;
 
   constructor(
-    executablePath?: string,
+    _executablePath?: string,
     timeout: number = 30000,
     debug: boolean = false,
-    workspacePath?: string,
+    _workspacePath?: string,
     private poolManager = new ConnectionPoolManager(
       { min: 0, max: 4, acquireTimeoutMs: timeout },
       false,
       timeout
     )
   ) {
-    this.executablePath = executablePath || findCliExecutable();
     this.timeout = timeout;
     this.debug = debug;
-    this.workspacePath = workspacePath;
   }
 
   /**
@@ -193,7 +184,10 @@ export class WorkspaceClient {
     try {
       // Simple test query based on database type
       const testQuery = this.getTestQuery(connection.driver);
-      const result = await this.executeQuery(connection, testQuery);
+      const result = await this.executeQuery(connection, testQuery, {
+        trustedMetadata: true,
+        readOnly: true,
+      });
 
       return {
         connectionId: connection.id,
@@ -216,53 +210,37 @@ export class WorkspaceClient {
     const schemaQuery = this.buildSchemaQuery(connection.driver, tableName);
     const result = await this.executeQuery(connection, schemaQuery, { trustedMetadata: true });
 
-    return this.parseSchemaResult(result, tableName);
-  }
-
-  async exportData(
-    connection: DatabaseConnection,
-    query: string,
-    options: ExportOptions
-  ): Promise<string> {
-    const tempDir = os.tmpdir();
-    const exportId = `export_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const sqlFile = path.join(tempDir, `${exportId}.sql`);
-    const outputFile = path.join(tempDir, `${exportId}_output.${options.format || 'csv'}`);
-
-    try {
-      // Write query to temporary file
-      fs.writeFileSync(sqlFile, query, 'utf-8');
-
-      // Build CLI command arguments
-      const args = [
-        '-nosplash',
-        '-reuseWorkspace',
-        ...(this.workspacePath ? ['-data', this.workspacePath] : []),
-        '-con',
-        connection.id,
-        '-f',
-        sqlFile,
-        '-o',
-        outputFile,
-        '-of',
-        options.format || 'csv',
-        '-quit',
-      ];
-
-      await this.executeCli(args);
-
-      // Optionally, you could check if the file exists and return the path
-      if (!fs.existsSync(outputFile)) {
-        throw new Error('Export failed: output file not found');
+    const schema = this.parseSchemaResult(result, tableName);
+    if (!schema.columns.length)
+      throw new Error('Table not found or column metadata is not accessible');
+    const details = await indexesAndConstraints(connection, tableName, (sql) =>
+      this.executeQuery(connection, sql, { trustedMetadata: true, readOnly: true })
+    );
+    schema.indexes = details.indexes;
+    schema.constraints = details.constraints;
+    if (result.truncated || details.partial) schema.partial = true;
+    const primary = new Set(
+      schema.constraints.filter((k) => k.type === 'PRIMARY_KEY').flatMap((k) => k.columns)
+    );
+    for (const column of schema.columns)
+      if (primary.has(column.name)) {
+        column.isPrimaryKey = true;
+        column.nullable = false;
       }
-
-      return outputFile;
-    } catch (error) {
-      throw new Error(`Export failed: ${error}`);
-    } finally {
-      // Cleanup the SQL file, but keep the output file for the user
-      this.cleanupFiles([sqlFile]);
+    if (
+      sqlDialect(connection.driver) === 'sqlite' &&
+      !schema.constraints.some((k) => k.type === 'PRIMARY_KEY')
+    ) {
+      const columns = schema.columns.filter((c) => c.isPrimaryKey).map((c) => c.name);
+      if (columns.length)
+        schema.constraints.push({
+          name: 'primary_key',
+          type: 'PRIMARY_KEY',
+          columns,
+          nameIsGenerated: true,
+        });
     }
+    return schema;
   }
 
   /**
@@ -271,19 +249,7 @@ export class WorkspaceClient {
    * all speak Postgres wire protocol and work with the pg driver.
    */
   private isPostgresCompatible(driver: string): boolean {
-    const d = driver.toLowerCase();
-    return (
-      d.includes('postgres') ||
-      d.includes('cockroach') ||
-      d.includes('timescale') ||
-      d.includes('redshift') ||
-      d.includes('yugabyte') ||
-      d.includes('alloydb') ||
-      (d.includes('aurora') && d.includes('postgres')) ||
-      d.includes('supabase') ||
-      d.includes('neon') ||
-      d.includes('citus')
-    );
+    return sqlDialect(driver) === 'postgres';
   }
 
   private async executeWithNativeTool(
@@ -296,97 +262,9 @@ export class WorkspaceClient {
 
     const adapter = this.adapters.get(sqlDialect(driver));
     if (adapter) return adapter.execute(connection, query, { maxRows, readOnly });
-    {
-      if (readOnly) throw new Error('CLI fallback cannot enforce read-only access for this driver');
-      // Unsupported driver – try the CLI as a best-effort fallback, but
-      // wrap with a clear error message listing the natively supported drivers.
-      try {
-        return await this.executeViaCli(connection, query);
-      } catch (cliError) {
-        const driverName = connection.driver;
-        const nativeDrivers =
-          'PostgreSQL (+ CockroachDB, TimescaleDB, Redshift, YugabyteDB, Supabase, Neon, Citus, AlloyDB), MySQL/MariaDB, SQL Server (MSSQL), SQLite, Oracle';
-        const cliMsg = cliError instanceof Error ? cliError.message : String(cliError);
-        // Custom drivers can carry an opaque id; surfacing it alongside the
-        // provider makes an unresolved dialect obvious rather than mysterious.
-        const identity =
-          connection.driverId && connection.driverId !== driverName
-            ? `"${driverName}" (driver id "${connection.driverId}"${
-                connection.provider ? `, provider "${connection.provider}"` : ''
-              })`
-            : `"${driverName}"`;
-        throw new Error(
-          `Database driver ${identity} is not natively supported. ` +
-            `Natively supported drivers: ${nativeDrivers}. ` +
-            `CLI fallback also failed: ${cliMsg}. ` +
-            `If this is a custom driver wrapping a supported engine, set its connection ` +
-            `"provider" (or a JDBC URL such as jdbc:postgresql://...) so the engine can be ` +
-            `detected; otherwise connect through a supported driver or ensure a compatible ` +
-            `DB client CLI is installed.`
-        );
-      }
-    }
-  }
-
-  private async executeViaCli(connection: DatabaseConnection, query: string): Promise<QueryResult> {
-    // Verify the CLI executable exists before attempting
-    if (!this.isCliAvailable()) {
-      throw new Error(
-        'DB client CLI executable not found. Install a compatible CLI or set OMNISQL_CLI_PATH environment variable.'
-      );
-    }
-
-    const tempDir = os.tmpdir();
-    const exportId = `query_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const sqlFile = path.join(tempDir, `${exportId}.sql`);
-    const outputFile = path.join(tempDir, `${exportId}_output.csv`);
-
-    try {
-      fs.writeFileSync(sqlFile, query, 'utf-8');
-
-      // Build connection spec - try name first, then ID
-      const conSpec = `name=${connection.name}`;
-
-      const args = [
-        '-nosplash',
-        '-reuseWorkspace',
-        ...(this.workspacePath ? ['-data', this.workspacePath] : []),
-        '-con',
-        conSpec,
-        '-f',
-        sqlFile,
-        '-o',
-        outputFile,
-        '-of',
-        'csv',
-        '-quit',
-      ];
-
-      await this.executeCli(args);
-
-      if (!fs.existsSync(outputFile)) {
-        // Some non-SELECT statements may not produce a resultset/export file.
-        return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
-      }
-
-      return await this.parseCSVOutput(outputFile);
-    } finally {
-      this.cleanupFiles([sqlFile, outputFile]);
-    }
-  }
-
-  private isCliAvailable(): boolean {
-    try {
-      // Check if the executable path exists (skip for bare command names that rely on PATH)
-      if (this.executablePath.includes('/') || this.executablePath.includes('\\')) {
-        return fs.existsSync(this.executablePath);
-      }
-      // For bare command names on PATH, we cannot easily verify presence here,
-      // so assume it might be available and let executeCli surface any error
-      return true;
-    } catch {
-      return false;
-    }
+    throw new Error(
+      `Database driver ${connection.driver} is not natively supported; configure a supported engine. GUI/CLI fallback is disabled because it cannot enforce access and output policies.`
+    );
   }
 
   /**
@@ -588,17 +466,48 @@ export class WorkspaceClient {
     // The promise reports request failures; streaming also emits error events.
     request.on('error', () => {});
     const collector = new ResultCollector(connection, maxRows);
-    request.on('recordset', (columns: { name: string }[]) => {
-      collector.columns = columns.map((c) => c.name);
-    });
+    let rowError: Error | undefined;
+    let numericColumns: { index: number; scale: number }[] = [];
+    request.on(
+      'recordset',
+      (
+        columns: { name: string; precision?: number; scale?: number; type?: { name?: string } }[]
+      ) => {
+        numericColumns = columns
+          .map((c, index) => ({ c, index }))
+          .filter(
+            ({ c }) => /decimal|numeric|money/i.test(c.type?.name ?? '') && (c.precision ?? 0) > 15
+          )
+          .map(({ c, index }) => ({ index, scale: c.scale ?? 0 }));
+        collector.columns = columns.map((c) => c.name);
+      }
+    );
     request.on('row', (row: unknown[]) => {
-      if (!collector.truncated && !collector.add(row)) request.cancel();
+      if (rowError || collector.truncated) return;
+      try {
+        if (
+          numericColumns.some(
+            ({ index, scale }) =>
+              typeof row[index] === 'number' &&
+              Math.abs((row[index] as number) * 10 ** scale) > Number.MAX_SAFE_INTEGER
+          )
+        )
+          throw new Error(
+            'SQL Server decimal exceeds exact driver precision; CAST it to VARCHAR in SQL'
+          );
+        if (!collector.add(row)) request.cancel();
+      } catch (error) {
+        rowError = error instanceof Error ? error : new Error(String(error));
+        request.cancel();
+      }
     });
     const timer = setTimeout(() => request.cancel(), connection.limits?.timeoutMs ?? this.timeout);
     try {
       const result = await request.query(query);
+      if (rowError) throw rowError;
       return collector.result(result.rowsAffected?.[0]);
     } catch (error) {
+      if (rowError) throw rowError;
       if (collector.truncated && (error as { code?: string }).code === 'ECANCEL')
         return collector.result();
       throw error;
@@ -766,6 +675,39 @@ export class WorkspaceClient {
     });
   }
 
+  async explainSqlServerQuery(
+    connection: DatabaseConnection,
+    query: string,
+    format: 'text' | 'json'
+  ): Promise<QueryResult> {
+    this.policy.assertQuery(connection, query, true);
+    const { default: sql } = await import('mssql');
+    const entry = await this.poolManager.getPool(connection);
+    const transaction = new sql.Transaction(entry!.pool as sql.ConnectionPool);
+    await transaction.begin();
+    const setting = format === 'json' ? 'SHOWPLAN_XML' : 'SHOWPLAN_TEXT';
+    let enabled = false;
+    try {
+      await new sql.Request(transaction).batch(`SET ${setting} ON`);
+      enabled = true;
+      const request = new sql.Request(transaction);
+      request.arrayRowMode = true;
+      const result = await request.batch(query);
+      return {
+        columns:
+          (result.recordset?.columns as unknown as { name: string }[] | undefined)?.map(
+            (c) => c.name
+          ) ?? [],
+        rows: result.recordset ?? [],
+        rowCount: result.recordset?.length ?? 0,
+        executionTime: 0,
+      };
+    } finally {
+      if (enabled) await new sql.Request(transaction).batch(`SET ${setting} OFF`).catch(() => {});
+      await transaction.rollback().catch(() => {});
+    }
+  }
+
   /**
    * Estimated execution plan for an Oracle query.
    *
@@ -796,84 +738,6 @@ export class WorkspaceClient {
       } finally {
         await conn.rollback();
       }
-    });
-  }
-
-  private async executeCli(args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const proc = spawn(this.executablePath, args, { stdio: this.debug ? 'inherit' : 'ignore' });
-
-      // Set up timeout
-      const timeoutId = setTimeout(() => {
-        proc.kill('SIGTERM');
-        reject(new Error(`CLI execution timed out after ${this.timeout}ms`));
-      }, this.timeout);
-
-      proc.on('error', (error) => {
-        clearTimeout(timeoutId);
-        reject(error);
-      });
-
-      proc.on('exit', (code) => {
-        clearTimeout(timeoutId);
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`CLI process exited with code ${code}`));
-        }
-      });
-    });
-  }
-
-  private cleanupFiles(files: string[]): void {
-    for (const file of files) {
-      try {
-        if (fs.existsSync(file)) {
-          fs.unlinkSync(file);
-        }
-      } catch {
-        // Ignore errors
-      }
-    }
-  }
-
-  private async parseCSVOutput(filePath: string): Promise<QueryResult> {
-    return new Promise((resolve, reject) => {
-      const rows: any[] = [];
-      let columns: string[] = [];
-      let rowCount = 0;
-
-      // Check if file exists first
-      if (!fs.existsSync(filePath)) {
-        reject(new Error(`Output file not found: ${filePath}`));
-        return;
-      }
-
-      try {
-        const stats = fs.statSync(filePath);
-        if (stats.size === 0) {
-          resolve({ columns: [], rows: [], rowCount: 0, executionTime: 0 });
-          return;
-        }
-      } catch {
-        // If stat fails, continue and let the stream handle errors
-      }
-
-      fs.createReadStream(filePath)
-        .pipe(csv())
-        .on('headers', (headers) => {
-          columns = headers;
-        })
-        .on('data', (data) => {
-          rows.push(Object.values(data));
-          rowCount++;
-        })
-        .on('end', () => {
-          resolve({ columns, rows, rowCount, executionTime: 0 });
-        })
-        .on('error', (error) => {
-          reject(new Error(`CSV parsing failed: ${error.message}`));
-        });
     });
   }
 
@@ -937,28 +801,40 @@ export class WorkspaceClient {
             case 'key':
               columnInfo.isPrimaryKey = value === 'PRI' || value === 'PRIMARY';
               break;
+            case 'is_identity':
+            case 'identity_column':
+              columnInfo.isAutoIncrement =
+                value === 'YES' || value === 'Y' || value === 1 || value === true;
+              break;
             case 'extra':
               columnInfo.isAutoIncrement = value && value.toLowerCase().includes('auto_increment');
               break;
             case 'data_length':
             case 'character_maximum_length':
             case 'length':
-              columnInfo.length = parseInt(value) || undefined;
+              columnInfo.length = value === null || value === undefined ? undefined : Number(value);
               break;
             case 'data_precision':
             case 'numeric_precision':
             case 'precision':
-              columnInfo.precision = parseInt(value) || undefined;
+              columnInfo.precision =
+                value === null || value === undefined ? undefined : Number(value);
               break;
             case 'data_scale':
             case 'numeric_scale':
             case 'scale':
-              columnInfo.scale = parseInt(value) || undefined;
+              columnInfo.scale = value === null || value === undefined ? undefined : Number(value);
               break;
           }
         });
 
         if (columnInfo.name) {
+          if (columnInfo.isPrimaryKey) columnInfo.nullable = false;
+          if (
+            typeof columnInfo.defaultValue === 'string' &&
+            /nextval\s*\(/i.test(columnInfo.defaultValue)
+          )
+            columnInfo.isAutoIncrement = true;
           columns.push(columnInfo);
         }
       });
@@ -972,35 +848,40 @@ export class WorkspaceClient {
     };
   }
 
+  async getTableStats(connection: DatabaseConnection, tableName: string): Promise<TableStatistics> {
+    this.policy.assertTable(connection, tableName);
+    return tableStatistics(connection, tableName, (sql) =>
+      this.executeQuery(connection, sql, { trustedMetadata: true, readOnly: true })
+    );
+  }
   async getDatabaseStats(connection: DatabaseConnection): Promise<DatabaseStats> {
-    const startTime = Date.now();
+    const start = Date.now();
+    const [tables, versionResult] = await Promise.all([
+      this.listTables(connection, undefined, false),
+      this.executeQuery(connection, this.getTestQuery(connection.driver), {
+        trustedMetadata: true,
+        readOnly: true,
+      }),
+    ]);
+    const names = new Set<string>(
+      tables.map((table) => [table.table_schema, table.name].filter(Boolean).join('.'))
+    );
+    const storage = await visibleStorage(connection, names, (sql) =>
+      this.executeQuery(connection, sql, { trustedMetadata: true, readOnly: true })
+    );
 
-    try {
-      // Get table count
-      const tables = await this.listTables(connection, undefined, true);
-      const tableCount = tables.length;
-
-      // Get server version
-      const versionQuery = this.getTestQuery(connection.driver);
-      const versionResult = await this.executeQuery(connection, versionQuery);
-      const serverVersion = this.extractVersionFromResult(versionResult) || 'Unknown';
-
-      return {
-        connectionId: connection.id,
-        tableCount,
-        totalSize: 'Unknown', // Would need specific queries per database type
-        connectionTime: Date.now() - startTime,
-        serverVersion,
-      };
-    } catch {
-      return {
-        connectionId: connection.id,
-        tableCount: 0,
-        totalSize: 'Unknown',
-        connectionTime: Date.now() - startTime,
-        serverVersion: 'Unknown',
-      };
-    }
+    return {
+      connectionId: connection.id,
+      tableCount: tables.length,
+      totalSize: storage.totalSizeBytes ? `${storage.totalSizeBytes} bytes` : 'Unavailable',
+      totalSizeBytes: storage.totalSizeBytes,
+      sizeScope: 'visible-tables',
+      sizeComplete: storage.sizeComplete,
+      estimated: true,
+      connectionTime: Date.now() - start,
+      serverVersion: this.extractVersionFromResult(versionResult) ?? 'Unavailable',
+      notes: storage.notes,
+    };
   }
 
   async listDatabases(connection: DatabaseConnection): Promise<string[]> {

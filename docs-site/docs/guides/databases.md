@@ -54,4 +54,4 @@ Tokens are refreshed for new physical connections. The AWS CLI and an active AWS
 
 ## Other engines
 
-Unsupported drivers can attempt a CLI fallback with `OMNISQL_CLI_PATH`. This requires an external client with compatible query/export arguments. Availability varies by client and version; it is not equivalent to native support for every DBeaver driver.
+Unsupported drivers return an explicit error. OmniSQL does not launch an external GUI or unbounded CLI export as a fallback.

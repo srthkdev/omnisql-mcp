@@ -135,6 +135,10 @@ IAM authentication is recognized from IAM connection settings and AWS Advanced J
 
 Tokens are refreshed for new physical connections. The AWS CLI and an active AWS login must be available to the process that starts OmniSQL. If an SSO session has expired, renew it for the named profile and retry.
 
+## Exact timestamp values
+
+PostgreSQL and MySQL/MariaDB timestamps remain exact strings. Oracle timestamps with more than three fractional digits (or unknown precision) require an explicit `TO_CHAR(value, 'YYYY-MM-DD HH24:MI:SS.FF9')`; include `TZH:TZM` for a time zone. SQL Server `DATETIME2`, `DATETIMEOFFSET`, and `TIME` above millisecond precision require text, for example `CONVERT(VARCHAR(40), value, 126)` (style `127` for a zoned instant). These results fail with an actionable error instead of silently discarding fractional digits in JavaScript dates. Millisecond-precision dates still work directly.
+
 ## Other engines
 
 Unsupported drivers return an explicit error. OmniSQL does not launch an external GUI or unbounded CLI export as a fallback.

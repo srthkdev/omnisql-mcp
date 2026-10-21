@@ -6,6 +6,59 @@ import { withDeadline } from '../src/runtime/lease.js';
 const connection = { id: 'test', name: 'synthetic', driver: 'mssql', url: '' };
 afterEach(() => vi.useRealTimers());
 describe('SQL Server streaming errors', () => {
+  it.each(['DateTime2', 'DateTimeOffset', 'Time'])(
+    'rejects lossy %s dates and preserves explicitly selected text',
+    async (type) => {
+      const request = Object.assign(new EventEmitter(), {
+        query: vi.fn(async () => {
+          request.emit('recordset', [{ name: 'ts', type: { name: type }, scale: 7 }]);
+          request.emit('row', [new Date('2026-10-22T01:02:03.123Z')]);
+          return { rowsAffected: [] };
+        }),
+        cancel: vi.fn(),
+      });
+      await expect(
+        readSqlServer(request as unknown as sql.Request, 'SELECT ts', {
+          connection,
+          timeout: 1000,
+          abort() {},
+        })
+      ).rejects.toThrow(/CAST it to VARCHAR/);
+      expect(request.cancel).toHaveBeenCalledOnce();
+      request.query.mockImplementation(async () => {
+        request.emit('recordset', [{ name: 'ts', type: { name: 'VarChar' } }]);
+        request.emit('row', ['2026-10-22T01:02:03.1234567']);
+        return { rowsAffected: [] };
+      });
+      const result = await readSqlServer(
+        request as unknown as sql.Request,
+        'SELECT CONVERT(VARCHAR(40),ts,126)',
+        {
+          connection,
+          timeout: 1000,
+          abort() {},
+        }
+      );
+      expect(result.rows).toEqual([['2026-10-22T01:02:03.1234567']]);
+    }
+  );
+  it('keeps millisecond-scale timestamps working', async () => {
+    const request = Object.assign(new EventEmitter(), {
+      query: vi.fn(async () => {
+        request.emit('recordset', [{ name: 'ts', type: { name: 'DateTime2' }, scale: 3 }]);
+        request.emit('row', [new Date('2026-10-22T01:02:03.123Z')]);
+        return { rowsAffected: [] };
+      }),
+      cancel: vi.fn(),
+    });
+    const result = await readSqlServer(request as unknown as sql.Request, 'SELECT ts', {
+      connection,
+      timeout: 1000,
+      abort() {},
+    });
+    expect(result.rows).toEqual([['2026-10-22T01:02:03.123Z']]);
+    expect(request.cancel).not.toHaveBeenCalled();
+  });
   it('rejects a server error even when the streaming driver resolves its promise', async () => {
     const request = Object.assign(new EventEmitter(), {
       query: vi.fn(async () => {

@@ -120,6 +120,7 @@ export async function readSqlServer(
   const collector = new ResultCollector(options.connection, options.maxRows);
   let rowError: Error | undefined;
   let numericColumns: { index: number; scale: number }[] = [];
+  let preciseTimeColumns: number[] = [];
   request.on(
     'recordset',
     (columns: { name: string; precision?: number; scale?: number; type?: { name?: string } }[]) => {
@@ -129,6 +130,13 @@ export async function readSqlServer(
           ({ c }) => /decimal|numeric|money/i.test(c.type?.name ?? '') && (c.precision ?? 0) > 15
         )
         .map(({ c, index }) => ({ index, scale: c.scale ?? 0 }));
+      // JavaScript Date cannot represent SQL Server's 100 ns timestamp values.
+      // Reject potentially lossy dates; callers can select exact native text.
+      preciseTimeColumns = columns.flatMap((c, index) =>
+        /^(?:datetime2|datetimeoffset|time)$/i.test(c.type?.name ?? '') && (c.scale ?? 7) > 3
+          ? [index]
+          : []
+      );
       collector.columns = columns.map((c) => c.name);
     }
   );
@@ -136,6 +144,17 @@ export async function readSqlServer(
     if (rowError || collector.truncated) return;
     const row = Array.isArray(value) ? value : Object.values(value as object);
     try {
+      if (
+        preciseTimeColumns.some((index) => row[index] instanceof Date) ||
+        row.some(
+          (value) =>
+            value instanceof Date &&
+            Number((value as Date & { nanosecondsDelta?: number }).nanosecondsDelta ?? 0) !== 0
+        )
+      )
+        throw new Error(
+          'SQL Server timestamp exceeds exact millisecond driver precision; CAST it to VARCHAR(40) in SQL (style 126 or 127 with CONVERT)'
+        );
       if (
         numericColumns.some(
           ({ index, scale }) =>

@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import type { DatabaseConnection } from './types.js';
 import { validateAccessRule } from './policy/access.js';
+import { readPrivateFile } from './runtime/private-file.js';
 
 const KEYS = [
   'name',
@@ -40,8 +40,15 @@ export function loadConfiguredConnections(
   file = process.env.OMNISQL_CONFIG_FILE
 ): DatabaseConnection[] {
   if (!file) return [];
-  if (fs.statSync(file).size > 1_000_000) throw new Error('Connection config exceeds 1 MB');
-  const config = object(JSON.parse(fs.readFileSync(file, 'utf8')), 'Connection config');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readPrivateFile(file, 1_000_000, 'Connection config'));
+  } catch (error) {
+    if (error instanceof SyntaxError)
+      throw new Error('Invalid connection config JSON; check it locally');
+    throw error;
+  }
+  const config = object(parsed, 'Connection config');
   if (
     config.version !== 1 ||
     Object.keys(config).some((k) => !['version', 'defaults', 'connections'].includes(k))

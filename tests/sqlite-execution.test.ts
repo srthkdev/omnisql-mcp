@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { WorkspaceClient } from '../src/workspace-client.js';
+import { setEnv, restoreEnv } from './support/environment.js';
 const available = spawnSync('sqlite3', ['--version']).status === 0;
 
 describe.skipIf(!available)('SQLite execution', () => {
@@ -17,6 +18,7 @@ describe.skipIf(!available)('SQLite execution', () => {
   };
   const client = new WorkspaceClient();
   beforeAll(async () => {
+    setEnv('OMNISQL_READ_ONLY', 'false');
     await client.executeQuery(
       connection,
       'CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL, score INTEGER DEFAULT 0)'
@@ -26,7 +28,10 @@ describe.skipIf(!available)('SQLite execution', () => {
       `INSERT INTO notes VALUES (1, 'Comma, newline\nand "quotes"', NULL)`
     );
   });
-  afterAll(() => rmSync(directory, { recursive: true, force: true }));
+  afterAll(() => {
+    restoreEnv();
+    rmSync(directory, { recursive: true, force: true });
+  });
   it('preserves commas, newlines, quotes, and nulls', async () => {
     const result = await client.executeQuery(connection, 'SELECT * FROM notes');
     expect(result.rows).toEqual([[1, 'Comma, newline\nand "quotes"', null]]);

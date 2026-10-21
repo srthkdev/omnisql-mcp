@@ -42,6 +42,7 @@ export interface ArtifactScope {
   policyRevision: string;
 }
 export interface ArtifactSource {
+  stateRevision?: string;
   scopes: ArtifactScope[];
 }
 export class ResultArtifacts {
@@ -182,7 +183,10 @@ export class ResultArtifacts {
   }
   source(id: string): ArtifactSource {
     const e = this.get(id);
-    return { scopes: e.scopes.map((scope) => ({ ...scope, access: { ...scope.access } })) };
+    return {
+      ...(e.stateRevision === undefined ? {} : { stateRevision: e.stateRevision }),
+      scopes: e.scopes.map((scope) => ({ ...scope, access: { ...scope.access } })),
+    };
   }
 
   private get(id: string) {

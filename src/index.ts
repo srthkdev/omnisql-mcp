@@ -1,3 +1,4 @@
+import { registerPrivateValue, sanitizeDiagnostic } from './privacy.js';
 import fs from 'node:fs';
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   .version as string;
@@ -32,7 +33,7 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
 OmniSQL MCP Server v${VERSION}
 
 Usage: omnisql-mcp [options]
-       omnisql-mcp install [claude|codex|opencode] [--read-only] [--dry-run]
+       omnisql-mcp install [claude|codex|opencode] [--config <file> | --workspace <directory>] [--allow <ids>] [--allow-writes] [--dry-run]
 
 Quick setup:
   npx -y omnisql-mcp@latest install
@@ -48,19 +49,20 @@ Options:
 Environment Variables:
   OMNISQL_CONFIG_FILE          JSON file containing database instances and their settings
   OMNISQL_POLICY_FILE          Additional operator access rules
+  OMNISQL_DISCOVER_WORKSPACE   Discover saved workspace connections (default: false with a config file; true otherwise)
   OMNISQL_WORKSPACE            Path to local DB client workspace directory
   OMNISQL_PROJECT              Read only this workspace project (default: all projects)
   OMNISQL_TIMEOUT              Query timeout in milliseconds (default: 30000)
   OMNISQL_DEBUG                Enable debug logging (true/false)
   OMNISQL_UPDATE_NOTIFIER      Check npm for updates (default: true; set false to disable)
-  OMNISQL_READ_ONLY            Disable all write operations (true/false)
+  OMNISQL_READ_ONLY            Disable all write operations (default: true; false requires connection write permission)
   OMNISQL_ALLOWED_CONNECTIONS  Comma-separated whitelist of connection IDs or names
   OMNISQL_DISABLED_TOOLS       Comma-separated list of tools to disable
   OMNISQL_SSH_KNOWN_HOSTS      known_hosts used to verify SSH tunnel hosts (default: ~/.ssh/known_hosts)
-  OMNISQL_SSH_STRICT_HOST_KEY  Refuse SSH tunnel hosts with no known_hosts entry (true/false)
+  OMNISQL_SSH_STRICT_HOST_KEY  Refuse SSH tunnel hosts with no known_hosts entry (default: true)
 
 Features:
-  - Universal database support via your local DB client's saved connections
+  - Direct database instances with independent permissions; optional saved-workspace import
   - SSH tunnels and URL-mode connections honoured as the DB client configures them
   - Read and write operations with safety checks
   - Schema introspection and table management
@@ -78,10 +80,20 @@ if (process.argv.includes('--version')) {
   process.exit(0);
 }
 
+// Register operator paths before constructing policy/configuration objects: startup
+// failures can happen before any connection has been discovered.
+for (const name of [
+  'OMNISQL_CONFIG_FILE',
+  'OMNISQL_POLICY_FILE',
+  'OMNISQL_WORKSPACE',
+  'OMNISQL_SSH_KNOWN_HOSTS',
+])
+  registerPrivateValue(process.env[name]);
+
 try {
   const { startServer } = await import('./server.js');
   await startServer();
 } catch (error) {
-  console.error('Server startup failed:', error instanceof Error ? error.message : String(error));
+  console.error('Server startup failed:', sanitizeDiagnostic(error));
   process.exitCode = 1;
 }

@@ -119,7 +119,7 @@ The existing `connectionId: "my-pg-server/app_logs"` shorthand also works. Confl
 
 Enabled `ssh_tunnel` handlers open a local forward to the target configured in the workspace. Password, SSH agent, and public-key authentication are supported.
 
-Known SSH hosts must match their recorded host key. Enable `OMNISQL_SSH_STRICT_HOST_KEY=true` to also reject hosts with no `known_hosts` entry. A failed tunnel does not fall back to a direct database connection.
+SSH tunnels require a matching `known_hosts` entry by default. Verify and record an unknown host fingerprint before connecting. `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly allows unknown hosts for legacy setups; mismatched and revoked keys remain blocked. A failed tunnel does not fall back to a direct database connection.
 
 Oracle TNS aliases and full descriptors cannot be redirected through the SSH tunnel path and are rejected when combined with it. Use a basic Oracle host/service or host/SID connection for that case.
 
@@ -134,6 +134,10 @@ PostgreSQL and MySQL TLS resolution reads nested and top-level driver properties
 IAM authentication is recognized from IAM connection settings and AWS Advanced JDBC Wrapper properties. OmniSQL uses the AWS CLI to mint tokens, including configured SSO and role profiles.
 
 Tokens are refreshed for new physical connections. The AWS CLI and an active AWS login must be available to the process that starts OmniSQL. If an SSO session has expired, renew it for the named profile and retry.
+
+## Exact timestamp values
+
+PostgreSQL and MySQL/MariaDB timestamps remain exact strings. Oracle timestamps with more than three fractional digits (or unknown precision) require an explicit `TO_CHAR(value, 'YYYY-MM-DD HH24:MI:SS.FF9')`; include `TZH:TZM` for a time zone. SQL Server `DATETIME2`, `DATETIMEOFFSET`, and `TIME` above millisecond precision require text, for example `CONVERT(VARCHAR(40), value, 126)` (style `127` for a zoned instant). These results fail with an actionable error instead of silently discarding fractional digits in JavaScript dates. Millisecond-precision dates still work directly.
 
 ## Other engines
 

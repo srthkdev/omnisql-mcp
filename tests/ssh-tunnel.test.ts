@@ -1,7 +1,10 @@
 import { describe, it, expect, afterEach, vi } from 'bun:test';
 import crypto from 'crypto';
 import net from 'net';
-import { Server as SshServer } from 'ssh2';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Server as SshServer, utils as sshUtils } from 'ssh2';
 import {
   SshTunnelManager,
   buildConnectOptions,
@@ -257,8 +260,10 @@ describe('SshTunnelManager end to end', () => {
   }
 
   /** An SSH server that accepts anything and honours direct-tcpip forwards. */
-  async function startSshServer(): Promise<number> {
-    const server = new SshServer({ hostKeys: [hostKey()] }, (client) => {
+  async function startSshServer(recordKey = true): Promise<number> {
+    const key = hostKey();
+    const server = new SshServer({ hostKeys: [key] }, (client) => {
+      client.on('error', () => {});
       client.on('authentication', (ctx) => ctx.accept());
       client.on('ready', () => {
         client.on('request', (accept) => accept?.());
@@ -273,8 +278,59 @@ describe('SshTunnelManager end to end', () => {
     });
     cleanups.push(() => server.close());
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    return (server.address() as net.AddressInfo).port;
+    const port = (server.address() as net.AddressInfo).port;
+    const parsed = sshUtils.parseKey(key);
+    if (parsed instanceof Error) throw parsed;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnisql-ssh-test-'));
+    const file = path.join(dir, 'known_hosts');
+    fs.writeFileSync(
+      file,
+      recordKey
+        ? `[127.0.0.1]:${port} ${parsed.type} ${parsed.getPublicSSH().toString('base64')}\n`
+        : ''
+    );
+    const saved = process.env.OMNISQL_SSH_KNOWN_HOSTS;
+    process.env.OMNISQL_SSH_KNOWN_HOSTS = file;
+    cleanups.push(() => {
+      if (saved === undefined) delete process.env.OMNISQL_SSH_KNOWN_HOSTS;
+      else process.env.OMNISQL_SSH_KNOWN_HOSTS = saved;
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+    return port;
   }
+
+  it('refuses unknown host keys by default before authenticating', async () => {
+    const sshPort = await startSshServer(false);
+    const saved = process.env.OMNISQL_SSH_STRICT_HOST_KEY;
+    delete process.env.OMNISQL_SSH_STRICT_HOST_KEY;
+    const manager = new SshTunnelManager();
+    cleanups.push(() => void manager.closeAll());
+    try {
+      await expect(
+        manager.resolveEndpoint(
+          {
+            id: 'unknown-host',
+            name: 'Unknown',
+            driver: 'postgres',
+            url: '',
+            host: 'localhost',
+            sshTunnel: {
+              enabled: true,
+              host: '127.0.0.1',
+              port: sshPort,
+              user: 'test',
+              authType: 'PASSWORD',
+              password: 'test',
+            },
+          },
+          5432
+        )
+      ).rejects.toThrow(/strict verification is enabled/);
+      expect(manager.hasTunnel('unknown-host')).toBe(false);
+    } finally {
+      if (saved !== undefined) process.env.OMNISQL_SSH_STRICT_HOST_KEY = saved;
+    }
+  });
 
   it('should forward traffic to the target seen from the SSH server', async () => {
     const dbPort = await startEchoServer();

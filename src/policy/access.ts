@@ -1,5 +1,7 @@
+import { tableNameParts } from '../metadata/identifiers.js';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import { readPrivateFile } from '../runtime/private-file.js';
 import type { DatabaseConnection } from '../types.js';
 import {
   analyzeSql,
@@ -77,12 +79,13 @@ export class AccessPolicy {
   }
   private reload(): void {
     if (!this.file) return;
-    const stat = fs.statSync(this.file, { bigint: true });
+    const stat = fs.lstatSync(this.file, { bigint: true });
+    if (!stat.isFile()) throw new Error('Policy file must be a regular file');
     if (stat.size > 1_000_000n) throw new Error('Policy file exceeds 1 MB');
     const stamp = `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
     if (stamp === this.stamp) return;
     const file = this.file;
-    const p: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const p: unknown = JSON.parse(readPrivateFile(file, 1_000_000, 'Policy file'));
     if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('Invalid access policy');
     const o = p as Record<string, unknown>;
     if (
@@ -105,12 +108,12 @@ export class AccessPolicy {
   }
   private databaseRules(c: DatabaseConnection): string[] {
     this.reload();
-    const prefix = c.id.split('/')[0] + '/';
+    const prefix = (c.baseId ?? c.id.split('/')[0]) + '/';
     return Object.keys(this.policy.connections ?? {}).filter((key) => key.startsWith(prefix));
   }
   private rules(c: DatabaseConnection, database = c.database): AccessRule[] {
     this.reload();
-    const base = c.id.split('/')[0];
+    const base = c.baseId ?? c.id.split('/')[0];
     const keys = new Set([base, ...(database === undefined ? [] : [base + '/' + database])]);
     return [
       ...(c.accessRules ?? []),
@@ -156,7 +159,7 @@ export class AccessPolicy {
     if (
       ['mysql', 'mssql'].includes(sqlDialect(c.driver)) &&
       this.databaseRules(c).length &&
-      !this.databaseRules(c).includes(c.id.split('/')[0] + '/' + database)
+      !this.databaseRules(c).includes((c.baseId ?? c.id.split('/')[0]) + '/' + database)
     )
       return false;
     return rules.every((r) => !r.databases || includes(r.databases, database));
@@ -223,7 +226,7 @@ export class AccessPolicy {
   assertTableScope(c: DatabaseConnection, table: string): void {
     const error = this.scopeError(
       c,
-      table.split('.').map((value) => ({ value, quoted: true })),
+      tableNameParts(table).map((value) => ({ value, quoted: true })),
       'table'
     );
     if (error) throw new Error(error);
@@ -260,8 +263,8 @@ export class AccessPolicy {
   ): SqlAnalysis | undefined {
     this.assertConnection(c);
     const error =
-      validateStatement(query) ||
-      (readOnly || this.isReadOnly(c) ? validateReadStatement(query) : null);
+      validateStatement(query, undefined, sqlDialect(c.driver)) ||
+      (readOnly || this.isReadOnly(c) ? validateReadStatement(query, sqlDialect(c.driver)) : null);
     if (error) throw new Error(error);
     const rules = this.rules(c);
     const restricted = this.isDatabaseScoped(c);

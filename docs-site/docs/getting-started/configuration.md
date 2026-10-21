@@ -101,10 +101,11 @@ Use absolute paths in client configuration. The path is the workspace directory,
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `OMNISQL_CONFIG_FILE` | JSON file containing explicit database instances and per-instance settings | Unset |
+| `OMNISQL_DISCOVER_WORKSPACE` | Include saved workspace connections alongside explicit configuration | `false` with a config file; otherwise `true` |
 | `OMNISQL_POLICY_FILE` | Additional operator access policy applied across configuration sources | Unset |
 | `OMNISQL_WORKSPACE` | Directory containing the DB client workspace | OS default |
 | `OMNISQL_PROJECT` | Read only this workspace project | All projects |
-| `OMNISQL_READ_ONLY` | Disable write and transaction tools | `false` |
+| `OMNISQL_READ_ONLY` | Disable write and transaction tools | `true` |
 | `OMNISQL_ALLOWED_CONNECTIONS` | Comma-separated connection IDs or names | All connections |
 | `OMNISQL_DISABLED_TOOLS` | Comma-separated tool names to disable | None |
 | `OMNISQL_TIMEOUT` | Query timeout in milliseconds, where supported by the driver | `30000` |
@@ -117,9 +118,11 @@ Use absolute paths in client configuration. The path is the workspace directory,
 | `OMNISQL_AWS_CLI_PATH` | AWS CLI executable used for IAM authentication | `aws` |
 | `OMNISQL_IAM_TOKEN_TIMEOUT` | IAM token generation timeout, milliseconds | `20000` |
 | `OMNISQL_SSH_KNOWN_HOSTS` | SSH host-key file | `~/.ssh/known_hosts` |
-| `OMNISQL_SSH_STRICT_HOST_KEY` | Reject unrecorded SSH hosts | `false` |
+| `OMNISQL_SSH_STRICT_HOST_KEY` | Reject unrecorded SSH hosts | `true` |
 
-A configured SSH host key must match even when strict mode is off. Strict mode also rejects hosts that have no entry.
+SSH tunnels require a matching `known_hosts` entry by default. Verify the host fingerprint through a trusted source and record it with SSH before connecting. `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly restores legacy acceptance of unknown hosts; mismatched and revoked keys remain blocked. Invalid boolean values fail closed.
+
+Read-only mode is enabled even when `OMNISQL_READ_ONLY` is unset. To allow writes, explicitly set it to `false` and set `readOnly: false` on each writable configured connection. Connection and access-policy read-only restrictions still take precedence.
 
 ## Read-only access and allowlists
 

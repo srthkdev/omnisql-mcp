@@ -8,30 +8,25 @@ You need Bun 1.4.3 or newer, or Node.js 22.15 or newer with npm, an MCP client, 
 npx -y omnisql-mcp@latest install
 ```
 
-The installer asks you to:
+The installer asks you to choose a client and a connection source: direct database setup, an existing configuration file, or an optional DBeaver workspace. Direct setup accepts multiple instances, read-only settings and table rules. Credentials stay in a private configuration file or referenced environment variables; they are not placed in the client registration command. No OmniSQL token is needed.
 
-1. Select Claude Code, Codex, or OpenCode. Installed clients are marked as detected.
-2. Choose read-only or read/write access. Read-only is the default in this flow.
-3. Confirm your workspace directory.
-4. Optionally restrict access to specific connection IDs or names.
-
-It then calls the selected client's own MCP registration command. Database and SSH credentials come from your saved workspace. OmniSQL does not need a separate token.
-
-Start a new session in your client and ask it to list your database connections.
+It calls the selected client's own registration command and refuses to overwrite an existing OmniSQL entry. Start a new client session, then ask it to list your database connections.
 
 ## Set up one client directly
 
-These commands register OmniSQL with read-only access and the default workspace:
+Provide an existing configuration file, or select specific saved workspace connections:
 
 ```bash
-npx -y omnisql-mcp@latest install claude --read-only
-npx -y omnisql-mcp@latest install codex --read-only
-npx -y omnisql-mcp@latest install opencode --read-only
+npx -y omnisql-mcp@latest install claude --config /absolute/path/connections.json
+npx -y omnisql-mcp@latest install codex --config /absolute/path/connections.json
+npx -y omnisql-mcp@latest install opencode --config /absolute/path/connections.json
+# Optional DBeaver discovery, restricted to the selected IDs:
+npx -y omnisql-mcp@latest install codex --workspace /absolute/path/workspace6 --allow reports,analytics
 ```
 
-The OpenCode installer uses the v2 CLI. Older OpenCode versions can use a manual local MCP configuration.
+Read-only is the default. `--allow-writes` explicitly enables write tools; direct configuration entries must also set `readOnly: false`. An operator policy or database role can still deny writes. Append `--dry-run` to inspect the command. Running `install <client>` in an interactive terminal opens guided setup for that client.
 
-Append `--dry-run` to inspect the registration command without changing your client settings. Direct setup does not open the workspace-selection prompts. Omitting `--read-only` in direct setup uses the server's normal read/write configuration.
+The OpenCode installer uses the v2 CLI; older versions can use manual MCP configuration.
 
 ## Native registration commands
 
@@ -40,14 +35,14 @@ If you prefer your client's own CLI:
 ```bash
 # Claude Code — user scope, across projects
 claude mcp add --transport stdio --scope user omnisql \
-  --env OMNISQL_READ_ONLY=true -- npx -y omnisql-mcp@latest
+  --env OMNISQL_CONFIG_FILE=/absolute/path/connections.json --env OMNISQL_READ_ONLY=true -- npx -y omnisql-mcp@latest
 
 # Codex
-codex mcp add omnisql --env OMNISQL_READ_ONLY=true \
+codex mcp add omnisql --env OMNISQL_CONFIG_FILE=/absolute/path/connections.json --env OMNISQL_READ_ONLY=true \
   -- npx -y omnisql-mcp@latest
 
 # OpenCode v2
-opencode mcp add omnisql --global --env OMNISQL_READ_ONLY=true \
+opencode mcp add omnisql --global --env OMNISQL_CONFIG_FILE=/absolute/path/connections.json --env OMNISQL_READ_ONLY=true \
   -- npx -y omnisql-mcp@latest
 ```
 
@@ -64,6 +59,7 @@ Add this entry to Claude Desktop's `claude_desktop_config.json`, or Cursor's `mc
       "command": "npx",
       "args": ["-y", "omnisql-mcp@latest"],
       "env": {
+        "OMNISQL_CONFIG_FILE": "/absolute/path/connections.json",
         "OMNISQL_READ_ONLY": "true"
       }
     }
@@ -86,14 +82,14 @@ This installs under `~/.local/share/omnisql-mcp` and creates a launcher at `~/.l
 Use the printed absolute launcher path as your MCP client's command. Rerun the installer to update, or specify a version:
 
 ```bash
-curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash -s -- 2.2.0
+curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash -s -- 3.0.0
 ```
 
 `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` let you choose other directories.
 
 ## Check the connection
 
-Ask your assistant to call `list_connections`, then `test_connection` on a connection you intend to expose. If the connection is missing, check the [workspace settings](configuration.md). If authentication fails, test it in DBeaver first and follow the [troubleshooting guide](../troubleshooting.md).
+Ask your assistant to call `list_connections`, then `test_connection` on a connection you intend to expose. If the connection is missing, check the [workspace settings](configuration.md). If authentication fails, check the configured credentials and database grants, then follow the [troubleshooting guide](../troubleshooting.md).
 
 ## Run with Bun
 

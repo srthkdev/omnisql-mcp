@@ -97,7 +97,7 @@ Disabled tools are removed from the advertised tool list and blocked if called d
 
 ## Enable writes deliberately
 
-The guided installer defaults to read-only. Direct client setup without `--read-only`, or an unset `OMNISQL_READ_ONLY`, uses the normal read/write configuration.
+All setup paths and an unset `OMNISQL_READ_ONLY` default to read-only access. Writes require `OMNISQL_READ_ONLY=false`; explicitly configured connections also require `readOnly: false`. An operator policy that requires read-only access cannot be overridden by either setting.
 
 Write and schema tools apply basic query validation. `drop_table` requires an explicit `confirm: true` argument. That argument is part of the tool call; it is not a separate interactive confirmation dialog.
 

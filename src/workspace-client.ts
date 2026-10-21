@@ -1,3 +1,5 @@
+import { tableNameParts } from './metadata/identifiers.js';
+import { registerConnectionPrivacy, sanitizeDiagnostic } from './privacy.js';
 import { clickhouseAdapter } from './runtime/clickhouse.js';
 import { duckdbAdapter } from './runtime/duckdb.js';
 import {
@@ -112,6 +114,7 @@ export class WorkspaceClient {
     query: string,
     options: { maxRows?: number; readOnly?: boolean; trustedMetadata?: boolean } = {}
   ): Promise<QueryResult> {
+    registerConnectionPrivacy(connection);
     const startTime = Date.now();
     const release = await this.gate.acquire(connection.limits?.timeoutMs ?? this.timeout);
 
@@ -120,7 +123,7 @@ export class WorkspaceClient {
       const readOnly =
         options.readOnly === true ||
         this.policy.isReadOnly(connection) ||
-        booleanSetting(process.env.OMNISQL_READ_ONLY, 'OMNISQL_READ_ONLY');
+        booleanSetting(process.env.OMNISQL_READ_ONLY, 'OMNISQL_READ_ONLY', true);
       if (!options.trustedMetadata) await this.checkQueryAccess(connection, query, readOnly);
       else this.policy.assertConnection(connection);
       const target = options.trustedMetadata
@@ -138,29 +141,16 @@ export class WorkspaceClient {
       result.executionTime = Date.now() - startTime;
       return result;
     } catch (error) {
-      const messageRaw = error instanceof Error ? error.message : String(error);
       const code =
-        error && typeof error === 'object' && 'code' in error
-          ? String((error as any).code)
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        /^[A-Z0-9_]{2,64}$/.test(String(error.code))
+          ? String(error.code)
           : undefined;
-      const fallback = code ? `Error (${code})` : String(error);
-      const message = messageRaw && messageRaw.trim().length > 0 ? messageRaw : fallback;
-      if (this.debug) {
-        console.error('Query execution error details:', {
-          connectionId: connection.id,
-          driver: connection.driver,
-          error:
-            error instanceof Error
-              ? {
-                  message: error.message,
-                  name: error.name,
-                  code: (error as any).code,
-                  stack: error.stack,
-                }
-              : String(error),
-        });
-      }
-      throw new Error(`Query execution failed: ${message}`);
+      const message = sanitizeDiagnostic(error);
+      if (this.debug) console.error('Query execution failed:', message, code ?? '');
+      throw new Error(`Query execution failed: ${message}${code ? ` (${code})` : ''}`);
     } finally {
       release();
     }
@@ -207,7 +197,7 @@ export class WorkspaceClient {
       await assertIdentityAccess(
         this.policy,
         connection,
-        name.split('.').map((value) => ({ value, quoted: true })),
+        tableNameParts(name).map((value) => ({ value, quoted: true })),
         'table',
         (sql) => this.metadataAccessQuery(connection, sql)
       );
@@ -508,10 +498,7 @@ export class WorkspaceClient {
       try {
         await conn.close();
       } catch (closeError) {
-        console.error(
-          'Failed to release Oracle session:',
-          closeError instanceof Error ? closeError.message : String(closeError)
-        );
+        console.error('Failed to release Oracle session:', sanitizeDiagnostic(closeError));
       }
     }
   }

@@ -4,8 +4,7 @@
  * ssh2 accepts whatever key a server presents unless it is given a verifier,
  * and this tunnel carries database credentials - so a server we cannot
  * recognise is worth noticing. The rule matches what a user already expects
- * from `ssh`: a host we have an entry for must match it, and a host we have
- * never seen is accepted unless strict mode says otherwise.
+ * from `ssh`: a host we have an entry for must match it, and unknown hosts are refused by default. Legacy acceptance requires an explicit opt-out.
  */
 
 import crypto from 'crypto';

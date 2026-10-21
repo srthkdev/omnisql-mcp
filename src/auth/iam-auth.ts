@@ -1,3 +1,4 @@
+import { registerConnectionPrivacy, registerPrivateValue } from '../privacy.js';
 /**
  * AWS RDS IAM database authentication.
  *
@@ -240,12 +241,14 @@ export async function resolveIamUsername(
   connection: DatabaseConnection,
   options: IamAuthOptions = {}
 ): Promise<string> {
+  registerConnectionPrivacy(connection);
   const configured = connection.user || readProp(connection, 'user', 'username');
   if (configured) {
     return configured;
   }
 
   const profile = readProp(connection, 'awsProfile', 'profile') || process.env.AWS_PROFILE;
+  registerPrivateValue(profile);
   const cacheKey = profile ?? '<default>';
   const cached = usernameCache.get(cacheKey);
   if (cached) {
@@ -278,7 +281,9 @@ export async function resolveIamUsername(
     // fall through to the error below
   }
 
+  registerPrivateValue(arn);
   const derived = arn ? dbUserFromCallerArn(arn, profile) : undefined;
+  registerPrivateValue(derived);
   if (!derived) {
     throw new Error(
       `Connection "${connection.name}" uses AWS IAM authentication but records no database ` +
@@ -288,7 +293,7 @@ export async function resolveIamUsername(
   }
 
   if (options.debug) {
-    console.error(`Derived IAM database username "${derived}" from ${arn}`);
+    console.error('Resolved IAM database identity');
   }
 
   usernameCache.set(cacheKey, derived);
@@ -337,6 +342,8 @@ export async function getIamAuthToken(
   target: IamTarget,
   options: IamAuthOptions = {}
 ): Promise<string> {
+  for (const value of [target.host, target.user, target.profile, target.region])
+    registerPrivateValue(value);
   const cacheKey = [
     target.profile ?? '',
     target.region ?? '',
@@ -386,13 +393,11 @@ export async function getIamAuthToken(
     );
   }
 
+  registerPrivateValue(token);
   tokenCache.set(cacheKey, { token, expiresAt: Date.now() + TOKEN_TTL_MS });
 
   if (options.debug) {
-    console.error(
-      `Minted RDS IAM token for ${target.user}@${target.host}:${target.port} ` +
-        `(${token.length} chars, profile=${target.profile ?? 'default'}, region=${target.region ?? 'default'})`
-    );
+    console.error('Refreshed RDS IAM database authentication');
   }
 
   return token;

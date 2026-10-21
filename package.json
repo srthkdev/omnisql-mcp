@@ -1,7 +1,7 @@
 {
   "name": "omnisql-mcp",
-  "version": "2.2.0",
-  "description": "Universal database MCP server with native PostgreSQL, MySQL, SQLite, SQL Server and Oracle support, reusing saved DB client connections",
+  "version": "3.0.0",
+  "description": "Database MCP server with direct multi-instance setup, read-only policies, bounded results, and optional DBeaver connection import",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -50,6 +50,7 @@
     "test:rust": "cargo test --locked --manifest-path native/sql-policy/Cargo.toml",
     "test:results": "bun run build && bun scripts/check-results.mjs",
     "test:catalogs": "bun run build && bun scripts/check-catalogs.mjs",
+    "test:privacy": "bun run build && bun scripts/check-privacy.mjs",
     "docs:tools": "bun run build && bun scripts/export-tools.mjs",
     "test:tls": "bun run build && bun scripts/check-tls.mjs",
     "test:duckdb": "bun run build && bun scripts/check-duckdb.mjs",

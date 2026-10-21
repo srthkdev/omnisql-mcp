@@ -41,6 +41,39 @@ describe('resolveOracleConnectOptions', () => {
     expect(options).toEqual({ connectString: 'ora.example.com:1521/ORCLPDB' });
   });
 
+  it('uses explicit TCPS with server certificate matching for direct connections', () => {
+    const connection = oracleConnection({ properties: { protocol: 'tcps' } });
+    expect(resolveOracleConnectOptions(connection, 'ora.example.com', 2484).connectString).toBe(
+      '(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=ora.example.com)(PORT=2484))(CONNECT_DATA=(SERVICE_NAME=ORCLPDB))(SECURITY=(SSL_SERVER_DN_MATCH=YES)))'
+    );
+  });
+
+  it('fails closed for invalid TCPS descriptors, protocols and unsupported tunnel combinations', () => {
+    expect(() =>
+      resolveOracleConnectOptions(oracleConnection({ properties: { protocol: 'udp' } }), 'h', 1)
+    ).toThrow(/protocol/);
+    expect(() =>
+      resolveOracleConnectOptions(
+        oracleConnection({
+          properties: { protocol: 'tcps' },
+          database: 'x)(SECURITY=(SSL_SERVER_DN_MATCH=NO))',
+        }),
+        'h',
+        1
+      )
+    ).toThrow(/Invalid Oracle/);
+    expect(() =>
+      resolveOracleConnectOptions(
+        oracleConnection({
+          properties: { protocol: 'tcps' },
+          sshTunnel: { enabled: true, host: 'bastion', port: 22 },
+        }),
+        'h',
+        1
+      )
+    ).toThrow(/without an SSH/);
+  });
+
   it('dials the given endpoint rather than the recorded host', () => {
     // Through an SSH tunnel the endpoint is a local forward.
     const options = resolveOracleConnectOptions(oracleConnection(), '127.0.0.1', 40123);
@@ -142,7 +175,7 @@ describe('formatOracleLocalDate', () => {
 
 describe('oracleFetchTypeHandler', () => {
   const handle = (dbType: unknown) =>
-    oracleFetchTypeHandler({ dbType } as unknown as oracledb.Metadata<unknown>);
+    oracleFetchTypeHandler({ dbType, precision: 3 } as unknown as oracledb.Metadata<unknown>);
 
   it('keeps LOB locators lazy until the result budget is checked', () => {
     expect(handle(oracledb.DB_TYPE_CLOB)?.type).toBe(oracledb.DB_TYPE_CLOB);
@@ -159,6 +192,19 @@ describe('oracleFetchTypeHandler', () => {
   it('renders zoned timestamps as UTC instants', () => {
     const converter = handle(oracledb.DB_TYPE_TIMESTAMP_TZ)?.converter;
     expect(converter?.(new Date(Date.UTC(2026, 9, 5, 18, 0, 0)))).toBe('2026-10-05T18:00:00.000Z');
+  });
+
+  it('rejects sub-millisecond and unknown timestamp precision before conversion', () => {
+    for (const dbType of [
+      oracledb.DB_TYPE_TIMESTAMP,
+      oracledb.DB_TYPE_TIMESTAMP_TZ,
+      oracledb.DB_TYPE_TIMESTAMP_LTZ,
+    ]) {
+      for (const precision of [undefined, 6, 9])
+        expect(() =>
+          oracleFetchTypeHandler({ dbType, precision } as oracledb.Metadata<unknown>)
+        ).toThrow(/TO_CHAR/);
+    }
   });
 
   it('leaves other types to the driver', () => {
@@ -215,7 +261,7 @@ describe('Oracle execution', () => {
 
   it('caps the fetch, normalizes SQL, and closes the session after an error', async () => {
     const { WorkspaceClient } = await import('../src/workspace-client.js');
-    const execute = vi.fn().mockRejectedValue(new Error('ORA-00942'));
+    const execute = vi.fn().mockResolvedValueOnce({}).mockRejectedValue(new Error('ORA-00942'));
     const close = vi.fn().mockResolvedValue(undefined);
     const closePool = vi.fn().mockResolvedValue(undefined);
     vi.spyOn(oracledb, 'createPool').mockResolvedValue({

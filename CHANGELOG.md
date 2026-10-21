@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-22
+
+### Breaking changes and migration
+- Read-only mode is now the default. To enable write tools, set `OMNISQL_READ_ONLY=false`; explicitly configured writable instances also need `readOnly: false`. Database permissions still provide the final authorization boundary.
+- Unknown SSH host keys are rejected by default. Verify the server fingerprint and add its key to your private `known_hosts` before connecting. `OMNISQL_SSH_STRICT_HOST_KEY=false` is an explicit legacy opt-out.
+- An explicit `OMNISQL_CONFIG_FILE` no longer imports unrelated DBeaver workspace connections. Set `OMNISQL_DISCOVER_WORKSPACE=true` only when you deliberately want both sources.
+- Node support requires `^22.15.0 || >=24.0.0`; Bun 1.4.3+ supports builds, development and standalone installs.
+- Connection metadata exposes logical IDs and safe labels instead of endpoint/user/file configuration. Unsafe discovered IDs receive opaque aliases; use the IDs returned by `list_connections`.
+- Oracle and SQL Server timestamps above millisecond precision fail explicitly when the JavaScript driver cannot preserve them. Select exact text with Oracle `TO_CHAR` or SQL Server `CONVERT`/`CAST` as described in the database guide.
+
+### Installer and security fixes
+- Guided direct setup supports multiple instances and per-instance policies without DBeaver. Existing-config and optional DBeaver setup register Claude Code, Codex or OpenCode, retain credentials in private configuration/environment references, and refuse to overwrite existing client registration.
+- Keep endpoints, usernames, credential properties and local connection paths out of public metadata, native errors and debug logs; authorized query values are returned unchanged.
+- Bind private notes and cached results to effective connection/config/workspace/access identity. Bound private file reads through checked regular-file descriptors and reject symlinks and special files.
+- Accept valid quoted catalog names, including hyphens, spaces, apostrophes and quoted dots (#79). Quote qualified DROP targets per dialect, and scan PostgreSQL array/subscript expressions without weakening SQL Server identifier handling.
+- Add verified direct Oracle TCPS configuration and fail closed for unsupported TCPS/TNS/SSH combinations.
+
 ### Added
 - ClickHouse HTTP/HTTPS queries, native read-only modes, verified TLS/client certificates, zstd/gzip transport, bounded results, catalogs, skipping indexes, physical keys, and estimated plans.
 - DuckDB local-file queries, metadata, plans, exact nested numeric values, coordinated file access, and locked external-access controls. The installed DuckDB CLI 1.5.6+ keeps its native binary outside the npm package.

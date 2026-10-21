@@ -1,3 +1,4 @@
+import { registerConnectionPrivacy, sanitizeDiagnostic } from '../privacy.js';
 import type { Pool as OraclePool } from 'oracledb';
 import { resolveOracleConnectOptions } from '../oracle.js';
 import net from 'node:net';
@@ -60,11 +61,12 @@ export class ConnectionPoolManager {
 
   private log(message: string): void {
     if (this.debug) {
-      console.error(`[ConnectionPool] ${message}`);
+      console.error(`[ConnectionPool] ${sanitizeDiagnostic(message)}`);
     }
   }
 
   private async poolKey(connection: DatabaseConnection): Promise<string> {
+    registerConnectionPrivacy(connection);
     const port =
       sqlDialect(connection.driver) === 'postgres'
         ? 5432

@@ -1,3 +1,4 @@
+import { registerConnectionPrivacy, sanitizeDiagnostic } from '../privacy.js';
 /**
  * SSH tunnels for connections that DBeaver reaches through one.
  *
@@ -10,6 +11,7 @@
  */
 
 import fs from 'fs';
+import { booleanSetting } from '../runtime-config.js';
 import net from 'net';
 import os from 'os';
 import path from 'path';
@@ -150,7 +152,7 @@ export class SshTunnelManager {
 
   private log(message: string): void {
     if (this.debug) {
-      console.error(`[SshTunnel] ${message}`);
+      console.error(`[SshTunnel] ${sanitizeDiagnostic(message)}`);
     }
   }
 
@@ -163,6 +165,7 @@ export class SshTunnelManager {
     connection: DatabaseConnection,
     defaultPort: number
   ): Promise<TunnelEndpoint | null> {
+    registerConnectionPrivacy(connection);
     const config = connection.sshTunnel;
     if (!config || !config.enabled) {
       return null;
@@ -218,7 +221,11 @@ export class SshTunnelManager {
     // Keep an error listener after authentication: late transport failures are normal.
     client.on('error', (error) => this.log(`SSH transport failed: ${error.message}`));
     const knownHosts = loadKnownHosts();
-    const strict = String(process.env.OMNISQL_SSH_STRICT_HOST_KEY ?? '').toLowerCase() === 'true';
+    const strict = booleanSetting(
+      process.env.OMNISQL_SSH_STRICT_HOST_KEY,
+      'OMNISQL_SSH_STRICT_HOST_KEY',
+      true
+    );
     let hostKeyError: Error | undefined;
 
     try {
@@ -268,8 +275,8 @@ export class SshTunnelManager {
             if (strict) {
               hostKeyError = new Error(
                 `SSH host ${config.host}:${config.port} is not in ${knownHostsPath()} and ` +
-                  `OMNISQL_SSH_STRICT_HOST_KEY is set. Its key is ${keyFingerprint(key)}; connect ` +
-                  `once with ssh to record it, then retry.`
+                  `strict verification is enabled. Its key is ${keyFingerprint(key)}; connect ` +
+                  `once with ssh, verify the fingerprint through a trusted source, and record it, then retry.`
               );
               callback(false);
               return;
@@ -277,7 +284,7 @@ export class SshTunnelManager {
 
             this.log(
               `SSH host ${config.host}:${config.port} is not in known_hosts; accepting ` +
-                `${keyFingerprint(key)}. Set OMNISQL_SSH_STRICT_HOST_KEY=true to require an entry.`
+                `${keyFingerprint(key)}. Legacy verification was explicitly enabled with OMNISQL_SSH_STRICT_HOST_KEY=false.`
             );
             callback(true);
           },

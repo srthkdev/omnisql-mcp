@@ -2,11 +2,31 @@ import assert from 'node:assert/strict';
 
 /** Exact values through the production MCP transport and native drivers. */
 export async function checkValues({ engine, client, call, admin }) {
-  if (engine === 'mssql') return;
   const query = (text) => call(client, 'execute_query', { connectionId: 'fixture', query: text });
   const json =
     '{"id":9007199254740993,"decimal":123456789012345.6789,"nested":[9007199254740995],"small":1}';
-  if (engine === 'postgres') {
+  if (engine === 'mssql') {
+    for (const type of ['DATETIME2(7)', 'TIME(7)', 'DATETIMEOFFSET(7)'])
+      await assert.rejects(
+        () =>
+          query(
+            `SELECT CAST('${type.startsWith('TIME(') ? '01:02:03.1234567' : type.startsWith('DATETIMEOFFSET') ? '2026-10-22T01:02:03.1234567+00:00' : '2026-10-22T01:02:03.1234567'}' AS ${type}) AS stamp`
+          ),
+        /timestamp exceeds exact millisecond driver precision[\s\S]*CAST/
+      );
+    assert.equal(
+      (
+        await query(
+          "SELECT CONVERT(VARCHAR(40),CAST('2026-10-22T01:02:03.1234567' AS DATETIME2(7)),126) AS stamp"
+        )
+      ).rows[0][0],
+      '2026-10-22T01:02:03.1234567'
+    );
+    assert.equal(
+      (await query("SELECT CAST('2026-10-22T01:02:03.123' AS DATETIME2(3)) AS stamp")).rows[0][0],
+      '2026-10-22T01:02:03.123Z'
+    );
+  } else if (engine === 'postgres') {
     const result = await query(
       `SELECT '${json}'::json AS a, '${json}'::jsonb AS b, (SELECT array_agg('${json}'::jsonb)) AS c`
     );
@@ -46,6 +66,21 @@ export async function checkValues({ engine, client, call, admin }) {
       '2026-10-18 12:34:56.123456'
     );
   } else if (engine === 'oracle') {
+    await assert.rejects(
+      () =>
+        query(
+          "SELECT CAST(TIMESTAMP '2026-10-22 01:02:03.123456789' AS TIMESTAMP(9)) AS stamp FROM dual"
+        ),
+      /TO_CHAR/
+    );
+    assert.equal(
+      (
+        await query(
+          "SELECT TO_CHAR(TIMESTAMP '2026-10-22 01:02:03.123456789','YYYY-MM-DD HH24:MI:SS.FF9') AS stamp FROM dual"
+        )
+      ).rows[0][0],
+      '2026-10-22 01:02:03.123456789'
+    );
     const result = await query(`SELECT JSON('${json}') AS data FROM dual`);
     assert.deepEqual(result.rows[0][0], {
       id: '9007199254740993',

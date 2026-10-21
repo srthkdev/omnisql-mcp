@@ -59,8 +59,8 @@ DuckDB uses an installed CLI so its native binary stays out of the npm package. 
 
 ## Requirements
 
-- Bun 1.4.3+ or Node.js 22.15+
-- A local DB client (DBeaver-compatible) with at least one configured connection
+- Bun 1.4.3+, Node.js 22.15+ within 22.x, or Node.js 24+
+- A database connection or an existing DBeaver-compatible workspace
 
 ## Quick setup
 
@@ -70,7 +70,7 @@ Run the guided installer, choose Claude Code, Codex, or OpenCode, and OmniSQL ad
 npx -y omnisql-mcp@latest install
 ```
 
-The installer detects installed clients, asks for your DBeaver workspace, lets you choose read-only access and a connection allowlist, then registers the server. Database and SSH credentials come from your saved workspace; no OmniSQL API key is needed. Start a new client session after setup.
+The installer detects clients and offers direct database setup, an existing OmniSQL config, or selected DBeaver connections. Add multiple instances to one MCP server, each with its own read-only setting and table rules. Direct setup uses verified TLS by default; passwords are masked and saved only in a private local config (0600 on Unix), or referenced through environment variable names. No OmniSQL API key is needed. An agent with unrestricted file access can still read local config files. Start a new client session after setup.
 
 To add it to a specific client directly:
 
@@ -80,7 +80,9 @@ npx -y omnisql-mcp@latest install codex
 npx -y omnisql-mcp@latest install opencode
 ```
 
-Add `--read-only` to register with writes disabled, or `--dry-run` to print the registration command. Direct setup uses the default workspace and the server's normal read/write settings unless you pass `--read-only`.
+Registrations default to read-only. `install <client>` opens guided setup in a terminal. For noninteractive setup, provide `--config /path/to/connections.json`, or `--workspace /path/to/workspace --allow dev,analytics` for selected saved connections. Explicit config excludes workspace discovery. `--dry-run` previews registration; setup refuses to overwrite an existing entry or use symlink destinations.
+
+`--allow-writes` enables write tools. Direct JSON connections also need `readOnly: false`; imported connections retain their saved flag. Database grants and operator policy still apply. SSH requires a verified `known_hosts` entry by default; `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly allows unknown hosts for legacy setups.
 
 ### Native client commands
 
@@ -88,10 +90,10 @@ You can also register the server using your client's own CLI:
 
 ```bash
 # Claude Code — available across projects
-claude mcp add --transport stdio --scope user omnisql -- npx -y omnisql-mcp@latest
+claude mcp add --transport stdio --scope user omnisql --env OMNISQL_CONFIG_FILE=/absolute/path/connections.json -- npx -y omnisql-mcp@latest
 
 # Codex
-codex mcp add omnisql -- npx -y omnisql-mcp@latest
+codex mcp add omnisql --env OMNISQL_CONFIG_FILE=/absolute/path/connections.json -- npx -y omnisql-mcp@latest
 
 # OpenCode v2 — available across projects
 opencode mcp add omnisql --global -- npx -y omnisql-mcp@latest
@@ -108,7 +110,8 @@ Add the following MCP entry to Claude Desktop's `claude_desktop_config.json`, or
   "mcpServers": {
     "omnisql": {
       "command": "npx",
-      "args": ["-y", "omnisql-mcp@latest"]
+      "args": ["-y", "omnisql-mcp@latest"],
+      "env": { "OMNISQL_CONFIG_FILE": "/absolute/path/connections.json" }
     }
   }
 }
@@ -124,7 +127,7 @@ For a local executable, including machines without Node.js:
 curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
 ```
 
-Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Bun 1.4.3+ is unavailable, it downloads a private Bun runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 2.2.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
+Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Bun 1.4.3+ is unavailable, it downloads a private Bun runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 3.0.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
 
 ## One server, many instances
 
@@ -140,6 +143,7 @@ Large results use private, expiring handles with row and column pagination. Long
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `OMNISQL_DISCOVER_WORKSPACE` | Include saved workspace connections | `false` with a config file; `true` otherwise |
 | `OMNISQL_CONFIG_FILE` | JSON configuration for multiple database instances and their settings | Unset |
 | `OMNISQL_POLICY_FILE` | Additional schema, table, function, and database access rules | Unset |
 | `OMNISQL_WORKSPACE` | Path to local DB client workspace directory | OS default |
@@ -147,7 +151,7 @@ Large results use private, expiring handles with row and column pagination. Long
 | `OMNISQL_TIMEOUT` | Query timeout (ms) | `30000` |
 | `OMNISQL_DEBUG` | Enable debug logging | `false` |
 | `OMNISQL_UPDATE_NOTIFIER` | Check npm for updates and show notices on stderr | `true` |
-| `OMNISQL_READ_ONLY` | Disable all write operations | `false` |
+| `OMNISQL_READ_ONLY` | Disable all write operations | `true` |
 | `OMNISQL_ALLOWED_CONNECTIONS` | Comma-separated whitelist of connection IDs or names | All |
 | `OMNISQL_DISABLED_TOOLS` | Comma-separated tools to disable | None |
 | `OMNISQL_POOL_MIN` | Minimum connections per pool | `0` |
@@ -157,11 +161,11 @@ Large results use private, expiring handles with row and column pagination. Long
 | `OMNISQL_AWS_CLI_PATH` | Path to the AWS CLI (used for RDS IAM authentication) | `aws` |
 | `OMNISQL_IAM_TOKEN_TIMEOUT` | Timeout for minting an RDS IAM auth token (ms) | `20000` |
 | `OMNISQL_SSH_KNOWN_HOSTS` | known_hosts file used to verify SSH tunnel hosts | `~/.ssh/known_hosts` |
-| `OMNISQL_SSH_STRICT_HOST_KEY` | Refuse SSH tunnel hosts with no `known_hosts` entry | `false` |
+| `OMNISQL_SSH_STRICT_HOST_KEY` | Refuse SSH tunnel hosts with no `known_hosts` entry | `true` |
 
 ### Read-Only Mode
 
-Blocks all write operations. The `execute_query` tool only allows SELECT, EXPLAIN, SHOW, and DESCRIBE statements. Transaction tools are disabled entirely.
+Enabled by default and blocks all write operations. The `execute_query` tool only allows SELECT, EXPLAIN, SHOW, and DESCRIBE statements. Transaction tools are disabled entirely.
 
 ```json
 {
@@ -294,9 +298,9 @@ forward, and the connection's host/port are treated the way DBeaver treats them:
 - Agent authentication needs `SSH_AUTH_SOCK` set **in the MCP server's environment**. MCP clients
   usually do not inherit your shell, so set it explicitly in the client's server config if you
   use an agent.
-- The SSH host key is checked against `known_hosts`. A host recorded there must match, or the
-  tunnel is refused; a host that is not recorded is accepted, unless
-  `OMNISQL_SSH_STRICT_HOST_KEY=true`.
+- SSH host keys must match a trusted entry in `known_hosts`; unknown hosts are refused by default.
+  Verify the host fingerprint through a trusted channel before adding it.
+  `OMNISQL_SSH_STRICT_HOST_KEY=false` allows unknown hosts explicitly; known-host mismatches still fail.
 - If a tunnel cannot be opened the connection fails with that reason. It never falls back to
   connecting directly to the recorded host, which would reach an unrelated local database.
 

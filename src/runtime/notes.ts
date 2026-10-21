@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import type { BusinessInsight } from '../types.js';
+import { readPrivateFile } from './private-file.js';
 /** Private, bounded notes scoped to the workspace and its access configuration. */
 export class PrivateNotes {
   private directory: string;
@@ -17,11 +18,8 @@ export class PrivateNotes {
     this.file = join(this.directory, 'insights.json');
   }
   load(): BusinessInsight[] {
-    let fd: number | undefined;
     try {
-      fd = fs.openSync(this.file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-      if (fs.fstatSync(fd).size > 1048576) throw new Error('Notes file exceeds 1 MiB');
-      const parsed: unknown = JSON.parse(fs.readFileSync(fd, 'utf8'));
+      const parsed: unknown = JSON.parse(readPrivateFile(this.file, 1048576, 'Notes file'));
       if (
         !Array.isArray(parsed) ||
         parsed.some(
@@ -40,8 +38,6 @@ export class PrivateNotes {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
-    } finally {
-      if (fd !== undefined) fs.closeSync(fd);
     }
   }
   save(notes: BusinessInsight[]): BusinessInsight[] {

@@ -1,3 +1,9 @@
+import {
+  tableNameParts,
+  catalogLiteral,
+  quoteQualifiedIdentifier,
+} from './metadata/identifiers.js';
+import { publicConnection, sanitizeDiagnostic } from './privacy.js';
 import { mysqlNameEquals, duckdbNameEquals } from './metadata/names.js';
 import { sqlDialect } from './policy/analyzer.js';
 import { validateReadStatement, validateStatement } from './policy/sql.js';
@@ -462,31 +468,7 @@ export function sanitizeIdentifier(identifier: string): string {
  * Strips passwords and other credentials to prevent credential leaks.
  */
 export function redactConnection(conn: Record<string, any>): Record<string, any> {
-  // Workspace property bags may contain driver-specific secrets at arbitrary depth.
-  // Public connection details are an explicit DTO, never a copy of raw configuration.
-  const fields = [
-    'id',
-    'name',
-    'driver',
-    'driverId',
-    'provider',
-    'user',
-    'host',
-    'port',
-    'database',
-    'description',
-    'connected',
-    'readonly',
-    'folder',
-  ];
-  const result = Object.fromEntries(
-    fields.filter((key) => conn[key] !== undefined).map((key) => [key, conn[key]])
-  );
-  if (conn.sshTunnel) {
-    const { enabled, host, port, authType } = conn.sshTunnel;
-    result.sshTunnel = { enabled, host, port, authType };
-  }
-  return result;
+  return publicConnection(conn as import('./types.js').DatabaseConnection);
 }
 
 /**
@@ -510,15 +492,7 @@ export function redactArgs(args: Record<string, any>): Record<string, any> {
  * Format error messages consistently
  */
 export function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  return String(error);
+  return sanitizeDiagnostic(error);
 }
 
 /**
@@ -564,14 +538,11 @@ export function getTestQuery(driver: string): string {
  * names are stored upper-case unless quoted.
  */
 function buildOracleSchemaQuery(tableName: string): string {
-  const parts = tableName.trim().split('.');
-  if (parts.length > 2) {
-    throw new Error('Identifier contains invalid characters');
-  }
-  const table = sanitizeIdentifier(parts[parts.length - 1]);
+  const parts = tableNameParts(tableName);
+  const table = catalogLiteral(parts.at(-1)!, 'oracle');
   const owner =
     parts.length === 2
-      ? `'${sanitizeIdentifier(parts[0])}'`
+      ? catalogLiteral(parts[0], 'oracle')
       : `SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')`;
 
   return `
@@ -594,7 +565,7 @@ function buildOracleSchemaQuery(tableName: string): string {
       ) pk
         ON pk.owner = c.owner AND pk.table_name = c.table_name AND pk.column_name = c.column_name
       WHERE c.owner = ${owner}
-        AND c.table_name = '${table}'
+        AND c.table_name = ${table}
       ORDER BY c.column_id;
     `;
 }
@@ -609,16 +580,15 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
   if (driverLower.includes('oracle')) {
     return buildOracleSchemaQuery(tableName);
   }
-  const parts = tableName.trim().split('.');
-  if (parts.length > 2) throw new Error('Expected table or schema.table');
-  const safeTableName = sanitizeIdentifier(parts.at(-1)!);
-  const safeSchema = parts.length === 2 ? sanitizeIdentifier(parts[0]) : null;
+  const parts = tableNameParts(tableName);
+  const safeTableName = catalogLiteral(parts.at(-1)!, driver);
+  const safeSchema = parts.length === 2 ? catalogLiteral(parts[0], driver) : null;
 
   if (driverLower.includes('clickhouse')) {
-    return `SELECT name AS column_name,type AS data_type,(startsWith(type,'Nullable(') OR startsWith(type,'LowCardinality(Nullable(')) AS is_nullable,nullIf(default_expression,'') AS column_default FROM system.columns WHERE database=currentDatabase()${safeSchema ? ` AND database='${safeSchema}'` : ''} AND table='${safeTableName}' ORDER BY position`;
+    return `SELECT name AS column_name,type AS data_type,(startsWith(type,'Nullable(') OR startsWith(type,'LowCardinality(Nullable(')) AS is_nullable,nullIf(default_expression,'') AS column_default FROM system.columns WHERE database=currentDatabase()${safeSchema ? ` AND database=${safeSchema}` : ''} AND table=${safeTableName} ORDER BY position`;
   }
   if (driverLower.includes('duckdb')) {
-    return `SELECT column_name,data_type,is_nullable,column_default,character_maximum_length,numeric_precision,numeric_scale FROM duckdb_columns() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', safeSchema ? `'${safeSchema}'` : 'current_schema()')} AND ${duckdbNameEquals('table_name', `'${safeTableName}'`)} ORDER BY column_index`;
+    return `SELECT column_name,data_type,is_nullable,column_default,character_maximum_length,numeric_precision,numeric_scale FROM duckdb_columns() WHERE database_name=current_database() AND ${duckdbNameEquals('schema_name', safeSchema ?? 'current_schema()')} AND ${duckdbNameEquals('table_name', safeTableName)} ORDER BY column_index`;
   }
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
     return `
@@ -631,7 +601,7 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         numeric_precision,
         numeric_scale
       FROM information_schema.columns
-      WHERE table_catalog = current_database() AND table_schema = ${safeSchema ? `'${safeSchema}'` : 'current_schema()'} AND table_name = '${safeTableName}'
+      WHERE table_catalog = current_database() AND table_schema = ${safeSchema ?? 'current_schema()'} AND table_name = ${safeTableName}
       ORDER BY ordinal_position;
     `;
   } else if (driverLower.includes('mysql') || driverLower.includes('mariadb')) {
@@ -647,11 +617,11 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         COLUMN_KEY as column_key,
         EXTRA as extra
       FROM information_schema.COLUMNS
-      WHERE ${mysqlNameEquals('TABLE_SCHEMA', safeSchema ? `'${safeSchema}'` : 'DATABASE()')} AND ${mysqlNameEquals('TABLE_NAME', `'${safeTableName}'`)}
+      WHERE ${mysqlNameEquals('TABLE_SCHEMA', safeSchema ?? 'DATABASE()')} AND ${mysqlNameEquals('TABLE_NAME', safeTableName)}
       ORDER BY ORDINAL_POSITION;
     `;
   } else if (driverLower.includes('sqlite')) {
-    return `PRAGMA table_info(${safeTableName});`;
+    return `PRAGMA ${parts.length === 2 ? quoteQualifiedIdentifier(parts[0], driver) + '.' : ''}table_info(${safeTableName});`;
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
     return `
       SELECT
@@ -663,7 +633,7 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         NUMERIC_PRECISION as numeric_precision,
         NUMERIC_SCALE as numeric_scale
       FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = ${safeSchema ? `'${safeSchema}'` : 'SCHEMA_NAME()'} AND TABLE_NAME = '${safeTableName}'
+      WHERE TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = ${safeSchema ?? 'SCHEMA_NAME()'} AND TABLE_NAME = ${safeTableName}
       ORDER BY ORDINAL_POSITION;
     `;
   } else {
@@ -675,7 +645,7 @@ export function buildSchemaQuery(driver: string, tableName: string): string {
         is_nullable,
         column_default
       FROM information_schema.columns
-      WHERE table_name = '${safeTableName}';
+      WHERE table_name = ${safeTableName};
     `;
   }
 }
@@ -691,13 +661,15 @@ export function buildListTablesQuery(
   const dialect = sqlDialect(driver);
   const driverLower =
     dialect === 'postgres' ? 'postgresql' : dialect === 'mssql' ? 'mssql' : driver.toLowerCase();
-  const safeSchema = schema ? sanitizeIdentifier(schema) : null;
+  const schemaParts = schema ? tableNameParts(schema) : [];
+  if (schemaParts.length > 1) throw new Error('Expected one schema name');
+  const safeSchema = schemaParts.length ? catalogLiteral(schemaParts[0], driver) : null;
 
   if (driverLower.includes('clickhouse')) {
-    return `SELECT name AS table_name,if(engine LIKE '%View','VIEW','BASE TABLE') AS table_type,database AS table_schema FROM system.tables WHERE database=currentDatabase()${safeSchema ? ` AND database='${safeSchema}'` : ''}${includeViews ? '' : ` AND engine NOT LIKE '%View'`} ORDER BY database,name`;
+    return `SELECT name AS table_name,if(engine LIKE '%View','VIEW','BASE TABLE') AS table_type,database AS table_schema FROM system.tables WHERE database=currentDatabase()${safeSchema ? ` AND database=${safeSchema}` : ''}${includeViews ? '' : ` AND engine NOT LIKE '%View'`} ORDER BY database,name`;
   }
   if (driverLower.includes('duckdb')) {
-    const filter = safeSchema ? ` AND ${duckdbNameEquals('schema_name', `'${safeSchema}'`)}` : '';
+    const filter = safeSchema ? ` AND ${duckdbNameEquals('schema_name', safeSchema)}` : '';
     return `SELECT table_name,'BASE TABLE' AS table_type,schema_name AS table_schema FROM duckdb_tables() WHERE NOT internal AND database_name=current_database()${filter}${includeViews ? ` UNION ALL SELECT view_name AS table_name,'VIEW' AS table_type,schema_name AS table_schema FROM duckdb_views() WHERE NOT internal AND database_name=current_database()${filter}` : ''} ORDER BY table_schema,table_name`;
   }
   if (driverLower.includes('postgresql') || driverLower.includes('postgres')) {
@@ -711,7 +683,7 @@ export function buildListTablesQuery(
     `;
 
     if (safeSchema) {
-      query += ` AND table_schema = '${safeSchema}'`;
+      query += ` AND table_schema = ${safeSchema}`;
     }
 
     if (!includeViews) {
@@ -731,7 +703,7 @@ export function buildListTablesQuery(
     `;
 
     if (safeSchema) {
-      query += ` AND ${mysqlNameEquals('TABLE_SCHEMA', `'${safeSchema}'`)}`;
+      query += ` AND ${mysqlNameEquals('TABLE_SCHEMA', safeSchema)}`;
     }
 
     if (!includeViews) {
@@ -753,12 +725,12 @@ export function buildListTablesQuery(
     `;
     return query;
   } else if (driverLower.includes('mssql') || driverLower.includes('sqlserver')) {
-    return `SELECT o.name AS table_name,CASE WHEN o.type='U' THEN 'BASE TABLE' ELSE 'VIEW' END AS table_type,s.name AS table_schema FROM sys.objects o JOIN sys.schemas s ON s.schema_id=o.schema_id WHERE o.is_ms_shipped=0 AND o.type IN (${includeViews ? "'U','V'" : "'U'"})${safeSchema ? ` AND s.name='${safeSchema}'` : ''} ORDER BY s.name,o.name`;
+    return `SELECT o.name AS table_name,CASE WHEN o.type='U' THEN 'BASE TABLE' ELSE 'VIEW' END AS table_type,s.name AS table_schema FROM sys.objects o JOIN sys.schemas s ON s.schema_id=o.schema_id WHERE o.is_ms_shipped=0 AND o.type IN (${includeViews ? "'U','V'" : "'U'"})${safeSchema ? ` AND s.name=${safeSchema}` : ''} ORDER BY s.name,o.name`;
   } else if (driverLower.includes('oracle')) {
     // Without a schema, skip the schemas Oracle maintains itself (SYS, SYSTEM,
     // ...): they hold thousands of dictionary tables that would bury the rest.
     const ownerFilter = safeSchema
-      ? ` WHERE owner = '${safeSchema}'`
+      ? ` WHERE owner = ${safeSchema}`
       : ` WHERE owner NOT IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y')`;
 
     let query = `
@@ -795,7 +767,7 @@ export function buildListTablesQuery(
     `;
 
     if (safeSchema) {
-      query += ` WHERE table_schema = '${safeSchema}'`;
+      query += ` WHERE table_schema = ${safeSchema}`;
     }
 
     if (!includeViews) {

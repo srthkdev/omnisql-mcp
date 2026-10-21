@@ -60,7 +60,7 @@ DuckDB uses an installed CLI so its native binary stays out of the npm package. 
 ## Requirements
 
 - Bun 1.4.3+ or Node.js 22.15+
-- A local DB client (DBeaver-compatible) with at least one configured connection
+- A database connection or an existing DBeaver-compatible workspace
 
 ## Quick setup
 
@@ -70,7 +70,7 @@ Run the guided installer, choose Claude Code, Codex, or OpenCode, and OmniSQL ad
 npx -y omnisql-mcp@latest install
 ```
 
-The installer detects installed clients, asks for your DBeaver workspace, lets you choose read-only access and a connection allowlist, then registers the server. Database and SSH credentials come from your saved workspace; no OmniSQL API key is needed. Start a new client session after setup.
+The installer detects clients and offers direct database setup, an existing OmniSQL config, or selected DBeaver connections. Add multiple instances to one MCP server, each with its own read-only setting and table rules. Direct setup uses verified TLS by default; passwords are masked and saved only in a private local config (0600 on Unix), or referenced through environment variable names. No OmniSQL API key is needed. An agent with unrestricted file access can still read local config files. Start a new client session after setup.
 
 To add it to a specific client directly:
 
@@ -80,7 +80,7 @@ npx -y omnisql-mcp@latest install codex
 npx -y omnisql-mcp@latest install opencode
 ```
 
-Add `--read-only` to register with writes disabled, or `--dry-run` to print the registration command. Direct setup uses the default workspace and the server's normal read/write settings unless you pass `--read-only`.
+Registrations default to read-only. `install <client>` opens guided setup in a terminal; noninteractive registration requires one of the explicit configuration paths below. Use `--config /path/to/connections.json` for a validated existing multi-instance configuration; workspace discovery stays disabled for that path. Use `--workspace /path/to/workspace --allow dev,analytics` to import selected saved connections. `--allow-writes` permits writes only where the connection's own policy also allows them. `--dry-run` previews registration without changing client settings. Setup refuses to replace an existing `omnisql` registration or write through symlink destinations. For writes, both `OMNISQL_READ_ONLY=false` (set by `--allow-writes`) and the connection's `readOnly: false` must permit them. SSH host keys are checked against `known_hosts` by default: verify the fingerprint before adding a host. `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly opts into the less safe legacy behavior.
 
 ### Native client commands
 

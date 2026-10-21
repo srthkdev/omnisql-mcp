@@ -55,6 +55,13 @@ export function resolveOracleConnectOptions(
   const props = providerProperties(connection);
   const connectionType = String(props['@dbeaver-connection-type@'] || 'BASIC').toUpperCase();
   const options: OracleConnectOptions = { connectString: '' };
+  const protocol = connection.properties?.protocol?.toLowerCase();
+  if (protocol && !['tcp', 'tcps'].includes(protocol))
+    throw new Error('Oracle protocol must be tcp or tcps');
+  if (protocol === 'tcps' && (connectionType === 'TNS' || connection.sshTunnel?.enabled))
+    throw new Error(
+      'Direct Oracle TCPS requires a basic connection without an SSH tunnel; configure advanced TLS with an explicit descriptor instead'
+    );
 
   const role = String(props['@dbeaver-internal-logon@'] || '').toUpperCase();
   if (role && role !== 'NORMAL') {
@@ -84,6 +91,10 @@ export function resolveOracleConnectOptions(
   // it names its own hosts, so it cannot be redirected through a tunnel.
   const target = (connection.url || '').replace(/^jdbc:oracle:[a-z]*:?@/i, '');
   if (target.startsWith('(')) {
+    if (protocol)
+      throw new Error(
+        'Oracle descriptors define their own protocol; remove the separate protocol setting'
+      );
     if (connection.sshTunnel?.enabled) {
       throw new Error('Oracle connect descriptors cannot be combined with an SSH tunnel');
     }
@@ -101,6 +112,21 @@ export function resolveOracleConnectOptions(
     String(props['@dbeaver-sid-service@'] || '').toUpperCase() === 'SID' ||
     /^[^/:]+:\d+:[^/]+$/.test(target);
   const dialHost = host.includes(':') ? `[${host}]` : host;
+
+  if (protocol === 'tcps') {
+    if (
+      [dialHost, database].some(
+        (value) =>
+          value.includes('(') ||
+          value.includes(')') ||
+          [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+      )
+    )
+      throw new Error('Invalid Oracle TCPS hostname or database name');
+    // Thin mode supports SSL_SERVER_DN_MATCH and verifies the certificate chain.
+    options.connectString = `(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=${dialHost})(PORT=${port}))(CONNECT_DATA=(${isSid ? 'SID' : 'SERVICE_NAME'}=${database}))(SECURITY=(SSL_SERVER_DN_MATCH=YES)))`;
+    return options;
+  }
 
   options.connectString = isSid
     ? connectDescriptor(dialHost, port, database)
@@ -146,6 +172,18 @@ const toInstant = <T>(value: T | null): string | null =>
 export function oracleFetchTypeHandler(
   metadata: OracleTypes.Metadata<unknown>
 ): OracleTypes.FetchTypeResponse | undefined {
+  const timestampTypes: OracleTypes.DbType[] = [
+    oracleDriver().DB_TYPE_TIMESTAMP,
+    oracleDriver().DB_TYPE_TIMESTAMP_TZ,
+    oracleDriver().DB_TYPE_TIMESTAMP_LTZ,
+  ];
+  if (
+    timestampTypes.includes(metadata.dbType!) &&
+    (!Number.isInteger(metadata.precision) || metadata.precision! > 3 || metadata.precision! < 0)
+  )
+    throw new Error(
+      "Oracle timestamps above millisecond precision must be selected as text with TO_CHAR(..., 'YYYY-MM-DD HH24:MI:SS.FF9') (include TZH:TZM for time zones); unknown precision is also rejected to prevent data loss"
+    );
   switch (metadata.dbType) {
     case oracleDriver().DB_TYPE_NUMBER:
       return { type: oracleDriver().DB_TYPE_VARCHAR };

@@ -32,7 +32,7 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
 OmniSQL MCP Server v${VERSION}
 
 Usage: omnisql-mcp [options]
-       omnisql-mcp install [claude|codex|opencode] [--read-only] [--dry-run]
+       omnisql-mcp install [claude|codex|opencode] [--config <file> | --workspace <directory>] [--allow <ids>] [--allow-writes] [--dry-run]
 
 Quick setup:
   npx -y omnisql-mcp@latest install

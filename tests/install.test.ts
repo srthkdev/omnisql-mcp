@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, vi, mock, afterEach } from 'bun:test';
 mock.module('node:child_process', () => ({ spawnSync: vi.fn() }));
 import { spawnSync } from 'node:child_process';
-import { buildInstallCommand, installClient } from '../src/install.js';
+import { tmpdir } from 'node:os';
+import { buildInstallCommand, clientInvocation, installClient } from '../src/install.js';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -45,9 +47,19 @@ describe('MCP client registration', () => {
     spawnSync.mockReturnValue({
       error: Object.assign(new Error('missing'), { code: 'ENOENT' }),
     } as never);
-    expect(() => installClient(['codex'])).toThrow(/not on PATH/);
+    expect(() =>
+      installClient(['codex'], {
+        OMNISQL_WORKSPACE: tmpdir(),
+        OMNISQL_ALLOWED_CONNECTIONS: 'fixture',
+      })
+    ).toThrow(/not on PATH/);
     spawnSync.mockReturnValue({ status: 1 } as never);
-    expect(() => installClient(['codex'])).toThrow(/exit 1/);
+    expect(() =>
+      installClient(['codex'], {
+        OMNISQL_WORKSPACE: tmpdir(),
+        OMNISQL_ALLOWED_CONNECTIONS: 'fixture',
+      })
+    ).toThrow(/exit 1/);
   });
 });
 
@@ -59,5 +71,31 @@ describe('installer environment', () => {
     });
     expect(args).toContain('OMNISQL_WORKSPACE=/Users/test/My Databases/workspace6');
     expect(args).toContain('OMNISQL_ALLOWED_CONNECTIONS=dev,staging');
+  });
+});
+
+describe('safe registration settings', () => {
+  it('defaults to read-only and requires an explicit write opt-in', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const safe = vi.spyOn(console, 'error');
+    installClient(['codex', '--dry-run']);
+    expect(safe.mock.calls.flat().join(' ')).toContain('OMNISQL_READ_ONLY=true');
+    safe.mockClear();
+    installClient(['codex', '--allow-writes', '--dry-run']);
+    expect(safe.mock.calls.flat().join(' ')).toContain('OMNISQL_READ_ONLY=false');
+  });
+  it('does not accept secret-bearing environment settings', () => {
+    expect(() => buildInstallCommand('codex', true, { DATABASE_PASSWORD: randomUUID() })).toThrow(
+      /setup settings only/
+    );
+  });
+  it('keeps Windows shim arguments out of command source', () => {
+    const arg = 'OMNISQL_CONFIG_FILE=C:\\My Databases\\a & b%done!.json';
+    const invocation = clientInvocation('codex.cmd', [arg], 'win32');
+    expect(invocation.command).toMatch(/cmd(?:\.exe)?$/i);
+    expect(invocation.args).toContain('/v:off');
+    expect(invocation.args.at(-1)).not.toContain('My Databases');
+    expect(invocation.env.OMNISQL_INSTALL_ARG_1).toBe(arg);
+    expect(() => clientInvocation('codex.cmd', ['injected" & whoami'], 'win32')).toThrow(/quotes/);
   });
 });

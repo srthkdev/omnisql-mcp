@@ -1,6 +1,8 @@
 import type { AccessRule } from './policy/access.js';
 export interface DatabaseConnection {
   id: string;
+  /** Original configured identity; an override's id additionally includes its database. */
+  baseId?: string;
   name: string;
   accessRules?: AccessRule[];
   limits?: { maxRows?: number; maxBytes?: number; timeoutMs?: number; poolMax?: number };

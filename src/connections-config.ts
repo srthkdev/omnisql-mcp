@@ -40,10 +40,15 @@ export function loadConfiguredConnections(
   file = process.env.OMNISQL_CONFIG_FILE
 ): DatabaseConnection[] {
   if (!file) return [];
-  const config = object(
-    JSON.parse(readPrivateFile(file, 1_000_000, 'Connection config')),
-    'Connection config'
-  );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readPrivateFile(file, 1_000_000, 'Connection config'));
+  } catch (error) {
+    if (error instanceof SyntaxError)
+      throw new Error('Invalid connection config JSON; check it locally');
+    throw error;
+  }
+  const config = object(parsed, 'Connection config');
   if (
     config.version !== 1 ||
     Object.keys(config).some((k) => !['version', 'defaults', 'connections'].includes(k))

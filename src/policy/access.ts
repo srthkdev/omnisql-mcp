@@ -107,12 +107,12 @@ export class AccessPolicy {
   }
   private databaseRules(c: DatabaseConnection): string[] {
     this.reload();
-    const prefix = c.id.split('/')[0] + '/';
+    const prefix = (c.baseId ?? c.id.split('/')[0]) + '/';
     return Object.keys(this.policy.connections ?? {}).filter((key) => key.startsWith(prefix));
   }
   private rules(c: DatabaseConnection, database = c.database): AccessRule[] {
     this.reload();
-    const base = c.id.split('/')[0];
+    const base = c.baseId ?? c.id.split('/')[0];
     const keys = new Set([base, ...(database === undefined ? [] : [base + '/' + database])]);
     return [
       ...(c.accessRules ?? []),
@@ -158,7 +158,7 @@ export class AccessPolicy {
     if (
       ['mysql', 'mssql'].includes(sqlDialect(c.driver)) &&
       this.databaseRules(c).length &&
-      !this.databaseRules(c).includes(c.id.split('/')[0] + '/' + database)
+      !this.databaseRules(c).includes((c.baseId ?? c.id.split('/')[0]) + '/' + database)
     )
       return false;
     return rules.every((r) => !r.databases || includes(r.databases, database));

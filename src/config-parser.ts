@@ -1,6 +1,7 @@
 import { sqlDialect } from './policy/analyzer.js';
 import { loadConfiguredConnections } from './connections-config.js';
 import { booleanSetting } from './runtime-config.js';
+import { registerConnectionPrivacy, registerPrivateValue, sanitizeDiagnostic } from './privacy.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -90,6 +91,9 @@ export class WorkspaceConfigParser {
 
   constructor(config: WorkspaceConfig = {}) {
     const workspacePath = config.workspacePath ?? this.getDefaultWorkspacePath();
+    registerPrivateValue(workspacePath);
+    registerPrivateValue(process.env.OMNISQL_CONFIG_FILE);
+    registerPrivateValue(process.env.OMNISQL_POLICY_FILE);
     const debug = config.debug ?? false;
     // Left undefined on purpose: absence means "discover every project",
     // while a value pins reading to that one.
@@ -225,7 +229,9 @@ export class WorkspaceConfigParser {
 
   async parseConnections(): Promise<DatabaseConnection[]> {
     const configured = loadConfiguredConnections();
-    if (!this.discoverWorkspace()) return structuredClone(configured);
+    configured.forEach(registerConnectionPrivacy);
+    if (!this.discoverWorkspace())
+      return structuredClone(configured.map((c) => ({ ...c, baseId: c.id })));
     const paths = this.isNewFormat
       ? this.getProjectDirs().flatMap((dir) => [
           path.join(dir, '.dbeaver', 'data-sources.json'),
@@ -259,7 +265,12 @@ export class WorkspaceConfigParser {
         throw new Error(`Connection ID is ambiguous across configuration sources: ${c.id}`);
       ids.add(c.id);
     }
-    return structuredClone([...configured, ...discovered]);
+    return structuredClone(
+      [...configured, ...discovered].map((c) => {
+        registerConnectionPrivacy(c);
+        return { ...c, baseId: c.id };
+      })
+    );
   }
 
   private async parseWorkspaceConnections(): Promise<DatabaseConnection[]> {
@@ -286,9 +297,7 @@ export class WorkspaceConfigParser {
 
       // Neither format exists - return empty array instead of throwing error
       if (this.config.debug) {
-        console.warn(
-          `No workspace connections found. Checked:\n- ${connectionsFile}\n- ${alternativeFile}`
-        );
+        console.warn('No workspace connections found; check the configured workspace locally');
       }
       return [];
     }
@@ -329,13 +338,18 @@ export class WorkspaceConfigParser {
 
       return connections;
     } catch (error) {
-      throw new Error(`Failed to parse workspace connections: ${error}`);
+      throw new Error(`Failed to parse workspace connections: ${sanitizeDiagnostic(error)}`);
     }
   }
 
   private async parseNewFormatConnections(filePath: string): Promise<DatabaseConnection[]> {
     const jsonContent = fs.readFileSync(filePath, 'utf-8');
-    const data = JSON.parse(jsonContent);
+    let data;
+    try {
+      data = JSON.parse(jsonContent);
+    } catch {
+      throw new Error('Invalid workspace JSON; check the connection file locally');
+    }
 
     const connections: DatabaseConnection[] = [];
 
@@ -414,6 +428,7 @@ export class WorkspaceConfigParser {
     props: Record<string, string>,
     configurationType?: string
   ): void {
+    registerConnectionPrivacy(connection);
     const fromUrl = parseJdbcUrl(connection.url);
     const urlMode = String(configurationType ?? '').toUpperCase() === 'URL';
 
@@ -423,11 +438,7 @@ export class WorkspaceConfigParser {
     const urlWins = urlMode && fromUrl.host !== undefined;
 
     if (urlMode && !urlWins && this.config.debug) {
-      console.error(
-        `Connection "${connection.name}" is URL-mode but its JDBC URL could not be parsed ` +
-          `("${connection.url}"); falling back to the recorded host/port, which DBeaver ` +
-          `leaves at a placeholder for URL-mode connections.`
-      );
+      console.error('A URL-mode connection could not be parsed; check its endpoint locally');
     }
 
     const set = (field: 'host' | 'database', value: string) => {
@@ -511,14 +522,34 @@ export class WorkspaceConfigParser {
   }
 
   async getConnection(connectionId: string, database?: string): Promise<DatabaseConnection | null> {
-    const parsed = parseConnectionId(connectionId);
+    let connections: DatabaseConnection[];
+    try {
+      connections = await this.parseConnections();
+    } catch (error) {
+      if (this.config.debug)
+        console.error(`Failed to load connections: ${sanitizeDiagnostic(error)}`);
+      return null;
+    }
+    // Discovered IDs can contain slashes; prefer the complete saved identity before
+    // interpreting the legacy <connection>/<database> selector.
+    const original = connections
+      .filter((c) => connectionId === c.id || connectionId.startsWith(c.id + '/'))
+      .sort((a, b) => b.id.length - a.id.length)[0];
+    const parsed = original
+      ? {
+          baseId: original.id,
+          databaseOverride: connectionId.slice(original.id.length + 1) || null,
+        }
+      : parseConnectionId(connectionId);
     const { baseId } = parsed;
+    const selection = database ?? parsed.databaseOverride;
     if (
-      database !== undefined &&
-      (typeof database !== 'string' ||
-        !database.trim() ||
-        database.length > 128 ||
-        Array.from(database).some(
+      selection !== null &&
+      selection !== undefined &&
+      (typeof selection !== 'string' ||
+        !selection.trim() ||
+        selection.length > 128 ||
+        Array.from(selection).some(
           (char) =>
             char === '/' ||
             char.charCodeAt(0) === 92 ||
@@ -541,7 +572,6 @@ export class WorkspaceConfigParser {
 
     let match: DatabaseConnection | null = null;
     try {
-      const connections = await this.parseConnections();
       const exact = connections.filter((conn) => conn.id === baseId);
       const named = exact.length ? exact : connections.filter((conn) => conn.name === baseId);
       if (named.length > 1)
@@ -549,7 +579,7 @@ export class WorkspaceConfigParser {
       match = named[0] ?? null;
     } catch (error) {
       if (this.config.debug) {
-        console.error(`Failed to get connection ${connectionId}: ${error}`);
+        console.error(`Failed to get connection: ${sanitizeDiagnostic(error)}`);
       }
       return null;
     }
@@ -579,6 +609,7 @@ export class WorkspaceConfigParser {
     // caches keyed on connection.id stay separated per target database.
     return {
       ...match,
+      baseId: match.baseId ?? match.id,
       id: `${match.id}/${databaseOverride}`,
       database: databaseOverride,
       properties: { ...(match.properties || {}), database: databaseOverride },
@@ -682,7 +713,7 @@ export class WorkspaceConfigParser {
       return driverArray.find((driver: any) => driver.$.id === driverId) || null;
     } catch (error) {
       if (this.config.debug) {
-        console.error(`Failed to parse drivers file: ${error}`);
+        console.error(`Failed to parse drivers file: ${sanitizeDiagnostic(error)}`);
       }
       return null;
     }
@@ -737,9 +768,10 @@ export class WorkspaceConfigParser {
     connections: DatabaseConnection[],
     credentialsFile: string = this.getCredentialsFilePath()
   ): Promise<void> {
+    registerPrivateValue(credentialsFile);
     if (!fs.existsSync(credentialsFile)) {
       if (this.config.debug) {
-        console.warn(`Credentials file not found: ${credentialsFile}`);
+        console.warn('Workspace credentials file not found');
       }
       return;
     }
@@ -795,9 +827,9 @@ export class WorkspaceConfigParser {
       if (this.config.debug) {
         console.error(`Successfully loaded credentials for ${connections.length} connections`);
       }
-    } catch (error) {
+    } catch {
       if (this.config.debug) {
-        console.error(`Failed to load credentials: ${error}`);
+        console.error('Failed to load workspace credentials; check the private file locally');
       }
       // Don't throw - continue without credentials
     }

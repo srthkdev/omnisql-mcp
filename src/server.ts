@@ -278,6 +278,9 @@ export class OmniSQLMCPServer {
       return true;
     }
 
+    if ('baseId' in conn && typeof conn.baseId === 'string')
+      return conn.id !== conn.baseId && this.allowedConnections.has(conn.baseId);
+
     const { baseId, databaseOverride } = parseConnectionId(conn.id);
     if (databaseOverride === null) return false;
 

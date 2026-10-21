@@ -55,7 +55,9 @@ describe('public connection details', () => {
       },
     };
     const result = redactConnection(input);
-    expect(result).toMatchObject({ id: 'test', host: 'localhost', sshTunnel: { host: 'jump' } });
+    expect(result).toMatchObject({ id: 'test', name: 'Test', driver: 'generic' });
+    expect(result).not.toHaveProperty('host');
+    expect(result).not.toHaveProperty('sshTunnel');
     expect(JSON.stringify(result)).not.toMatch(/secret-|jdbc:/);
     expect(input.sshTunnel.password).toBe('secret-ssh');
   });

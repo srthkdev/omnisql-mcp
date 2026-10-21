@@ -3,6 +3,7 @@ import {
   catalogLiteral,
   quoteQualifiedIdentifier,
 } from './metadata/identifiers.js';
+import { publicConnection, sanitizeDiagnostic } from './privacy.js';
 import { mysqlNameEquals, duckdbNameEquals } from './metadata/names.js';
 import { sqlDialect } from './policy/analyzer.js';
 import { validateReadStatement, validateStatement } from './policy/sql.js';
@@ -467,31 +468,7 @@ export function sanitizeIdentifier(identifier: string): string {
  * Strips passwords and other credentials to prevent credential leaks.
  */
 export function redactConnection(conn: Record<string, any>): Record<string, any> {
-  // Workspace property bags may contain driver-specific secrets at arbitrary depth.
-  // Public connection details are an explicit DTO, never a copy of raw configuration.
-  const fields = [
-    'id',
-    'name',
-    'driver',
-    'driverId',
-    'provider',
-    'user',
-    'host',
-    'port',
-    'database',
-    'description',
-    'connected',
-    'readonly',
-    'folder',
-  ];
-  const result = Object.fromEntries(
-    fields.filter((key) => conn[key] !== undefined).map((key) => [key, conn[key]])
-  );
-  if (conn.sshTunnel) {
-    const { enabled, host, port, authType } = conn.sshTunnel;
-    result.sshTunnel = { enabled, host, port, authType };
-  }
-  return result;
+  return publicConnection(conn as import('./types.js').DatabaseConnection);
 }
 
 /**
@@ -515,15 +492,7 @@ export function redactArgs(args: Record<string, any>): Record<string, any> {
  * Format error messages consistently
  */
 export function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  return String(error);
+  return sanitizeDiagnostic(error);
 }
 
 /**

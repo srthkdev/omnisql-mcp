@@ -1,3 +1,4 @@
+import { registerConnectionPrivacy, sanitizeDiagnostic } from '../privacy.js';
 import { assertQueryAccess } from '../policy/identities.js';
 import { validateStatement } from '../policy/sql.js';
 import { AccessPolicy } from '../policy/access.js';
@@ -33,10 +34,11 @@ export class TransactionManager {
   ) {}
 
   private log(message: string): void {
-    if (this.debug) console.error(`[TransactionManager] ${message}`);
+    if (this.debug) console.error(`[TransactionManager] ${sanitizeDiagnostic(message)}`);
   }
 
   async beginTransaction(connection: DatabaseConnection): Promise<TransactionResult> {
+    registerConnectionPrivacy(connection);
     const policy = new AccessPolicy();
     policy.assertConnection(connection);
     if (policy.isReadOnly(connection)) throw new Error('This connection is read-only');

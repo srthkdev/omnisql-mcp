@@ -1,3 +1,11 @@
+import { quoteQualifiedIdentifier } from './metadata/identifiers.js';
+import {
+  privateConnectionId,
+  publicConnectionId,
+  registerConnectionPrivacy,
+  registerPrivateValue,
+  sanitizeDiagnostic,
+} from './privacy.js';
 import {
   compressText,
   compressionExtension,
@@ -34,7 +42,6 @@ import {
   formatError,
   convertToCSV,
   redactConnection,
-  redactArgs,
 } from './utils.js';
 import { ConnectionPoolManager } from './pools/index.js';
 import { sshTunnelManager } from './net/ssh-tunnel.js';
@@ -109,7 +116,7 @@ export class OmniSQLMCPServer {
 
   constructor() {
     this.debug = process.env.OMNISQL_DEBUG === 'true';
-    this.readOnly = booleanSetting(process.env.OMNISQL_READ_ONLY, 'OMNISQL_READ_ONLY');
+    this.readOnly = booleanSetting(process.env.OMNISQL_READ_ONLY, 'OMNISQL_READ_ONLY', true);
     this.disabledTools = (process.env.OMNISQL_DISABLED_TOOLS || '')
       .split(',')
       .map((t) => t.trim())
@@ -122,9 +129,6 @@ export class OmniSQLMCPServer {
       .map((c) => c.trim())
       .filter(Boolean);
     this.allowedConnections = allowedList.length > 0 ? new Set(allowedList) : null;
-
-    this.notesScope = this.currentNotesScope();
-    this.notes = new PrivateNotes(this.notesScope);
 
     this.server = new Server(
       {
@@ -146,6 +150,17 @@ export class OmniSQLMCPServer {
       workspacePath: process.env.OMNISQL_WORKSPACE,
       projectName: process.env.OMNISQL_PROJECT,
     });
+
+    for (const value of [
+      process.env.OMNISQL_CONFIG_FILE,
+      process.env.OMNISQL_WORKSPACE,
+      process.env.OMNISQL_POLICY_FILE,
+      process.env.OMNISQL_CLI_PATH,
+    ])
+      registerPrivateValue(value);
+
+    this.notesScope = this.currentNotesScope();
+    this.notes = new PrivateNotes(this.notesScope);
 
     // Initialize connection pool and transaction manager
     sshTunnelManager.setDebug(this.debug);
@@ -196,6 +211,7 @@ export class OmniSQLMCPServer {
   private log(message: string, level: 'info' | 'error' | 'debug' = 'info') {
     if (level === 'debug' && !this.debug) return;
 
+    message = sanitizeDiagnostic(message);
     const timestamp = new Date().toISOString();
     const prefix = `[${timestamp}] [${level.toUpperCase()}]`;
 
@@ -207,15 +223,14 @@ export class OmniSQLMCPServer {
   }
 
   private currentNotesScope(): string {
-    const policySource = [process.env.OMNISQL_CONFIG_FILE, process.env.OMNISQL_POLICY_FILE]
-      .filter(Boolean)
-      .map((file) => fs.readFileSync(file!, 'utf8'));
     return JSON.stringify([
-      process.env.OMNISQL_WORKSPACE ?? '',
-      process.env.OMNISQL_PROJECT ?? '',
-      process.env.OMNISQL_ALLOWED_CONNECTIONS ?? '',
-      process.env.OMNISQL_READ_ONLY ?? '',
-      policySource,
+      this.configParser.stateRevision(),
+      this.accessPolicy.revision(),
+      [...(this.allowedConnections ?? [])].sort(),
+      this.allowedConnections !== null,
+      this.readOnly,
+      this.disabledTools,
+      typeof process.getuid === 'function' ? process.getuid() : null,
     ]);
   }
   private refreshNotes() {
@@ -277,6 +292,7 @@ export class OmniSQLMCPServer {
    */
   private async getFilteredConnections(): Promise<DatabaseConnection[]> {
     const connections = await this.configParser.parseConnections();
+    connections.forEach(registerConnectionPrivacy);
     if (!this.allowedConnections)
       return connections.filter((c) => this.accessPolicy.allowsDatabase(c));
     return connections.filter(
@@ -291,7 +307,16 @@ export class OmniSQLMCPServer {
     connectionId: string,
     database?: string
   ): Promise<DatabaseConnection | null> {
-    const connection = await this.configParser.getConnection(connectionId, database);
+    if (
+      connectionId.startsWith('connection-') &&
+      privateConnectionId(connectionId) === connectionId
+    )
+      (await this.configParser.parseConnections()).forEach(publicConnectionId);
+    const connection = await this.configParser.getConnection(
+      privateConnectionId(connectionId),
+      database
+    );
+    if (connection) registerConnectionPrivacy(connection);
     if (!connection) return null;
     if (!this.isConnectionAllowed(connection)) return null;
     this.accessPolicy.assertConnection(connection);
@@ -357,10 +382,10 @@ export class OmniSQLMCPServer {
           return { resources: [] };
         const connections = await this.getFilteredConnections();
         const resources = connections.map((connection) => ({
-          uri: `omnisql:///connections/${encodeURIComponent(connection.id)}`,
+          uri: `omnisql:///connections/${encodeURIComponent(publicConnectionId(connection))}`,
           mimeType: 'application/json',
-          name: connection.name,
-          description: `${connection.driver} connection; browse tables on demand`,
+          name: sanitizeDiagnostic(connection.name),
+          description: `${redactConnection(connection).driver} connection; browse tables on demand`,
         }));
 
         return { resources };
@@ -404,11 +429,11 @@ export class OmniSQLMCPServer {
             return {
               contents: [
                 {
-                  uri: request.params.uri,
+                  uri: `omnisql:///connections/${encodeURIComponent(publicConnectionId(connection))}`,
                   mimeType: 'application/json',
                   text: JSON.stringify({
-                    ...redactConnection(connection),
-                    tablesUri: `omnisql:///connections/${encodeURIComponent(connection.id)}/tables`,
+                    ...this.connectionInfo(connection),
+                    tablesUri: `omnisql:///connections/${encodeURIComponent(publicConnectionId(connection))}/tables`,
                   }),
                 },
               ],
@@ -420,13 +445,13 @@ export class OmniSQLMCPServer {
           const tables = await this.workspaceClient.listTables(connection, undefined, true);
           const result = tables.map((t) => ({
             ...t,
-            schemaUri: `omnisql:///connections/${encodeURIComponent(connection.id)}/tables/${encodeURIComponent([t.table_schema, t.name].filter(Boolean).join('.'))}/schema`,
+            schemaUri: `omnisql:///connections/${encodeURIComponent(publicConnectionId(connection))}/tables/${encodeURIComponent([t.table_schema, t.name].filter(Boolean).join('.'))}/schema`,
           }));
           const document = await this.presentDocument(result, source);
           return {
             contents: [
               {
-                uri: request.params.uri,
+                uri: `omnisql:///connections/${encodeURIComponent(publicConnectionId(connection))}/tables`,
                 mimeType: 'application/json',
                 text: document.content[0].text,
               },
@@ -457,7 +482,7 @@ export class OmniSQLMCPServer {
         return {
           contents: [
             {
-              uri: request.params.uri,
+              uri: `omnisql:///connections/${encodeURIComponent(publicConnectionId(connection))}/tables/${encodeURIComponent(tableName)}/schema`,
               mimeType: 'application/json',
               text: document.content[0].text,
             },
@@ -1027,10 +1052,7 @@ export class OmniSQLMCPServer {
       }
 
       try {
-        this.log(
-          `Executing tool: ${name} with args: ${JSON.stringify(redactArgs(args || {}))}`,
-          'debug'
-        );
+        this.log(`Executing tool: ${name}`, 'debug');
 
         switch (name) {
           case 'list_databases':
@@ -1234,7 +1256,7 @@ export class OmniSQLMCPServer {
         this.log(`Tool execution failed: ${error}`, 'error');
 
         if (error instanceof McpError) {
-          throw error;
+          throw new McpError(error.code, sanitizeDiagnostic(error.message));
         }
 
         throw new McpError(ErrorCode.InternalError, `Tool execution failed: ${formatError(error)}`);
@@ -1253,48 +1275,19 @@ export class OmniSQLMCPServer {
     return this.presentDocument(databases, source);
   }
 
-  private async handleListConnections(args: { includeDetails?: boolean }) {
+  private async handleListConnections(_args: { includeDetails?: boolean }) {
     const connections = await this.getFilteredConnections();
 
-    if (args.includeDetails) {
-      // Always redact credentials before returning to client
-      const redacted = connections.map((conn) => ({
-        ...redactConnection(conn),
-        readonly: this.readOnly || this.accessPolicy.isReadOnly(conn),
-        limits: conn.limits,
-        capabilities: this.workspaceClient.getCapabilities(conn),
-      }));
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(redacted, null, 2),
-          },
-        ],
-      };
-    }
+    const result = connections.map((connection) => this.connectionInfo(connection));
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  }
 
-    const simplified = connections.map((conn) => ({
-      id: conn.id,
-      name: conn.name,
-      driver: conn.driver,
-      // Only interesting when the configured id needed resolving to a dialect,
-      // as custom drivers with an opaque id do.
-      ...(conn.driverId && conn.driverId !== conn.driver
-        ? { driverId: conn.driverId, provider: conn.provider }
-        : {}),
-      host: conn.host,
-      database: conn.database,
-      folder: conn.folder,
-    }));
-
+  private connectionInfo(connection: DatabaseConnection) {
     return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(simplified, null, 2),
-        },
-      ],
+      ...redactConnection(connection),
+      readonly: this.readOnly || this.accessPolicy.isReadOnly(connection),
+      limits: connection.limits,
+      capabilities: this.workspaceClient.getCapabilities(connection),
     };
   }
 
@@ -1306,13 +1299,7 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    // Redact credentials before returning to client
-    const redacted = {
-      ...redactConnection(connection),
-      readonly: this.readOnly || this.accessPolicy.isReadOnly(connection),
-      limits: connection.limits,
-      capabilities: this.workspaceClient.getCapabilities(connection),
-    };
+    const redacted = this.connectionInfo(connection);
 
     return {
       content: [
@@ -1358,7 +1345,10 @@ export class OmniSQLMCPServer {
       readOnly: true,
     });
 
-    return this.presentResult(result, source, { query, connection: connection.name });
+    return this.presentResult(result, source, {
+      query,
+      connection: sanitizeDiagnostic(connection.name),
+    });
   }
 
   private artifactScope(
@@ -1378,14 +1368,20 @@ export class OmniSQLMCPServer {
     query: string,
     policyRevision?: string
   ): ArtifactSource {
-    return { scopes: [this.artifactScope(connection, { kind: 'sql', query }, policyRevision)] };
+    return {
+      stateRevision: this.currentNotesScope(),
+      scopes: [this.artifactScope(connection, { kind: 'sql', query }, policyRevision)],
+    };
   }
   private catalogSource(...connections: DatabaseConnection[]): ArtifactSource {
     return {
+      stateRevision: this.currentNotesScope(),
       scopes: connections.map((connection) => this.artifactScope(connection, { kind: 'catalog' })),
     };
   }
   private async resultConnections(source: ArtifactSource): Promise<DatabaseConnection[]> {
+    if (source.stateRevision !== this.currentNotesScope())
+      throw new Error('Result connection or access policy changed; run the query again');
     const connections = [];
     for (const scope of source.scopes) {
       const connection = await this.getConnection(scope.connectionId, scope.database);
@@ -1490,7 +1486,7 @@ export class OmniSQLMCPServer {
 
     const response = {
       query: query,
-      connection: connection.name,
+      connection: sanitizeDiagnostic(connection.name),
       executionTime: result.executionTime,
       affectedRows: result.affectedRows === undefined ? result.rowCount : result.affectedRows,
       success: true,
@@ -1635,7 +1631,7 @@ export class OmniSQLMCPServer {
       );
     }
 
-    const dropQuery = `DROP TABLE "${tableName}"`;
+    const dropQuery = `DROP TABLE ${quoteQualifiedIdentifier(tableName, connection.driver)}`;
     const result = await this.workspaceClient.executeQuery(connection, dropQuery);
 
     return {
@@ -1769,7 +1765,13 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, `Connection not found: ${connectionId}`);
     }
 
-    const testResult = await this.workspaceClient.testConnection(connection);
+    const testResult = {
+      ...(await this.workspaceClient.testConnection(connection)),
+      connectionId: publicConnectionId(connection),
+    };
+    if (testResult.error) testResult.error = sanitizeDiagnostic(testResult.error);
+    if (testResult.databaseVersion)
+      testResult.databaseVersion = sanitizeDiagnostic(testResult.databaseVersion);
 
     return {
       content: [
@@ -1791,7 +1793,14 @@ export class OmniSQLMCPServer {
 
     const source = this.catalogSource(connection);
     const stats = await this.workspaceClient.getDatabaseStats(connection);
-    return this.presentDocument(stats, source);
+    return this.presentDocument(
+      {
+        ...stats,
+        connectionId: publicConnectionId(connection),
+        serverVersion: sanitizeDiagnostic(stats.serverVersion),
+      },
+      source
+    );
   }
 
   private async handleListTables(args: {
@@ -2118,7 +2127,7 @@ export class OmniSQLMCPServer {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(stats, null, 2),
+          text: JSON.stringify({ ...stats, connectionId: publicConnectionId(connection) }, null, 2),
         },
       ],
     };
@@ -2161,12 +2170,13 @@ export class OmniSQLMCPServer {
         this.log('Read-only mode enabled: write operations are disabled');
       }
       if (this.allowedConnections) {
-        this.log(`Connection whitelist active: ${Array.from(this.allowedConnections).join(', ')}`);
+        this.log(
+          `Connection whitelist active (${this.allowedConnections.size} configured selectors)`
+        );
       }
 
       if (this.debug) {
-        const debugInfo = this.configParser.getDebugInfo();
-        this.log(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`, 'debug');
+        this.log('Debug diagnostics enabled; connection infrastructure is private', 'debug');
       }
     } catch (error) {
       this.log(`Failed to start server: ${formatError(error)}`, 'error');

@@ -1,3 +1,4 @@
+import { tableNameParts } from '../metadata/identifiers.js';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { readPrivateFile } from '../runtime/private-file.js';
@@ -225,7 +226,7 @@ export class AccessPolicy {
   assertTableScope(c: DatabaseConnection, table: string): void {
     const error = this.scopeError(
       c,
-      table.split('.').map((value) => ({ value, quoted: true })),
+      tableNameParts(table).map((value) => ({ value, quoted: true })),
       'table'
     );
     if (error) throw new Error(error);

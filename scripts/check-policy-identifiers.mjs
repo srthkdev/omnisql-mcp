@@ -260,6 +260,39 @@ export async function checkIdentifierPolicies({
       await admin.query('DROP TABLE "orders"');
     }
     if (engine === 'postgres') {
+      const exactNames = ['my-table', "owner's table", 'two words', '123table'];
+      for (const name of exactNames) {
+        await admin.query(
+          'CREATE TABLE "' + name.replace(/"/g, '""') + '" (id INTEGER PRIMARY KEY)'
+        );
+        configure({ allowTables: ['public.*', '*'] });
+        for (const tableName of [name, '"public"."' + name + '"']) {
+          const schema = await call(client, 'get_table_schema', {
+            connectionId: 'scope',
+            tableName,
+          });
+          assert.deepEqual(
+            schema.columns.map((c) => c.name),
+            ['id']
+          );
+          assert.equal(schema.indexes.filter((i) => i.primary).length, 1);
+        }
+        configure({ allowTables: ['public.*', '*'], denyTables: ['public.' + name] });
+        await assert.rejects(
+          () => call(client, 'get_table_schema', { connectionId: 'scope', tableName: name }),
+          /Table.*policy/
+        );
+        await admin.query('DROP TABLE "' + name.replace(/"/g, '""') + '"');
+      }
+      configure({});
+      await assert.rejects(
+        () => query("SELECT ARRAY[nextval('missing_sequence')]"),
+        /not permitted/
+      );
+      await assert.rejects(
+        () => query("SELECT (ARRAY[1])[nextval('missing_sequence')]"),
+        /not permitted/
+      );
       await admin.query('CREATE TABLE "ä"(secret INTEGER)');
       await admin.query('INSERT INTO "ä" VALUES(999)');
       configure({ allowTables: ['orders', 'public.orders'] });

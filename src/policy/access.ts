@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import { readPrivateFile } from '../runtime/private-file.js';
 import type { DatabaseConnection } from '../types.js';
 import {
   analyzeSql,
@@ -77,12 +78,13 @@ export class AccessPolicy {
   }
   private reload(): void {
     if (!this.file) return;
-    const stat = fs.statSync(this.file, { bigint: true });
+    const stat = fs.lstatSync(this.file, { bigint: true });
+    if (!stat.isFile()) throw new Error('Policy file must be a regular file');
     if (stat.size > 1_000_000n) throw new Error('Policy file exceeds 1 MB');
     const stamp = `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
     if (stamp === this.stamp) return;
     const file = this.file;
-    const p: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const p: unknown = JSON.parse(readPrivateFile(file, 1_000_000, 'Policy file'));
     if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('Invalid access policy');
     const o = p as Record<string, unknown>;
     if (

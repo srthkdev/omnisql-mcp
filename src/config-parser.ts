@@ -1,5 +1,6 @@
 import { sqlDialect } from './policy/analyzer.js';
 import { loadConfiguredConnections } from './connections-config.js';
+import { booleanSetting } from './runtime-config.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -224,6 +225,7 @@ export class WorkspaceConfigParser {
 
   async parseConnections(): Promise<DatabaseConnection[]> {
     const configured = loadConfiguredConnections();
+    if (!this.discoverWorkspace()) return structuredClone(configured);
     const paths = this.isNewFormat
       ? this.getProjectDirs().flatMap((dir) => [
           path.join(dir, '.dbeaver', 'data-sources.json'),
@@ -596,6 +598,54 @@ export class WorkspaceConfigParser {
 
   getWorkspacePath(): string {
     return this.config.workspacePath!;
+  }
+
+  private discoverWorkspace(): boolean {
+    return booleanSetting(
+      process.env.OMNISQL_DISCOVER_WORKSPACE,
+      'OMNISQL_DISCOVER_WORKSPACE',
+      !process.env.OMNISQL_CONFIG_FILE
+    );
+  }
+
+  /** Private identity of the sources actually used by this parser, not mutable workspace env. */
+  stateRevision(): string {
+    const discover = this.discoverWorkspace();
+    const paths = !discover
+      ? []
+      : this.isNewFormat
+        ? this.getProjectDirs().flatMap((dir) => [
+            path.join(dir, '.dbeaver', 'data-sources.json'),
+            path.join(dir, '.dbeaver', 'credentials-config.json'),
+          ])
+        : [this.getConnectionsFilePath(), this.getCredentialsFilePath()];
+    const sources = paths.map((file) => {
+      try {
+        const stat = fs.statSync(file, { bigint: true });
+        return [
+          file,
+          String(stat.ino),
+          String(stat.size),
+          String(stat.mtimeNs),
+          String(stat.ctimeNs),
+        ];
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [file];
+        throw error;
+      }
+    });
+    return crypto
+      .createHash('sha256')
+      .update(
+        JSON.stringify([
+          discover ? this.config.workspacePath : null,
+          discover ? this.config.projectName : null,
+          process.env.OMNISQL_CONFIG_FILE ? path.resolve(process.env.OMNISQL_CONFIG_FILE) : null,
+          loadConfiguredConnections(),
+          sources,
+        ])
+      )
+      .digest('hex');
   }
 
   async getDriverInfo(driverId: string): Promise<any> {

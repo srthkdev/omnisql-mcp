@@ -53,7 +53,7 @@
 
 **Other databases**: Unsupported drivers return an explicit error. External GUI/CLI query fallback has been removed so access and output policies remain enforceable.
 
-DuckDB uses an installed CLI so its native binary stays out of the npm package. Install it with `brew install duckdb` on macOS, or use the [official downloads](https://duckdb.org/install/). Set `OMNISQL_DUCKDB_CLI` if the executable is outside your MCP client's PATH. See [database support](https://srthkdev.github.io/omnisql-mcp/guides/databases/) for configuration and limits.
+DuckDB uses an installed CLI so its native binary stays out of the npm package. Install it with `brew install duckdb` on macOS, or use the [official downloads](https://duckdb.org/install/). Set `OMNISQL_DUCKDB_CLI` if the executable is outside your MCP client's PATH. See [database support](https://srthkdev.github.io/omnisql-mcp/docs/guides/databases/) for configuration and limits.
 
 **Custom drivers** wrapping any of the above are detected automatically — see [Custom and IAM-Authenticated Drivers](#custom-and-iam-authenticated-drivers).
 
@@ -304,7 +304,7 @@ forward, and the connection's host/port are treated the way DBeaver treats them:
 - If a tunnel cannot be opened the connection fails with that reason. It never falls back to
   connecting directly to the recorded host, which would reach an unrelated local database.
 
-Table policies resolve real catalog names before checking access, including engine-specific case rules. Qualified denies also cover unqualified SQL; paged results and exports recheck permissions on every read. Restricted queries stay inside the selected database. See [access rules](https://srthkdev.github.io/omnisql-mcp/guides/access/) for configuration and limits.
+Table policies resolve real catalog names before checking access, including engine-specific case rules. Qualified denies also cover unqualified SQL; paged results and exports recheck permissions on every read. Restricted queries stay inside the selected database. See [access rules](https://srthkdev.github.io/omnisql-mcp/docs/guides/access/) for configuration and limits.
 
 ### Querying another database on the same server
 

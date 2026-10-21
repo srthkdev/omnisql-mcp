@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { describe, it, expect, vi, mock, afterEach } from 'bun:test';
 mock.module('node:child_process', () => ({ spawnSync: vi.fn() }));
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildInstallCommand, clientInvocation, installClient } from '../src/install.js';
 
@@ -98,4 +100,34 @@ describe('safe registration settings', () => {
     expect(invocation.env.OMNISQL_INSTALL_ARG_1).toBe(arg);
     expect(() => clientInvocation('codex.cmd', ['injected" & whoami'], 'win32')).toThrow(/quotes/);
   });
+});
+
+it('rejects conflicting setup sources and unknown configured allowlist IDs', () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  expect(() =>
+    installClient(['codex', '--config', '/unused', '--workspace', '/unused', '--dry-run'])
+  ).toThrow(/either --config or --workspace/);
+  const directory = fs.mkdtempSync(join(tmpdir(), 'omnisql-install-flags-'));
+  try {
+    const file = join(directory, 'config.json');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        connections: { analytics: { driver: 'sqlite', database: '/unused.db' } },
+      }),
+      { mode: 0o600 }
+    );
+    expect(() =>
+      installClient(['codex', '--config', file, '--allow', 'typo', '--dry-run'])
+    ).toThrow(/configured connection ID/);
+    expect(() =>
+      installClient(['codex', '--config', file, '--allow', 'analytics,', '--dry-run'])
+    ).toThrow(/configured connection ID/);
+    expect(() =>
+      installClient(['codex', '--config', file, '--allow', 'analytics/reporting', '--dry-run'])
+    ).not.toThrow();
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

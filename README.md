@@ -80,7 +80,7 @@ npx -y omnisql-mcp@latest install codex
 npx -y omnisql-mcp@latest install opencode
 ```
 
-Registrations default to read-only. `install <client>` opens guided setup in a terminal; noninteractive registration requires one of the explicit configuration paths below. Use `--config /path/to/connections.json` for a validated existing multi-instance configuration; workspace discovery stays disabled for that path. Use `--workspace /path/to/workspace --allow dev,analytics` to import selected saved connections. `--allow-writes` permits writes only where the connection's own policy also allows them. `--dry-run` previews registration without changing client settings. Setup refuses to replace an existing `omnisql` registration or write through symlink destinations. For writes, both `OMNISQL_READ_ONLY=false` (set by `--allow-writes`) and the connection's `readOnly: false` must permit them. SSH host keys are checked against `known_hosts` by default: verify the fingerprint before adding a host. `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly opts into the less safe legacy behavior.
+Registrations default to read-only. `install <client>` opens guided setup in a terminal; noninteractive registration requires one of the explicit configuration paths below. Use `--config /path/to/connections.json` for a validated existing multi-instance configuration; workspace discovery stays disabled for that path. Use `--workspace /path/to/workspace --allow dev,analytics` to import selected saved connections. `--allow-writes` permits writes only where the connection's own policy also allows them. `--dry-run` previews registration without changing client settings. Setup refuses to replace an existing `omnisql` registration or write through symlink destinations. For direct JSON connections, writes need both `OMNISQL_READ_ONLY=false` (set by `--allow-writes`) and `readOnly: false` on the connection. Imported workspace connections keep their saved read-only flag; the global read-only default still applies. SSH host keys are checked against `known_hosts` by default: verify the fingerprint before adding a host. `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly opts into the less safe legacy behavior.
 
 ### Native client commands
 
@@ -140,6 +140,7 @@ Large results use private, expiring handles with row and column pagination. Long
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `OMNISQL_DISCOVER_WORKSPACE` | Include saved workspace connections | `false` with a config file; `true` otherwise |
 | `OMNISQL_CONFIG_FILE` | JSON configuration for multiple database instances and their settings | Unset |
 | `OMNISQL_POLICY_FILE` | Additional schema, table, function, and database access rules | Unset |
 | `OMNISQL_WORKSPACE` | Path to local DB client workspace directory | OS default |
@@ -147,7 +148,7 @@ Large results use private, expiring handles with row and column pagination. Long
 | `OMNISQL_TIMEOUT` | Query timeout (ms) | `30000` |
 | `OMNISQL_DEBUG` | Enable debug logging | `false` |
 | `OMNISQL_UPDATE_NOTIFIER` | Check npm for updates and show notices on stderr | `true` |
-| `OMNISQL_READ_ONLY` | Disable all write operations | `false` |
+| `OMNISQL_READ_ONLY` | Disable all write operations | `true` |
 | `OMNISQL_ALLOWED_CONNECTIONS` | Comma-separated whitelist of connection IDs or names | All |
 | `OMNISQL_DISABLED_TOOLS` | Comma-separated tools to disable | None |
 | `OMNISQL_POOL_MIN` | Minimum connections per pool | `0` |
@@ -157,11 +158,11 @@ Large results use private, expiring handles with row and column pagination. Long
 | `OMNISQL_AWS_CLI_PATH` | Path to the AWS CLI (used for RDS IAM authentication) | `aws` |
 | `OMNISQL_IAM_TOKEN_TIMEOUT` | Timeout for minting an RDS IAM auth token (ms) | `20000` |
 | `OMNISQL_SSH_KNOWN_HOSTS` | known_hosts file used to verify SSH tunnel hosts | `~/.ssh/known_hosts` |
-| `OMNISQL_SSH_STRICT_HOST_KEY` | Refuse SSH tunnel hosts with no `known_hosts` entry | `false` |
+| `OMNISQL_SSH_STRICT_HOST_KEY` | Refuse SSH tunnel hosts with no `known_hosts` entry | `true` |
 
 ### Read-Only Mode
 
-Blocks all write operations. The `execute_query` tool only allows SELECT, EXPLAIN, SHOW, and DESCRIBE statements. Transaction tools are disabled entirely.
+Enabled by default and blocks all write operations. The `execute_query` tool only allows SELECT, EXPLAIN, SHOW, and DESCRIBE statements. Transaction tools are disabled entirely.
 
 ```json
 {
@@ -294,9 +295,9 @@ forward, and the connection's host/port are treated the way DBeaver treats them:
 - Agent authentication needs `SSH_AUTH_SOCK` set **in the MCP server's environment**. MCP clients
   usually do not inherit your shell, so set it explicitly in the client's server config if you
   use an agent.
-- The SSH host key is checked against `known_hosts`. A host recorded there must match, or the
-  tunnel is refused; a host that is not recorded is accepted, unless
-  `OMNISQL_SSH_STRICT_HOST_KEY=true`.
+- SSH host keys must match a trusted entry in `known_hosts`; unknown hosts are refused by default.
+  Verify the host fingerprint through a trusted channel before adding it.
+  `OMNISQL_SSH_STRICT_HOST_KEY=false` allows unknown hosts explicitly; known-host mismatches still fail.
 - If a tunnel cannot be opened the connection fails with that reason. It never falls back to
   connecting directly to the recorded host, which would reach an unrelated local database.
 

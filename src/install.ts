@@ -159,9 +159,21 @@ export function installClient(args: string[], environment: Record<string, string
         'Supported install options: --read-only, --allow-writes, --dry-run, --config <file>, --workspace <directory>, --allow <ids>'
       );
   }
+  if (settings.OMNISQL_CONFIG_FILE && settings.OMNISQL_WORKSPACE)
+    throw new Error('Choose either --config or --workspace for setup.');
   if (settings.OMNISQL_CONFIG_FILE) {
     const ids = validateSetupConfig(settings.OMNISQL_CONFIG_FILE);
     settings.OMNISQL_DISCOVER_WORKSPACE = 'false';
+    if (
+      settings.OMNISQL_ALLOWED_CONNECTIONS &&
+      settings.OMNISQL_ALLOWED_CONNECTIONS.split(',').some(
+        (selector) =>
+          !ids.some((id) => selector.trim() === id || selector.trim().startsWith(id + '/'))
+      )
+    )
+      throw new Error(
+        'Every --allow selector must identify a configured connection ID (optionally followed by /database).'
+      );
     settings.OMNISQL_ALLOWED_CONNECTIONS ||= ids.join(',');
   }
   if (settings.OMNISQL_READ_ONLY === 'false' && !flags.includes('--read-only')) readOnly = false;
@@ -232,6 +244,8 @@ async function workspaceConnections(workspace: string) {
 }
 
 export async function runInstall(args: string[]): Promise<void> {
+  if (args.includes('--config') && args.includes('--workspace'))
+    throw new Error('Choose either --config or --workspace for setup.');
   const preselected =
     args.length === 1 &&
     ['claude', 'codex', 'opencode'].includes(args[0]) &&

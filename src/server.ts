@@ -5,6 +5,7 @@ import {
   registerConnectionPrivacy,
   registerPrivateValue,
   sanitizeDiagnostic,
+  safeDatabaseVersion,
 } from './privacy.js';
 import {
   compressText,
@@ -1780,7 +1781,7 @@ export class OmniSQLMCPServer {
     };
     if (testResult.error) testResult.error = sanitizeDiagnostic(testResult.error);
     if (testResult.databaseVersion)
-      testResult.databaseVersion = sanitizeDiagnostic(testResult.databaseVersion);
+      testResult.databaseVersion = safeDatabaseVersion(testResult.databaseVersion);
 
     return {
       content: [
@@ -1806,7 +1807,7 @@ export class OmniSQLMCPServer {
       {
         ...stats,
         connectionId: publicConnectionId(connection),
-        serverVersion: sanitizeDiagnostic(stats.serverVersion),
+        serverVersion: safeDatabaseVersion(stats.serverVersion) ?? 'Unavailable',
       },
       source
     );

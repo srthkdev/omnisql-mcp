@@ -135,3 +135,10 @@ export function publicConnection(connection: DatabaseConnection): Record<string,
     ...(connection.readonly === undefined ? {} : { readonly: connection.readonly }),
   };
 }
+
+/** Present the numeric engine version, without exposing its platform/build banner. */
+export function safeDatabaseVersion(banner: string | undefined): string | undefined {
+  return banner
+    ?.slice(0, 4096)
+    .match(/(?:^|[^\d.])(\d{1,6}\.\d{1,6}(?:\.\d{1,6}){0,3})(?![\d.])/)?.[1];
+}

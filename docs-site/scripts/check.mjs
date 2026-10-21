@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { output, base, build, pages, root } from './build.mjs';
+import { output, base, build, pages, root, legacyRoutes } from './build.mjs';
 
 await build();
 const files = [];
@@ -38,7 +38,7 @@ for (const file of htmlFiles) {
 }
 for (const item of JSON.parse(readFileSync(join(output, 'search.json'), 'utf8')))
   checkLink(item.url, 'search.json');
-assert.equal(files.filter((file) => file.endsWith('/index.html')).length, pages.length + 1);
+assert.equal(files.filter((file) => file.endsWith('/index.html')).length, pages.length + legacyRoutes.length + 1);
 assert.equal(
   readFileSync(join(output, 'install.sh'), 'utf8'),
   readFileSync(join(root, '../scripts/install.sh'), 'utf8')

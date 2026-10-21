@@ -8,6 +8,7 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const output = join(root, 'build');
 export const base = '/omnisql-mcp/';
 const repo = 'https://github.com/srthkdev/omnisql-mcp';
+export const legacyRoutes = ['guides/databases', 'guides/access'];
 const manifest = JSON.parse(readFileSync(join(root, '../package.json'), 'utf8'));
 const tools = JSON.parse(readFileSync(join(root, 'data/tools.json'), 'utf8'));
 const escape = (value) =>
@@ -205,6 +206,16 @@ export async function build() {
       url: base + page.path + '/',
       text: source.replace(/[#*`|\[\]]/g, ' ').slice(0, 24000),
     });
+  }
+  // Published README versions used these paths before documentation moved under /docs.
+  for (const legacy of legacyRoutes) {
+    const destination = base + 'docs/' + legacy + '/';
+    write(
+      `${legacy}/index.html`,
+      shell('Documentation moved', 'Continue to the current documentation.',
+        `<main id="main"><h1>Documentation moved</h1><a href="${destination}">Open documentation ↗</a></main>`
+      ).replace('</head>', `<meta http-equiv="refresh" content="0; url=${destination}"></head>`)
+    );
   }
   for (const tool of tools)
     searchIndex.push({

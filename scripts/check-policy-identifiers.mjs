@@ -285,6 +285,22 @@ export async function checkIdentifierPolicies({
         await admin.query('DROP TABLE "' + name.replace(/"/g, '""') + '"');
       }
       configure({});
+      await admin.query('CREATE SCHEMA drop_fixture');
+      await admin.query('CREATE TABLE drop_fixture."my-table"(id INTEGER)');
+      await admin.query('CREATE TABLE "drop_fixture.my-table"(id INTEGER)');
+      await call(client, 'drop_table', {
+        connectionId: 'scope',
+        tableName: '"drop_fixture"."my-table"',
+        confirm: true,
+      });
+      const targets = await admin.query(
+        `SELECT to_regclass('drop_fixture."my-table"') AS intended,
+                to_regclass('public."drop_fixture.my-table"') AS separate`
+      );
+      assert.equal(targets[0].intended, null);
+      assert(targets[0].separate, 'Qualified DROP must not target a literal dotted table name');
+      await admin.query('DROP TABLE "drop_fixture.my-table"');
+      await admin.query('DROP SCHEMA drop_fixture');
       await assert.rejects(
         () => query("SELECT ARRAY[nextval('missing_sequence')]"),
         /not permitted/

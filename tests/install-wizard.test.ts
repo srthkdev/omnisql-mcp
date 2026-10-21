@@ -87,4 +87,53 @@ describe('guided direct setup', () => {
       else process.env.CODEX_HOME = priorHome;
     }
   });
+  it('validates selected workspace IDs without reading an inherited direct config', async () => {
+    const directory = fs.mkdtempSync(join(tmpdir(), 'omnisql-workspace-'));
+    directories.push(directory);
+    const project = join(directory, 'workspace', 'General', '.dbeaver');
+    fs.mkdirSync(project, { recursive: true });
+    fs.writeFileSync(
+      join(project, 'data-sources.json'),
+      JSON.stringify({
+        connections: {
+          selected: {
+            name: 'selected',
+            driver: 'sqlite',
+            configuration: { database: '/fixture.db' },
+          },
+        },
+      })
+    );
+    const previousConfig = process.env.OMNISQL_CONFIG_FILE,
+      previousDiscovery = process.env.OMNISQL_DISCOVER_WORKSPACE,
+      previousHome = process.env.CODEX_HOME;
+    process.env.OMNISQL_CONFIG_FILE = join(directory, 'unrelated-private-config.json');
+    process.env.OMNISQL_DISCOVER_WORKSPACE = 'false';
+    process.env.CODEX_HOME = join(directory, 'codex');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await runInstall([
+        'codex',
+        '--workspace',
+        join(directory, 'workspace'),
+        '--allow',
+        'selected',
+      ]);
+      expect(process.env.OMNISQL_CONFIG_FILE).toBe(
+        join(directory, 'unrelated-private-config.json')
+      );
+      expect(process.env.OMNISQL_DISCOVER_WORKSPACE).toBe('false');
+      await expect(
+        runInstall(['codex', '--workspace', join(directory, 'workspace'), '--allow', 'missing'])
+      ).rejects.toThrow(/existing workspace/);
+    } finally {
+      for (const [key, value] of [
+        ['OMNISQL_CONFIG_FILE', previousConfig],
+        ['OMNISQL_DISCOVER_WORKSPACE', previousDiscovery],
+        ['CODEX_HOME', previousHome],
+      ])
+        if (value === undefined) delete process.env[key!];
+        else process.env[key!] = value;
+    }
+  });
 });

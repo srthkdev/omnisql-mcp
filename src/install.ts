@@ -211,6 +211,26 @@ function answer<T>(value: T | symbol): T {
   return value as T;
 }
 
+async function workspaceConnections(workspace: string) {
+  const previousConfig = process.env.OMNISQL_CONFIG_FILE;
+  const previousDiscovery = process.env.OMNISQL_DISCOVER_WORKSPACE;
+  try {
+    // Setup inspects only the source selected by the person at the terminal.
+    delete process.env.OMNISQL_CONFIG_FILE;
+    process.env.OMNISQL_DISCOVER_WORKSPACE = 'true';
+    return await new WorkspaceConfigParser({ workspacePath: workspace }).parseConnections();
+  } catch {
+    throw new Error(
+      'Cannot read the selected workspace. Check its configuration before registering.'
+    );
+  } finally {
+    if (previousConfig === undefined) delete process.env.OMNISQL_CONFIG_FILE;
+    else process.env.OMNISQL_CONFIG_FILE = previousConfig;
+    if (previousDiscovery === undefined) delete process.env.OMNISQL_DISCOVER_WORKSPACE;
+    else process.env.OMNISQL_DISCOVER_WORKSPACE = previousDiscovery;
+  }
+}
+
 export async function runInstall(args: string[]): Promise<void> {
   const preselected =
     args.length === 1 &&
@@ -220,6 +240,17 @@ export async function runInstall(args: string[]): Promise<void> {
       ? args[0]
       : undefined;
   if (args.length > 0 && !preselected) {
+    const workspace = args[args.indexOf('--workspace') + 1];
+    if (args.includes('--workspace') && workspace && !args.includes('--dry-run')) {
+      const available = await workspaceConnections(expandPath(workspace));
+      const selected = args.includes('--allow')
+        ? args[args.indexOf('--allow') + 1]?.split(',').map((id) => id.trim())
+        : [];
+      if (!selected?.length || selected.some((id) => !available.some((entry) => entry.id === id)))
+        throw new Error(
+          'Select existing workspace connection IDs with --allow before registering.'
+        );
+    }
     installClient(args);
     return;
   }
@@ -321,6 +352,11 @@ export async function runInstall(args: string[]): Promise<void> {
         })
       )
     );
+    const available = await workspaceConnections(workspace);
+    note(
+      available.map(({ id }) => id).join(', ') || 'No saved connection IDs found.',
+      'Available connection IDs'
+    );
     const allowed = answer(
       await text({
         message: 'Connection IDs to allow (comma-separated; required)',
@@ -331,9 +367,6 @@ export async function runInstall(args: string[]): Promise<void> {
         },
       })
     );
-    const available = await new WorkspaceConfigParser({
-      workspacePath: workspace,
-    }).parseConnections();
     const ids = allowed.split(',').map((id) => id.trim());
     if (ids.some((id) => !available.some((entry) => entry.id === id)))
       throw new Error('A selected connection ID was not found in the workspace.');

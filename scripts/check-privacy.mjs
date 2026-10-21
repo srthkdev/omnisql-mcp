@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -22,6 +23,23 @@ const noPrivateValues = (value) => {
 let client;
 let stderr = '';
 try {
+  for (const setting of ['OMNISQL_CONFIG_FILE', 'OMNISQL_POLICY_FILE']) {
+    const missing = 'canary-missing-startup-file-' + randomBytes(8).toString('hex');
+    const failure = spawnSync(process.execPath, [resolve('dist/index.js')], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        OMNISQL_CONFIG_FILE: '',
+        OMNISQL_POLICY_FILE: '',
+        OMNISQL_UPDATE_NOTIFIER: 'false',
+        [setting]: missing,
+      },
+      timeout: 10000,
+    });
+    assert.equal(failure.status, 1);
+    assert(!failure.stderr.includes(missing), 'Startup errors must hide private operator paths');
+    assert.equal(failure.stdout, '');
+  }
   execFileSync('sqlite3', [database], {
     input: `CREATE TABLE sample(id INTEGER PRIMARY KEY, body TEXT); INSERT INTO sample VALUES(1,'${password}'); CREATE TRIGGER deny_write BEFORE INSERT ON sample BEGIN SELECT RAISE(ABORT,'${password}'); END;`,
   });

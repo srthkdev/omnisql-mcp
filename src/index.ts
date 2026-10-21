@@ -1,4 +1,4 @@
-import { sanitizeDiagnostic } from './privacy.js';
+import { registerPrivateValue, sanitizeDiagnostic } from './privacy.js';
 import fs from 'node:fs';
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   .version as string;
@@ -79,6 +79,16 @@ if (process.argv.includes('--version')) {
   console.error(VERSION);
   process.exit(0);
 }
+
+// Register operator paths before constructing policy/configuration objects: startup
+// failures can happen before any connection has been discovered.
+for (const name of [
+  'OMNISQL_CONFIG_FILE',
+  'OMNISQL_POLICY_FILE',
+  'OMNISQL_WORKSPACE',
+  'OMNISQL_SSH_KNOWN_HOSTS',
+])
+  registerPrivateValue(process.env[name]);
 
 try {
   const { startServer } = await import('./server.js');

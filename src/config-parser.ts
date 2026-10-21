@@ -640,6 +640,20 @@ export class WorkspaceConfigParser {
   }
 
   /** Private identity of the sources actually used by this parser, not mutable workspace env. */
+  sourceIdentity(): string {
+    const discover = this.discoverWorkspace();
+    return crypto
+      .createHash('sha256')
+      .update(
+        JSON.stringify([
+          discover ? this.config.workspacePath : null,
+          discover ? this.config.projectName : null,
+          process.env.OMNISQL_CONFIG_FILE ? path.resolve(process.env.OMNISQL_CONFIG_FILE) : null,
+        ])
+      )
+      .digest('hex');
+  }
+
   stateRevision(): string {
     const discover = this.discoverWorkspace();
     const paths = !discover
@@ -667,15 +681,7 @@ export class WorkspaceConfigParser {
     });
     return crypto
       .createHash('sha256')
-      .update(
-        JSON.stringify([
-          discover ? this.config.workspacePath : null,
-          discover ? this.config.projectName : null,
-          process.env.OMNISQL_CONFIG_FILE ? path.resolve(process.env.OMNISQL_CONFIG_FILE) : null,
-          loadConfiguredConnections(),
-          sources,
-        ])
-      )
+      .update(JSON.stringify([this.sourceIdentity(), loadConfiguredConnections(), sources]))
       .digest('hex');
   }
 

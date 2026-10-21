@@ -223,8 +223,14 @@ export class OmniSQLMCPServer {
   }
 
   private currentNotesScope(): string {
+    return this.privateStateScope(this.configParser.stateRevision());
+  }
+  private currentArtifactScope(): string {
+    return this.privateStateScope(this.configParser.sourceIdentity());
+  }
+  private privateStateScope(sourceRevision: string): string {
     return JSON.stringify([
-      this.configParser.stateRevision(),
+      sourceRevision,
       this.accessPolicy.revision(),
       [...(this.allowedConnections ?? [])].sort(),
       this.allowedConnections !== null,
@@ -1372,18 +1378,18 @@ export class OmniSQLMCPServer {
     policyRevision?: string
   ): ArtifactSource {
     return {
-      stateRevision: this.currentNotesScope(),
+      stateRevision: this.currentArtifactScope(),
       scopes: [this.artifactScope(connection, { kind: 'sql', query }, policyRevision)],
     };
   }
   private catalogSource(...connections: DatabaseConnection[]): ArtifactSource {
     return {
-      stateRevision: this.currentNotesScope(),
+      stateRevision: this.currentArtifactScope(),
       scopes: connections.map((connection) => this.artifactScope(connection, { kind: 'catalog' })),
     };
   }
   private async resultConnections(source: ArtifactSource): Promise<DatabaseConnection[]> {
-    if (source.stateRevision !== this.currentNotesScope())
+    if (source.stateRevision !== this.currentArtifactScope())
       throw new Error('Result connection or access policy changed; run the query again');
     const connections = [];
     for (const scope of source.scopes) {

@@ -54,6 +54,7 @@ describe('effective connection-source identity', () => {
     const dir = workspace('a');
     const parser = new WorkspaceConfigParser({ workspacePath: dir });
     const before = parser.stateRevision();
+    const identity = parser.sourceIdentity();
     setEnv('OMNISQL_WORKSPACE', workspace('b'));
     expect(parser.stateRevision()).toBe(before);
     expect(
@@ -61,6 +62,7 @@ describe('effective connection-source identity', () => {
     ).not.toBe(before);
     fs.appendFileSync(path.join(dir, 'General', '.dbeaver', 'data-sources.json'), '\n');
     expect(parser.stateRevision()).not.toBe(before);
+    expect(parser.sourceIdentity()).toBe(identity);
   });
   it('revokes private state after credential environment or config source changes', () => {
     const config = {

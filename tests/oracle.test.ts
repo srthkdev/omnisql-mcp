@@ -261,7 +261,7 @@ describe('Oracle execution', () => {
 
   it('caps the fetch, normalizes SQL, and closes the session after an error', async () => {
     const { WorkspaceClient } = await import('../src/workspace-client.js');
-    const execute = vi.fn().mockRejectedValue(new Error('ORA-00942'));
+    const execute = vi.fn().mockResolvedValueOnce({}).mockRejectedValue(new Error('ORA-00942'));
     const close = vi.fn().mockResolvedValue(undefined);
     const closePool = vi.fn().mockResolvedValue(undefined);
     vi.spyOn(oracledb, 'createPool').mockResolvedValue({

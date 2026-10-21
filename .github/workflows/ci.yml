@@ -32,6 +32,8 @@ jobs:
         run: bun scripts/check-results.mjs && node scripts/check-results.mjs
       - name: Check large MCP catalogs on both runtimes
         run: bun scripts/check-catalogs.mjs && node scripts/check-catalogs.mjs
+      - name: Check model-visible privacy on both runtimes
+        run: bun scripts/check-privacy.mjs && node scripts/check-privacy.mjs
       - name: Verify packed npm CLI on both runtimes
         run: bun scripts/check-package.mjs && node scripts/check-package.mjs
       - run: bun audit --audit-level=high
@@ -60,6 +62,18 @@ jobs:
           name: compiled-server
           path: dist/
       - run: node scripts/check-package.mjs
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun test --isolate tests/install-windows.test.ts
   docs:
     runs-on: ubuntu-latest
     steps:

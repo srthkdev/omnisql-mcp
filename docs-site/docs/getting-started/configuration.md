@@ -101,6 +101,7 @@ Use absolute paths in client configuration. The path is the workspace directory,
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `OMNISQL_CONFIG_FILE` | JSON file containing explicit database instances and per-instance settings | Unset |
+| `OMNISQL_DISCOVER_WORKSPACE` | Include saved workspace connections alongside explicit configuration | `false` with a config file; otherwise `true` |
 | `OMNISQL_POLICY_FILE` | Additional operator access policy applied across configuration sources | Unset |
 | `OMNISQL_WORKSPACE` | Directory containing the DB client workspace | OS default |
 | `OMNISQL_PROJECT` | Read only this workspace project | All projects |

@@ -67,7 +67,7 @@ main() {
     bun_bin="$runtime_dir/bun"
   fi
   printf 'Installing omnisql-mcp@%s...\n' "$version"
-  "$bun_bin" add --cwd "$install_dir" --production --exact --ignore-scripts "omnisql-mcp@$version"
+  "$bun_bin" add --cwd "$install_dir" --no-cache --production --exact --ignore-scripts "omnisql-mcp@$version"
   local launcher
   launcher="$(mktemp "$bin_dir/.omnisql-mcp.XXXXXX")"
   {

@@ -59,7 +59,7 @@ DuckDB uses an installed CLI so its native binary stays out of the npm package. 
 
 ## Requirements
 
-- Bun 1.4.3+ or Node.js 22.15+
+- Bun 1.4.3+, Node.js 22.15+ within 22.x, or Node.js 24+
 - A database connection or an existing DBeaver-compatible workspace
 
 ## Quick setup
@@ -80,7 +80,9 @@ npx -y omnisql-mcp@latest install codex
 npx -y omnisql-mcp@latest install opencode
 ```
 
-Registrations default to read-only. `install <client>` opens guided setup in a terminal; noninteractive registration requires one of the explicit configuration paths below. Use `--config /path/to/connections.json` for a validated existing multi-instance configuration; workspace discovery stays disabled for that path. Use `--workspace /path/to/workspace --allow dev,analytics` to import selected saved connections. `--allow-writes` permits writes only where the connection's own policy also allows them. `--dry-run` previews registration without changing client settings. Setup refuses to replace an existing `omnisql` registration or write through symlink destinations. For direct JSON connections, writes need both `OMNISQL_READ_ONLY=false` (set by `--allow-writes`) and `readOnly: false` on the connection. Imported workspace connections keep their saved read-only flag; the global read-only default still applies. SSH host keys are checked against `known_hosts` by default: verify the fingerprint before adding a host. `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly opts into the less safe legacy behavior.
+Registrations default to read-only. `install <client>` opens guided setup in a terminal. For noninteractive setup, provide `--config /path/to/connections.json`, or `--workspace /path/to/workspace --allow dev,analytics` for selected saved connections. Explicit config excludes workspace discovery. `--dry-run` previews registration; setup refuses to overwrite an existing entry or use symlink destinations.
+
+`--allow-writes` enables write tools. Direct JSON connections also need `readOnly: false`; imported connections retain their saved flag. Database grants and operator policy still apply. SSH requires a verified `known_hosts` entry by default; `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly allows unknown hosts for legacy setups.
 
 ### Native client commands
 
@@ -88,10 +90,10 @@ You can also register the server using your client's own CLI:
 
 ```bash
 # Claude Code — available across projects
-claude mcp add --transport stdio --scope user omnisql -- npx -y omnisql-mcp@latest
+claude mcp add --transport stdio --scope user omnisql --env OMNISQL_CONFIG_FILE=/absolute/path/connections.json -- npx -y omnisql-mcp@latest
 
 # Codex
-codex mcp add omnisql -- npx -y omnisql-mcp@latest
+codex mcp add omnisql --env OMNISQL_CONFIG_FILE=/absolute/path/connections.json -- npx -y omnisql-mcp@latest
 
 # OpenCode v2 — available across projects
 opencode mcp add omnisql --global -- npx -y omnisql-mcp@latest
@@ -108,7 +110,8 @@ Add the following MCP entry to Claude Desktop's `claude_desktop_config.json`, or
   "mcpServers": {
     "omnisql": {
       "command": "npx",
-      "args": ["-y", "omnisql-mcp@latest"]
+      "args": ["-y", "omnisql-mcp@latest"],
+      "env": { "OMNISQL_CONFIG_FILE": "/absolute/path/connections.json" }
     }
   }
 }
@@ -124,7 +127,7 @@ For a local executable, including machines without Node.js:
 curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
 ```
 
-Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Bun 1.4.3+ is unavailable, it downloads a private Bun runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 2.2.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
+Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Bun 1.4.3+ is unavailable, it downloads a private Bun runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 3.0.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
 
 ## One server, many instances
 

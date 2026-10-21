@@ -95,6 +95,11 @@ try {
   const alias = discovered.find((connection) => connection.name === 'Private selector').id;
   assert.match(alias, /^connection-[a-f0-9]{24}$/);
   noPrivateValues(await call('get_connection_info', { connectionId: alias }));
+  noPrivateValues(await call('get_pool_stats', { connectionId: alias }));
+  await call('append_insight', { connection: alias, insight: 'Fixture analytical observation' });
+  const notes = await call('list_insights', { connection: alias });
+  noPrivateValues(notes);
+  assert(JSON.stringify(notes).includes(alias));
   noPrivateValues(
     await call('execute_query', { connectionId: alias, query: 'SELECT id FROM sample' })
   );

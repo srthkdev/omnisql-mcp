@@ -1839,13 +1839,13 @@ export class OmniSQLMCPServer {
       throw new McpError(ErrorCode.InvalidParams, 'Insight text is required');
     }
 
-    if (args.connection && !(await this.getConnection(args.connection)))
-      throw new Error('Insight connection is not accessible');
+    const connection = args.connection ? await this.getConnection(args.connection) : undefined;
+    if (args.connection && !connection) throw new Error('Insight connection is not accessible');
     const newInsight: BusinessInsight = {
       id: Math.max(Date.now(), ...this.insights.map((n) => n.id)) + 1,
       insight: args.insight.trim(),
       created_at: new Date().toISOString(),
-      connection: args.connection,
+      connection: connection?.id,
       tags: args.tags || [],
     };
 
@@ -1873,13 +1873,30 @@ export class OmniSQLMCPServer {
   private async handleListInsights(args: { connection?: string; tags?: string[] }) {
     this.refreshNotes();
     const visible = await this.getFilteredConnections();
+    const connections = new Map(
+      visible.flatMap(
+        (connection) =>
+          [
+            [connection.id, connection],
+            [publicConnectionId(connection), connection],
+          ] as [string, DatabaseConnection][]
+      )
+    );
+    for (const connection of visible) {
+      if (
+        !connections.has(connection.name) &&
+        visible.filter((c) => c.name === connection.name).length === 1
+      )
+        connections.set(connection.name, connection);
+    }
     let filteredInsights = this.insights.filter(
-      (n) => !n.connection || visible.some((c) => c.id === n.connection || c.name === n.connection)
+      (n) => !n.connection || connections.has(n.connection)
     );
 
     if (args.connection) {
+      const selected = connections.get(args.connection);
       filteredInsights = filteredInsights.filter(
-        (insight) => insight.connection === args.connection
+        (insight) => !!selected && connections.get(insight.connection ?? '')?.id === selected.id
       );
     }
 
@@ -1893,7 +1910,16 @@ export class OmniSQLMCPServer {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(filteredInsights, null, 2),
+          text: JSON.stringify(
+            filteredInsights.map((insight) => ({
+              ...insight,
+              ...(insight.connection
+                ? { connection: publicConnectionId(connections.get(insight.connection)!) }
+                : {}),
+            })),
+            null,
+            2
+          ),
         },
       ],
     };
@@ -2088,7 +2114,12 @@ export class OmniSQLMCPServer {
     const targetSchemas = await load(targetConn, targetTables);
 
     checkDeadline();
-    const diff = await compareSchemas(sourceSchemas, targetSchemas, sourceConnId, targetConnId);
+    const diff = await compareSchemas(
+      sourceSchemas,
+      targetSchemas,
+      publicConnectionId(sourceConn),
+      publicConnectionId(targetConn)
+    );
 
     const response: { diff: SchemaDiff; migrationScript?: string } = { diff };
 
@@ -2118,7 +2149,7 @@ export class OmniSQLMCPServer {
           {
             type: 'text' as const,
             text: JSON.stringify({
-              connectionId,
+              connectionId: publicConnectionId(connection),
               message: 'No pool available for this connection type',
             }),
           },

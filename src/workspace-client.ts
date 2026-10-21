@@ -498,10 +498,7 @@ export class WorkspaceClient {
       try {
         await conn.close();
       } catch (closeError) {
-        console.error(
-          'Failed to release Oracle session:',
-          closeError instanceof Error ? closeError.message : String(closeError)
-        );
+        console.error('Failed to release Oracle session:', sanitizeDiagnostic(closeError));
       }
     }
   }

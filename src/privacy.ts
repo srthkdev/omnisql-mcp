@@ -84,6 +84,7 @@ export function sanitizeDiagnostic(value: unknown): string {
       /(?:[A-Za-z]:\\|\/(?:Users|home|private|tmp|var|etc|opt|Volumes)\/)[^\s'"<>),;]*/g,
       REDACTED
     )
+    .replace(/\barn:aws[a-z-]*:[^\s'"<>]+/gi, REDACTED)
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, REDACTED)
     .replace(
       /\b[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.(?:com|net|org|io|dev|local|internal|cloud|amazonaws|azure)(?::\d+)?\b/gi,

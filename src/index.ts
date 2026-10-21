@@ -1,3 +1,4 @@
+import { sanitizeDiagnostic } from './privacy.js';
 import fs from 'node:fs';
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   .version as string;
@@ -82,6 +83,6 @@ try {
   const { startServer } = await import('./server.js');
   await startServer();
 } catch (error) {
-  console.error('Server startup failed:', error instanceof Error ? error.message : String(error));
+  console.error('Server startup failed:', sanitizeDiagnostic(error));
   process.exitCode = 1;
 }

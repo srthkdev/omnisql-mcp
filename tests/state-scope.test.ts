@@ -31,6 +31,21 @@ function workspace(name: string) {
   return dir;
 }
 describe('effective connection-source identity', () => {
+  it('refuses database overrides that collide with another saved connection identity', async () => {
+    setEnv('OMNISQL_CONFIG_FILE', undefined);
+    setEnv('OMNISQL_DISCOVER_WORKSPACE', undefined);
+    const dir = workspace('collision');
+    const file = path.join(dir, 'General', '.dbeaver', 'data-sources.json');
+    const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+    config.connections['saved/db'] = {
+      ...config.connections.saved,
+      name: 'Separate saved connection',
+    };
+    fs.writeFileSync(file, JSON.stringify(config));
+    const parser = new WorkspaceConfigParser({ workspacePath: dir });
+    expect((await parser.getConnection('saved/db'))?.baseId).toBe('saved/db');
+    await expect(parser.getConnection('saved', 'db')).rejects.toThrow(/conflicts/);
+  });
   it('does not discover unrelated saved connections in direct-config mode', async () => {
     const dir = workspace('saved');
     const file = path.join(root, 'direct.json');

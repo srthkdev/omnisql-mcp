@@ -604,6 +604,11 @@ export class WorkspaceConfigParser {
         `Database override is not supported for ${match.driver}; configure a separate connection for that target`
       );
 
+    if (connections.some((connection) => connection.id === `${match.id}/${databaseOverride}`))
+      throw new Error(
+        'Database selector conflicts with a saved connection ID; use separate logical IDs'
+      );
+
     // Database-override syntax "<id>/<database>": clone the matched connection
     // with the requested database swapped in. The synthetic id ensures pool
     // caches keyed on connection.id stay separated per target database.

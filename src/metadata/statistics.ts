@@ -1,3 +1,4 @@
+import { sanitizeDiagnostic } from '../privacy.js';
 import { mysqlNameEquals, duckdbNameEquals } from './names.js';
 import type { DatabaseConnection } from '../types.js';
 import { type CatalogQuery, records, tableParts } from './catalog.js';
@@ -38,9 +39,7 @@ export async function tableStatistics(
   try {
     row = records(await query(sql))[0];
   } catch (error) {
-    notes.push(
-      `Catalog statistics unavailable: ${error instanceof Error ? error.message : String(error)}`
-    );
+    notes.push(`Catalog statistics unavailable: ${sanitizeDiagnostic(error)}`);
   }
   const scalar = (key: string): string | null =>
     row?.[key] === null || row?.[key] === undefined ? null : String(row[key]);
@@ -121,9 +120,7 @@ export async function visibleStorage(
       }
     }
   } catch (error) {
-    notes.push(
-      `Storage catalog unavailable: ${error instanceof Error ? error.message : String(error)}`
-    );
+    notes.push(`Storage catalog unavailable: ${sanitizeDiagnostic(error)}`);
   }
   if (dialect === 'oracle')
     notes.push('Oracle storage covers the connected user; LOB segments may be separate.');

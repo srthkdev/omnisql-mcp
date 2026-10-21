@@ -1,3 +1,4 @@
+import { sanitizeDiagnostic } from '../privacy.js';
 import { mysqlNameEquals, duckdbNameEquals } from './names.js';
 import { tableNameParts, catalogLiteral } from './identifiers.js';
 import { sqlDialect } from '../policy/analyzer.js';
@@ -79,9 +80,7 @@ export async function indexesAndConstraints(
       if (result.truncated) notes.push('Catalog details reached their result budget.');
       return result;
     } catch (error) {
-      notes.push(
-        'Catalog details unavailable: ' + (error instanceof Error ? error.message : String(error))
-      );
+      notes.push('Catalog details unavailable: ' + sanitizeDiagnostic(error));
       return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
     }
   };

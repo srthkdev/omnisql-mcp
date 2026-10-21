@@ -103,4 +103,8 @@ describe('connection privacy boundary', () => {
     registerPrivateValue('a+b');
     expect(sanitizeDiagnostic('a+b aaab stable')).toBe('[private] aaab stable');
   });
+  it('withholds diagnostics after a hostile oversized private value instead of retaining it', () => {
+    registerPrivateValue('x'.repeat(1024 * 1024 + 1));
+    expect(sanitizeDiagnostic('arbitrary unregistered error details')).toContain('withheld');
+  });
 });

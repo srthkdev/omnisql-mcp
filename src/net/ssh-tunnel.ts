@@ -1,3 +1,4 @@
+import { registerConnectionPrivacy, sanitizeDiagnostic } from '../privacy.js';
 /**
  * SSH tunnels for connections that DBeaver reaches through one.
  *
@@ -151,7 +152,7 @@ export class SshTunnelManager {
 
   private log(message: string): void {
     if (this.debug) {
-      console.error(`[SshTunnel] ${message}`);
+      console.error(`[SshTunnel] ${sanitizeDiagnostic(message)}`);
     }
   }
 
@@ -164,6 +165,7 @@ export class SshTunnelManager {
     connection: DatabaseConnection,
     defaultPort: number
   ): Promise<TunnelEndpoint | null> {
+    registerConnectionPrivacy(connection);
     const config = connection.sshTunnel;
     if (!config || !config.enabled) {
       return null;

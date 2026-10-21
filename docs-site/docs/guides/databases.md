@@ -119,7 +119,7 @@ The existing `connectionId: "my-pg-server/app_logs"` shorthand also works. Confl
 
 Enabled `ssh_tunnel` handlers open a local forward to the target configured in the workspace. Password, SSH agent, and public-key authentication are supported.
 
-Known SSH hosts must match their recorded host key. Enable `OMNISQL_SSH_STRICT_HOST_KEY=true` to also reject hosts with no `known_hosts` entry. A failed tunnel does not fall back to a direct database connection.
+SSH tunnels require a matching `known_hosts` entry by default. Verify and record an unknown host fingerprint before connecting. `OMNISQL_SSH_STRICT_HOST_KEY=false` explicitly allows unknown hosts for legacy setups; mismatched and revoked keys remain blocked. A failed tunnel does not fall back to a direct database connection.
 
 Oracle TNS aliases and full descriptors cannot be redirected through the SSH tunnel path and are rejected when combined with it. Use a basic Oracle host/service or host/SID connection for that case.
 

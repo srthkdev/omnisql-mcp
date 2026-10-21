@@ -5,7 +5,38 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { WorkspaceClient } from '../src/workspace-client.js';
 import { buildSchemaQuery } from '../src/utils.js';
+import { tableNameParts, quoteQualifiedIdentifier } from '../src/metadata/identifiers.js';
+import { indexesAndConstraints } from '../src/metadata/catalog.js';
 describe('scoped catalog metadata', () => {
+  it('accepts exact catalog names and escapes metadata literals (issue #79)', async () => {
+    for (const name of ['my-table', 'two words', '123table', 'München', "owner's table"])
+      expect(buildSchemaQuery('postgres', name)).toContain(
+        `table_name = '${name.replace(/'/g, "''")}'`
+      );
+    expect(buildSchemaQuery('postgres', '"schema.name"."table.name"')).toContain(
+      "table_schema = 'schema.name' AND table_name = 'table.name'"
+    );
+    expect(tableNameParts('"public"."a""b"')).toEqual(['public', 'a"b']);
+    for (const invalid of ['', 'public.', 'a.b.c', '"unfinished', 'table\u0000'])
+      expect(() => buildSchemaQuery('postgres', invalid)).toThrow();
+    const statements: string[] = [];
+    await indexesAndConstraints(
+      { id: 'pg', name: 'pg', driver: 'postgres', url: '' },
+      "owner's table",
+      async (sql) => {
+        statements.push(sql);
+        return { columns: [], rows: [], rowCount: 0, executionTime: 0 };
+      }
+    );
+    expect(statements).toHaveLength(2);
+    expect(statements.every((sql) => sql.includes("t.relname='owner''s table'"))).toBe(true);
+  });
+  it('quotes qualified write targets separately for each SQL grammar', () => {
+    expect(quoteQualifiedIdentifier('public.orders', 'postgres')).toBe('"public"."orders"');
+    expect(quoteQualifiedIdentifier('warehouse.orders', 'mysql')).toBe('`warehouse`.`orders`');
+    expect(quoteQualifiedIdentifier('dbo.orders', 'mssql')).toBe('[dbo].[orders]');
+    expect(quoteQualifiedIdentifier('"public"."a""b"', 'postgres')).toBe('"public"."a""b"');
+  });
   it('rejects truncated discovery instead of claiming the catalog is complete', async () => {
     const client = new WorkspaceClient();
     const c = { id: 'fixture', name: 'fixture', url: '', driver: 'postgresql' };

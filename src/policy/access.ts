@@ -262,8 +262,8 @@ export class AccessPolicy {
   ): SqlAnalysis | undefined {
     this.assertConnection(c);
     const error =
-      validateStatement(query) ||
-      (readOnly || this.isReadOnly(c) ? validateReadStatement(query) : null);
+      validateStatement(query, undefined, sqlDialect(c.driver)) ||
+      (readOnly || this.isReadOnly(c) ? validateReadStatement(query, sqlDialect(c.driver)) : null);
     if (error) throw new Error(error);
     const rules = this.rules(c);
     const restricted = this.isDatabaseScoped(c);

@@ -6,7 +6,7 @@ export interface SqlToken {
 }
 
 /** Tokenize policy-relevant SQL without treating quoted values as executable text. */
-export function sqlTokens(query: string): SqlToken[] {
+export function sqlTokens(query: string, dialect = 'generic'): SqlToken[] {
   if (typeof query !== 'string' || !query.trim()) throw new Error('Query cannot be empty');
   if (Buffer.byteLength(query) > 1_000_000) throw new Error('SQL exceeds the 1 MB limit');
   const tokens: SqlToken[] = [];
@@ -48,7 +48,13 @@ export function sqlTokens(query: string): SqlToken[] {
       i = end + dollar.length;
       continue;
     }
-    if (["'", '"', '`', '['].includes(c)) {
+    // PostgreSQL/DuckDB subscripts and ARRAY[...] contain executable expressions.
+    // Only SQL Server treats every [...] as a quoted identifier. The generic
+    // guard recognizes ARRAY too, before the connection-specific guard runs.
+    const bracketIdentifier =
+      c === '[' &&
+      (dialect === 'mssql' || (dialect === 'generic' && tokens.at(-1)?.value !== 'array'));
+    if (["'", '"', '`'].includes(c) || bracketIdentifier) {
       const end = c === '[' ? ']' : c;
       let value = '',
         closed = false;
@@ -90,9 +96,13 @@ export function sqlTokens(query: string): SqlToken[] {
   return tokens;
 }
 
-export function validateStatement(query: string, expected?: string[]): string | null {
+export function validateStatement(
+  query: string,
+  expected?: string[],
+  dialect = 'generic'
+): string | null {
   try {
-    const tokens = sqlTokens(query);
+    const tokens = sqlTokens(query, dialect);
     const words = tokens.filter((t) => t.kind === 'word').map((t) => t.value);
     if (
       ![
@@ -147,9 +157,9 @@ const WRITE_WORDS = new Set(
 const UNSAFE_FUNCTIONS =
   /^(?:nextval|setval|set_config|pg_notify|pg_(?:read|write|append|stat|ls)_.*|pg_advisory_.*|pg_(?:terminate|cancel)_backend|lo_(?:import|export)|dblink.*|load_extension|writefile|readfile|sys_exec|sys_eval|sleep|benchmark|system|shell)$/;
 
-export function validateReadStatement(query: string): string | null {
+export function validateReadStatement(query: string, dialect = 'generic'): string | null {
   try {
-    const tokens = sqlTokens(query);
+    const tokens = sqlTokens(query, dialect);
     const first = tokens[0];
     const error = 'Only a single read-only query (SELECT, EXPLAIN, SHOW, DESCRIBE) is allowed';
     if (

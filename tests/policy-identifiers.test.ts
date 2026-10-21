@@ -24,6 +24,19 @@ const connection = (driver: string): DatabaseConnection => ({
   database: 'reports',
 });
 describe('database scope in SQL names', () => {
+  it('checks expressions inside PostgreSQL arrays and subscripts', () => {
+    const p = policy({});
+    for (const sql of [
+      "SELECT ARRAY[nextval('seq')]",
+      "SELECT values[nextval('seq')] FROM public.orders",
+    ])
+      expect(() => p.assertQuery(connection('postgres'), sql, true)).toThrow(/not permitted/);
+    expect(() => p.assertQuery(connection('postgres'), 'SELECT ARRAY[1,2][1]', true)).not.toThrow();
+    expect(analyzeSql('SELECT ARRAY[1,2][1]', 'postgres').writes).toBe(false);
+    expect(() =>
+      p.assertQuery(connection('mssql'), 'SELECT [update] FROM dbo.orders', true)
+    ).not.toThrow();
+  });
   it('retains physical references when CTE aliases differ under native naming rules', () => {
     const postgres = analyzeSql(
       'WITH Ä AS (SELECT * FROM public.orders) SELECT * FROM ä',

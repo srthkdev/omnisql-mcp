@@ -29,7 +29,7 @@ export function sqlDialect(driver: string): string {
 }
 export function analyzeSql(query: string, driver: string): SqlAnalysis {
   // Reject dialect-ambiguous comments/escapes before handing text to the grammar.
-  sqlTokens(query);
+  sqlTokens(query, sqlDialect(driver));
   native ??= require('../native/omnisql_sql_policy.js');
   try {
     const dialect = sqlDialect(driver);

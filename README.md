@@ -18,7 +18,7 @@
   <a href="#quick-setup">quick setup</a> ·
   <a href="#what-you-can-do">features</a> ·
   <a href="#try-the-demo">demo</a> ·
-  <a href="https://srthkdev.github.io/omnisql-mcp/">docs</a> ·
+  <a href="https://omnisql.srthkdev.com/">docs</a> ·
   <a href="CHANGELOG.md">releases</a>
 </p>
 
@@ -53,7 +53,7 @@
 
 **Other databases**: Unsupported drivers return an explicit error. External GUI/CLI query fallback has been removed so access and output policies remain enforceable.
 
-DuckDB uses an installed CLI so its native binary stays out of the npm package. Install it with `brew install duckdb` on macOS, or use the [official downloads](https://duckdb.org/install/). Set `OMNISQL_DUCKDB_CLI` if the executable is outside your MCP client's PATH. See [database support](https://srthkdev.github.io/omnisql-mcp/docs/guides/databases/) for configuration and limits.
+DuckDB uses an installed CLI so its native binary stays out of the npm package. Install it with `brew install duckdb` on macOS, or use the [official downloads](https://duckdb.org/install/). Set `OMNISQL_DUCKDB_CLI` if the executable is outside your MCP client's PATH. See [database support](https://omnisql.srthkdev.com/docs/guides/databases/) for configuration and limits.
 
 **Custom drivers** wrapping any of the above are detected automatically — see [Custom and IAM-Authenticated Drivers](#custom-and-iam-authenticated-drivers).
 
@@ -124,7 +124,7 @@ On Windows, use `"command": "cmd"` and `"args": ["/c", "npx", "-y", "omnisql-mcp
 For a local executable, including machines without Node.js:
 
 ```bash
-curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
+curl -fsSL https://omnisql.srthkdev.com/install.sh | bash
 ```
 
 Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omnisql-mcp`, without sudo. If Bun 1.4.3+ is unavailable, it downloads a private Bun runtime and verifies its SHA-256 checksum. Use the printed absolute launcher path as your MCP client's command. Run the installer again to upgrade; append `bash -s -- 3.0.0` in place of `bash` to pin a version. `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` choose other directories.
@@ -133,9 +133,9 @@ Installs under `~/.local/share/omnisql-mcp` with a launcher at `~/.local/bin/omn
 
 Register OmniSQL once. Select `connectionId` in each tool call; select `database` to switch databases on PostgreSQL, MySQL/MariaDB, SQL Server, or ClickHouse. Each instance can have its own read-only setting, table policy, credentials, timeout, row/byte limits, and pool size.
 
-Set `OMNISQL_CONFIG_FILE` to your JSON configuration, or reuse discovered workspace connections. Explicit connections default to read-only. See the [multi-instance configuration guide](https://srthkdev.github.io/omnisql-mcp/docs/getting-started/configuration/) and [access policies](https://srthkdev.github.io/omnisql-mcp/docs/guides/access/).
+Set `OMNISQL_CONFIG_FILE` to your JSON configuration, or reuse discovered workspace connections. Explicit connections default to read-only. See the [multi-instance configuration guide](https://omnisql.srthkdev.com/docs/getting-started/configuration/) and [access policies](https://omnisql.srthkdev.com/docs/guides/access/).
 
-Large results use private, expiring handles with row and column pagination. Long cells and large exports can be read in bounded chunks. See [result paging](https://srthkdev.github.io/omnisql-mcp/docs/guides/usage-examples/#read-a-large-result-in-pages).
+Large results use private, expiring handles with row and column pagination. Long cells and large exports can be read in bounded chunks. See [result paging](https://omnisql.srthkdev.com/docs/guides/usage-examples/#read-a-large-result-in-pages).
 
 ## Configuration
 
@@ -304,7 +304,7 @@ forward, and the connection's host/port are treated the way DBeaver treats them:
 - If a tunnel cannot be opened the connection fails with that reason. It never falls back to
   connecting directly to the recorded host, which would reach an unrelated local database.
 
-Table policies resolve real catalog names before checking access, including engine-specific case rules. Qualified denies also cover unqualified SQL; paged results and exports recheck permissions on every read. Restricted queries stay inside the selected database. See [access rules](https://srthkdev.github.io/omnisql-mcp/docs/guides/access/) for configuration and limits.
+Table policies resolve real catalog names before checking access, including engine-specific case rules. Qualified denies also cover unqualified SQL; paged results and exports recheck permissions on every read. Restricted queries stay inside the selected database. See [access rules](https://omnisql.srthkdev.com/docs/guides/access/) for configuration and limits.
 
 ### Querying another database on the same server
 

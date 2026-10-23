@@ -74,7 +74,7 @@ On Windows, if the client cannot launch `npx` directly, use `"command": "cmd"` a
 For macOS and Linux, including machines without Node.js:
 
 ```bash
-curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash
+curl -fsSL https://omnisql.srthkdev.com/install.sh | bash
 ```
 
 This installs under `~/.local/share/omnisql-mcp` and creates a launcher at `~/.local/bin/omnisql-mcp`. If Bun 1.4.3+ is unavailable, the installer downloads a private Bun runtime and verifies its SHA-256 checksum. It does not use sudo.
@@ -82,7 +82,7 @@ This installs under `~/.local/share/omnisql-mcp` and creates a launcher at `~/.l
 Use the printed absolute launcher path as your MCP client's command. Rerun the installer to update, or specify a version:
 
 ```bash
-curl -fsSL https://srthkdev.github.io/omnisql-mcp/install.sh | bash -s -- 3.0.0
+curl -fsSL https://omnisql.srthkdev.com/install.sh | bash -s -- 3.0.0
 ```
 
 `OMNISQL_INSTALL_DIR` and `OMNISQL_BIN_DIR` let you choose other directories.

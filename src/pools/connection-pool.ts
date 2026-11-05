@@ -124,16 +124,17 @@ export class ConnectionPoolManager {
   }
 
   private async createPool(connection: DatabaseConnection): Promise<PoolEntry | null> {
-    const driver = connection.driver.toLowerCase();
+    // Dispatch on the dialect: workspace driver ids ("microsoft", "postgres-jdbc") map to engines.
+    const dialect = sqlDialect(connection.driver);
 
     try {
-      if (this.isPostgresCompatible(driver)) {
+      if (dialect === 'postgres') {
         return await this.createPostgresPool(connection);
-      } else if (driver.includes('mysql') || driver.includes('mariadb')) {
+      } else if (dialect === 'mysql') {
         return await this.createMysqlPool(connection);
-      } else if (driver.includes('mssql') || driver.includes('sqlserver')) {
+      } else if (dialect === 'mssql') {
         return await this.createMssqlPool(connection);
-      } else if (driver.includes('oracle')) {
+      } else if (dialect === 'oracle') {
         return await this.createOraclePool(connection);
       }
     } catch (error) {

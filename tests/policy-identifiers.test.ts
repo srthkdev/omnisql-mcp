@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AccessPolicy } from '../src/policy/access.js';
+import { assertQueryAccess } from '../src/policy/identities.js';
 import { analyzeSql } from '../src/policy/analyzer.js';
 import type { DatabaseConnection } from '../src/types.js';
 const folders: string[] = [];
@@ -22,6 +23,27 @@ const connection = (driver: string): DatabaseConnection => ({
   driver,
   url: '',
   database: 'reports',
+});
+describe('identity resolution for access policies', () => {
+  it('skips SQL Server built-in functions in catalog identity lookups', async () => {
+    const p = policy({ readOnly: true, allowFunctions: ['current_user'] });
+    const lookups: string[] = [];
+    const metadata = async (sql: string) => {
+      lookups.push(sql);
+      const refs = (sql.match(/ AS ref/g) ?? []).length;
+      return { truncated: false, rows: Array.from({ length: refs }, (_, i) => [i, 'dbo', 'x', 1]) };
+    };
+    await assertQueryAccess(
+      p,
+      connection('mssql'),
+      'SELECT LEN(name), GETDATE() FROM dbo.orders WHERE id = 1',
+      false,
+      metadata
+    );
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]).not.toContain('LEN');
+    expect(lookups[0]).not.toContain('GETDATE');
+  });
 });
 describe('database scope in SQL names', () => {
   it('checks expressions inside PostgreSQL arrays and subscripts', () => {

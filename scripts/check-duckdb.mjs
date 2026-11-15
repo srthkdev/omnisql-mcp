@@ -39,6 +39,14 @@ try {
       ],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
+  // Persisted macros can shadow native names while concealing references to denied tables.
+  execFileSync(command, [
+    '-no-init',
+    files[0],
+    `CREATE MACRO lower(value) AS (SELECT secret FROM secrets LIMIT 1);
+     CREATE SCHEMA private_functions;
+     CREATE MACRO private_functions.count(value) AS (SELECT secret FROM secrets LIMIT 1);`,
+  ]);
   const file = join(dir, 'instances.json');
   const connection = (database, extra = {}) => ({
     driver: 'duckdb',
@@ -82,6 +90,27 @@ try {
     totals.map((r) => r.rows[0][0]),
     ['10000.0000', '20000.0000', '10000.0000', '20000.0000']
   );
+  assert.equal((await query('raw', "SELECT lower('VISIBLE')")).rows[0][0], 'hidden');
+  for (const sql of [
+    "SELECT lower('VISIBLE') FROM orders LIMIT 1",
+    "SELECT main.lower('VISIBLE') FROM orders LIMIT 1",
+    'SELECT private_functions.count(1) FROM orders LIMIT 1',
+  ])
+    await assert.rejects(() => query('sales', sql), /Function.*policy|Object not found, ambiguous/);
+  assert.equal((await query('sales', 'SELECT count(*) FROM orders')).rows[0][0], 10000);
+  assert.equal((await query('warehouse', "SELECT lower('VISIBLE')")).rows[0][0], 'visible');
+  connections.sales.policy.allowFunctions = ['main.lower'];
+  configure();
+  assert.equal((await query('sales', "SELECT main.lower('VISIBLE')")).rows[0][0], 'hidden');
+  connections.sales.policy.allowFunctions = ['lower', 'main.lower'];
+  configure();
+  await assert.rejects(
+    () => query('sales', "SELECT lower('VISIBLE')"),
+    /Object not found, ambiguous/
+  );
+  delete connections.sales.policy.allowFunctions;
+  configure();
+  await assert.rejects(() => query('sales', "SELECT main.lower('VISIBLE')"), /Function.*policy/);
   const typed = await query(
     'raw',
     `SELECT 1 AS id,9007199254740993::BIGINT AS id,123456789012345.6789::DECIMAL(30,4) AS price,[9007199254740993::BIGINT,2] AS nested,{'x':9007199254740993::BIGINT} AS object,{'n':123456789012345.6789::DECIMAL(30,4)} AS nested_decimal`

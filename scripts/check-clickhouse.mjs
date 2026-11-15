@@ -100,6 +100,9 @@ try {
     await native(`CREATE TABLE ${database}.Orders(secret String) ENGINE=Memory`);
     await native(`INSERT INTO ${database}.Orders VALUES('hidden')`);
   }
+  // A PostgreSQL builtin's name must not implicitly trust a ClickHouse SQL UDF.
+  await native("CREATE FUNCTION pg_typeof AS (value) -> 'user-defined-canary'");
+  assert.equal((await native("SELECT pg_typeof('VISIBLE')")).trim(), 'user-defined-canary');
   await assert.rejects(
     () =>
       native("INSERT INTO sales.orders VALUES(999999,1.0000,'invalid',NULL)", { readonly: '1' }),
@@ -202,6 +205,25 @@ try {
     totals.map((r) => r.rows[0][0]),
     ['12500.0000', '25000.0000', '12500.0000', '25000.0000']
   );
+  assert.equal(
+    (await query('raw', "SELECT pg_typeof('VISIBLE')")).rows[0][0],
+    'user-defined-canary'
+  );
+  await assert.rejects(
+    () => query('sales', 'SELECT pg_typeof(status) FROM orders LIMIT 1'),
+    /Function.*policy/
+  );
+  assert.equal((await query('sales', "SELECT lower('VISIBLE')")).rows[0][0], 'visible');
+  assert.equal((await query('sales', 'SELECT count(*) FROM orders')).rows[0][0], '10000');
+  connections.sales.policy = { ...policy, allowFunctions: ['pg_typeof'] };
+  configure();
+  assert.equal(
+    (await query('sales', "SELECT pg_typeof('VISIBLE')")).rows[0][0],
+    'user-defined-canary'
+  );
+  connections.sales.policy = policy;
+  configure();
+  await assert.rejects(() => query('sales', "SELECT pg_typeof('VISIBLE')"), /Function.*policy/);
   assert.equal(
     (await query('sales', 'SELECT SUM(total) FROM orders', { database: 'warehouse' })).rows[0][0],
     '25000.0000'

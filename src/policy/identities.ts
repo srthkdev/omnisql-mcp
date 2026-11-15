@@ -173,7 +173,7 @@ function queryFor(
     where =
       kind === 'table'
         ? `database=currentDatabase() AND name=${literal(d, last.value)}`
-        : `name=${literal(d, last.value)} OR (case_insensitive=1 AND lowerASCII(name)=lowerASCII(${literal(d, last.value)}))`;
+        : `name=${literal(d, last.value)} OR (case_insensitive=1 AND lower(name)=lower(${literal(d, last.value)}))`;
   } else if (d === 'duckdb') {
     schema = 'schema_name';
     name = kind === 'table' ? 'table_name' : 'function_name';

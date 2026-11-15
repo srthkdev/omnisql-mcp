@@ -624,7 +624,7 @@ try {
             "CHARINDEX('a',status) AS a_position, " +
             "DATEDIFF_BIG(day,'2020-01-01','2020-01-02') AS day_count, " +
             'CONVERT(varchar(10),GETDATE(),23) AS today, ' +
-            'CONVERT(varchar(33),SYSDATETIME(),126) AS current_time ' +
+            'CONVERT(varchar(33),SYSDATETIME(),126) AS observed_time ' +
             'FROM dbo.orders WHERE id=1',
         });
         assert.equal(Number(builtins.rows[0][0]), 4);

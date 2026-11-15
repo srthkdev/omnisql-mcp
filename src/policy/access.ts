@@ -31,6 +31,11 @@ const FUNCTIONS = new Set(
     ' '
   )
 );
+const MSSQL_FUNCTIONS = new Set(
+  'len datalength charindex stuff patindex replicate reverse space choose count_big quotename isnumeric isdate eomonth datediff_big str sign power sqrt exp log getdate sysdatetime getutcdate sysutcdatetime hashbytes newid checksum suser_sname system_user day month year datefromparts parsename'.split(
+    ' '
+  )
+);
 export function validateAccessRule(value: unknown): asserts value is AccessRule {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Policy rules must be objects');
@@ -124,8 +129,10 @@ export class AccessPolicy {
   rulesFor(c: DatabaseConnection): readonly AccessRule[] {
     return this.rules(c);
   }
-  isBuiltin(parts: SqlNamePart[]): boolean {
-    return parts.length === 1 && !parts[0].quoted && FUNCTIONS.has(parts[0].value.toLowerCase());
+  isBuiltin(parts: SqlNamePart[], driver: string): boolean {
+    if (parts.length !== 1 || parts[0].quoted) return false;
+    const name = parts[0].value.toLowerCase();
+    return FUNCTIONS.has(name) || (sqlDialect(driver) === 'mssql' && MSSQL_FUNCTIONS.has(name));
   }
   allowsResolved(
     c: DatabaseConnection,
@@ -308,7 +315,7 @@ export class AccessPolicy {
         this.assertTable(c, canonicalName(relation, c.driver));
     for (const name of analysis.functions) {
       const functionName = canonicalName(name, c.driver);
-      const builtIn = this.isBuiltin(name);
+      const builtIn = this.isBuiltin(name, c.driver);
       if (options.deferNames && !builtIn) continue;
       if (
         rules.some((r) => r.denyFunctions && includes(r.denyFunctions, functionName)) ||

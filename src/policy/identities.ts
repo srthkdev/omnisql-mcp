@@ -250,7 +250,7 @@ export async function assertQueryAccess(
   for (const parts of analysis.relations)
     identities.set('table:' + JSON.stringify(parts), { parts, kind: 'table' });
   for (const parts of analysis.functions)
-    if (!policy.isBuiltin(parts))
+    if (!policy.isBuiltin(parts, c.driver))
       identities.set('function:' + JSON.stringify(parts), { parts, kind: 'function' });
   if (identities.size > 64)
     throw new Error('Queries under access policies support at most 64 distinct object references');

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-11-16
+
+### Fixed
+- Route DBeaver's `microsoft` SQL Server driver through the native connection pool, fixing connection tests and queries that failed with a null-pool error (#85, #87).
+- Allow common SQL Server scalar built-ins under scoped access policies. Keep the added names specific to SQL Server, enforce explicit function denials, and retain catalog checks for quoted and schema-qualified functions (#86).
+
+### Security
+- Verify native builtin identities on PostgreSQL, SQLite, DuckDB and ClickHouse; reject ambiguous overloads and macros, scope builtin names by engine, and qualify authorization catalogs. Explicit routine grants still trust the routine's behavior (#91).
+- Refresh compatible transitive dependencies to address high-severity advisories in MSAL Node, body-parser and Zod (#89).
+
 ## [3.0.0] - 2026-10-22
 
 ### Breaking changes and migration

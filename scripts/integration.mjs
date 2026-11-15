@@ -254,7 +254,7 @@ try {
       const connection = {
         name: `${engine} synthetic fixture`,
         provider: engine === 'postgres' ? 'postgresql' : engine,
-        driver: engine === 'postgres' ? 'postgres-jdbc' : engine,
+        driver: engine === 'postgres' ? 'postgres-jdbc' : engine === 'mssql' ? 'microsoft' : engine,
         configuration: {
           ...config,
           sslmode: 'disable',

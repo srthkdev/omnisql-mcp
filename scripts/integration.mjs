@@ -567,6 +567,7 @@ try {
               policy: {
                 allowTables: [orders, owner + '.' + orders],
                 denyTables: [customers, owner + '.' + customers],
+                ...(engine === 'mssql' ? { denyFunctions: ['len'] } : {}),
               },
               limits: { poolMax: 2, timeoutMs: 5000, maxRows: 20 },
             },
@@ -613,6 +614,60 @@ try {
         () => call(client, 'get_table_schema', { connectionId: 'edits', tableName: customers }),
         /Table.*policy/
       );
+      if (engine === 'mssql') {
+        // Table-scoped connections must accept SQL Server built-ins without a UDF grant.
+        // Cast high-precision datetime2 output to exact text before driver conversion.
+        const builtins = await call(client, 'execute_query', {
+          connectionId: 'reports',
+          query:
+            'SELECT LEN(status) AS status_length, REVERSE(status) AS reversed_status, ' +
+            "CHARINDEX('a',status) AS a_position, " +
+            "DATEDIFF_BIG(day,'2020-01-01','2020-01-02') AS day_count, " +
+            'CONVERT(varchar(10),GETDATE(),23) AS today, ' +
+            'CONVERT(varchar(33),SYSDATETIME(),126) AS current_time ' +
+            'FROM dbo.orders WHERE id=1',
+        });
+        assert.equal(Number(builtins.rows[0][0]), 4);
+        assert.equal(builtins.rows[0][1], 'diap');
+        assert.equal(Number(builtins.rows[0][2]), 2);
+        assert.equal(Number(builtins.rows[0][3]), 1);
+        assert.match(builtins.rows[0][4], /^\d{4}-\d{2}-\d{2}$/);
+        assert.match(builtins.rows[0][5], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+        await assert.rejects(
+          () =>
+            call(client, 'execute_query', {
+              connectionId: 'edits',
+              query: 'SELECT LEN(status) FROM dbo.orders WHERE id=1',
+            }),
+          /Function.*policy/
+        );
+        const stillAllowed = await call(client, 'execute_query', {
+          connectionId: 'edits',
+          query: 'SELECT REVERSE(status) FROM dbo.orders WHERE id=1',
+        });
+        assert.equal(stillAllowed.rows[0][0], 'diap');
+        // A real UDF with the same name must still resolve through the catalog policy.
+        await admin.query(
+          'CREATE FUNCTION dbo.LEN(@value nvarchar(100)) RETURNS int AS BEGIN RETURN 999; END'
+        );
+        try {
+          assert.equal(
+            (await admin.query("SELECT dbo.LEN('paid') AS udf_value"))[0].udf_value,
+            999
+          );
+          await assert.rejects(
+            () =>
+              call(client, 'execute_query', {
+                connectionId: 'reports',
+                query: 'SELECT dbo.LEN(status) FROM dbo.orders WHERE id=1',
+              }),
+            /Function.*policy/
+          );
+        } finally {
+          await admin.query('DROP FUNCTION dbo.LEN');
+        }
+        console.log('mssql: scoped built-ins, function denies and qualified UDF isolation passed');
+      }
       const visible = await call(client, 'list_tables', { connectionId: 'reports' });
       assert.equal(visible.length, 1);
       assert.equal(visible[0].name.toLowerCase(), 'orders');

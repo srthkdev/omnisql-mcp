@@ -25,24 +25,70 @@ const connection = (driver: string): DatabaseConnection => ({
   database: 'reports',
 });
 describe('identity resolution for access policies', () => {
-  it('skips SQL Server built-in functions in catalog identity lookups', async () => {
-    const p = policy({ readOnly: true, allowFunctions: ['current_user'] });
-    const lookups: string[] = [];
-    const metadata = async (sql: string) => {
-      lookups.push(sql);
-      const refs = (sql.match(/ AS ref/g) ?? []).length;
-      return { truncated: false, rows: Array.from({ length: refs }, (_, i) => [i, 'dbo', 'x', 1]) };
-    };
-    await assertQueryAccess(
-      p,
-      connection('mssql'),
-      'SELECT LEN(name), GETDATE() FROM dbo.orders WHERE id = 1',
-      false,
-      metadata
-    );
-    expect(lookups).toHaveLength(1);
-    expect(lookups[0]).not.toContain('LEN');
-    expect(lookups[0]).not.toContain('GETDATE');
+  it.each(['mssql', 'sqlserver', 'microsoft'])(
+    'skips %s built-ins while still resolving table permissions',
+    async (driver) => {
+      const p = policy({ readOnly: true, allowTables: ['dbo.orders'] });
+      const lookups: string[] = [];
+      await assertQueryAccess(
+        p,
+        connection(driver),
+        "SELECT LEN(name), GETDATE(), HASHBYTES('SHA2_256', name) FROM dbo.orders WHERE id = 1",
+        false,
+        async (sql) => {
+          lookups.push(sql);
+          return { truncated: false, rows: [[0, 'dbo', 'orders', 1]] };
+        }
+      );
+      expect(lookups).toHaveLength(1);
+      expect(lookups[0].match(/ AS ref/g)).toHaveLength(1);
+      expect(lookups[0]).toContain('orders');
+      expect(lookups[0]).not.toMatch(/LEN|GETDATE|HASHBYTES/);
+    }
+  );
+  it.each(['postgres', 'mysql', 'sqlite', 'oracle', 'duckdb', 'clickhouse'])(
+    'requires catalog authorization for SQL Server function names on %s',
+    async (driver) => {
+      const p = policy({ readOnly: true, allowTables: [] });
+      expect(() => p.assertQuery(connection(driver), 'SELECT len(1)', true)).toThrow(
+        /Function is not allowed/
+      );
+      const lookups: string[] = [];
+      await expect(
+        assertQueryAccess(p, connection(driver), 'SELECT len(1)', true, async (sql) => {
+          lookups.push(sql);
+          return { truncated: false, rows: [] };
+        })
+      ).rejects.toThrow(/Object not found/);
+      expect(lookups).toHaveLength(1);
+      expect(lookups[0].match(/ AS ref/g)).toHaveLength(1);
+    }
+  );
+  it.each(['SELECT dbo.LEN(1)', 'SELECT [LEN](1)', 'SELECT "LEN"(1)'])(
+    'resolves qualified or quoted functions: %s',
+    async (sql) => {
+      const p = policy({ readOnly: true, allowTables: [] });
+      const lookups: string[] = [];
+      await expect(
+        assertQueryAccess(p, connection('mssql'), sql, true, async (lookup) => {
+          lookups.push(lookup);
+          return { truncated: false, rows: [] };
+        })
+      ).rejects.toThrow(/Object not found/);
+      expect(lookups).toHaveLength(1);
+      expect(lookups[0]).toContain('sys.all_objects');
+    }
+  );
+  it.each([['len'], ['getdate'], ['*']])('honors denyFunctions %j for built-ins', async (deny) => {
+    const p = policy({ readOnly: true, denyFunctions: [deny] });
+    let queried = false;
+    await expect(
+      assertQueryAccess(p, connection('microsoft'), 'SELECT LEN(1), GETDATE()', true, async () => {
+        queried = true;
+        return { truncated: false, rows: [] };
+      })
+    ).rejects.toThrow(/Function is not allowed/);
+    expect(queried).toBe(false);
   });
 });
 describe('database scope in SQL names', () => {

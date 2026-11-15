@@ -27,7 +27,12 @@ interface PolicyFile {
   connections?: Record<string, AccessRule>;
 }
 const FUNCTIONS = new Set(
-  'count sum avg min max coalesce nullif abs round floor ceil ceiling lower upper length char_length character_length concat concat_ws substring substr trim ltrim rtrim replace left right position cast convert try_cast try_convert extract date_trunc date_part now current_date current_timestamp strftime date datetime julianday unixepoch version current_database current_schema pg_typeof typeof json_extract json_array_length json_type json_valid row_number rank dense_rank lag lead first_value last_value ntile percent_rank cume_dist stddev stddev_pop stddev_samp variance var_pop var_samp greatest least iif if ifnull isnull nvl nvl2 to_char to_date to_timestamp dateadd datediff datename datepart format db_name schema_name object_name serverproperty sqlite_version json_build_object json_agg array_agg string_agg group_concat len datalength charindex stuff patindex replicate reverse space choose count_big quotename isnumeric isdate eomonth datediff_big str sign power sqrt exp log getdate sysdatetime getutcdate sysutcdatetime hashbytes newid checksum suser_sname system_user day month year datefromparts parsename'.split(
+  'count sum avg min max coalesce nullif abs round floor ceil ceiling lower upper length char_length character_length concat concat_ws substring substr trim ltrim rtrim replace left right position cast convert try_cast try_convert extract date_trunc date_part now current_date current_timestamp strftime date datetime julianday unixepoch version current_database current_schema pg_typeof typeof json_extract json_array_length json_type json_valid row_number rank dense_rank lag lead first_value last_value ntile percent_rank cume_dist stddev stddev_pop stddev_samp variance var_pop var_samp greatest least iif if ifnull isnull nvl nvl2 to_char to_date to_timestamp dateadd datediff datename datepart format db_name schema_name object_name serverproperty sqlite_version json_build_object json_agg array_agg string_agg group_concat'.split(
+    ' '
+  )
+);
+const MSSQL_FUNCTIONS = new Set(
+  'len datalength charindex stuff patindex replicate reverse space choose count_big quotename isnumeric isdate eomonth datediff_big str sign power sqrt exp log getdate sysdatetime getutcdate sysutcdatetime hashbytes newid checksum suser_sname system_user day month year datefromparts parsename'.split(
     ' '
   )
 );
@@ -124,8 +129,10 @@ export class AccessPolicy {
   rulesFor(c: DatabaseConnection): readonly AccessRule[] {
     return this.rules(c);
   }
-  isBuiltin(parts: SqlNamePart[]): boolean {
-    return parts.length === 1 && !parts[0].quoted && FUNCTIONS.has(parts[0].value.toLowerCase());
+  isBuiltin(parts: SqlNamePart[], driver: string): boolean {
+    if (parts.length !== 1 || parts[0].quoted) return false;
+    const name = parts[0].value.toLowerCase();
+    return FUNCTIONS.has(name) || (sqlDialect(driver) === 'mssql' && MSSQL_FUNCTIONS.has(name));
   }
   allowsResolved(
     c: DatabaseConnection,
@@ -308,7 +315,7 @@ export class AccessPolicy {
         this.assertTable(c, canonicalName(relation, c.driver));
     for (const name of analysis.functions) {
       const functionName = canonicalName(name, c.driver);
-      const builtIn = this.isBuiltin(name);
+      const builtIn = this.isBuiltin(name, c.driver);
       if (options.deferNames && !builtIn) continue;
       if (
         rules.some((r) => r.denyFunctions && includes(r.denyFunctions, functionName)) ||

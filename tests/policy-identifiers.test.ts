@@ -155,3 +155,197 @@ describe('database scope in SQL names', () => {
     );
   });
 });
+
+describe('native function provenance', () => {
+  it('resolves PostgreSQL builtins and tables together without requiring function grants', async () => {
+    const p = policy({
+      schemas: ['public'],
+      allowTables: ['public.orders'],
+      allowFunctions: ['safe.only'],
+    });
+    const lookups: string[] = [];
+    await assertQueryAccess(
+      p,
+      connection('postgres'),
+      'SELECT count(*), lower(name) FROM public.orders',
+      true,
+      async (sql) => {
+        lookups.push(sql);
+        return {
+          truncated: false,
+          rows: [
+            [0, 'public', 'orders', 1, 0],
+            [1, 'pg_catalog', 'count', 1, 1],
+            [2, 'pg_catalog', 'lower', 1, 1],
+          ],
+        };
+      }
+    );
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0].match(/ AS ref/g)).toHaveLength(3);
+    expect(lookups[0]).toContain('pg_catalog.pg_class');
+    expect(lookups[0]).toContain('pg_catalog.to_regclass');
+    expect(lookups[0]).toContain('pg_catalog.pg_proc');
+    expect(lookups[0]).toContain('pg_catalog.pg_function_is_visible');
+  });
+  it.each([
+    [[0, 'public', 'lower', 1, 0]],
+    [
+      [0, 'pg_catalog', 'lower', 1, 1],
+      [0, 'public', 'lower', 1, 0],
+    ],
+  ])('rejects visible PostgreSQL shadows and ambiguous overloads: %j', async (rows) => {
+    const p = policy({ allowTables: [], allowFunctions: ['safe.only'] });
+    let queried = false;
+    await expect(
+      assertQueryAccess(p, connection('postgres'), 'SELECT lower(123::bigint)', true, async () => {
+        queried = true;
+        return { truncated: false, rows };
+      })
+    ).rejects.toThrow(/Function is not allowed|ambiguous/);
+    expect(queried).toBe(true);
+  });
+  it.each(['pg_catalog.lower', 'reports.pg_catalog.lower', '*.lower'])(
+    'honors resolved PostgreSQL builtin denial %s',
+    async (denied) => {
+      const p = policy({ allowTables: [], denyFunctions: [denied] });
+      await expect(
+        assertQueryAccess(p, connection('postgres'), "SELECT lower('a')", true, async () => ({
+          truncated: false,
+          rows: [[0, 'pg_catalog', 'lower', 1, 1]],
+        }))
+      ).rejects.toThrow(/Function is not allowed/);
+    }
+  );
+  it.each(['SELECT pg_catalog.lower(1)', 'SELECT "lower"(1)'])(
+    'requires explicit grants for qualified or quoted PostgreSQL calls: %s',
+    async (sql) => {
+      const p = policy({ allowTables: [] });
+      const metadata = async () => ({ truncated: false, rows: [[0, 'pg_catalog', 'lower', 1, 1]] });
+      await expect(
+        assertQueryAccess(p, connection('postgres'), sql, true, metadata)
+      ).rejects.toThrow(/Function is not allowed/);
+      await assertQueryAccess(
+        policy({ allowTables: [], allowFunctions: ['pg_catalog.lower'] }),
+        connection('postgres'),
+        sql,
+        true,
+        metadata
+      );
+    }
+  );
+  it('allows explicitly approved PostgreSQL UDFs without implicit builtin trust', async () => {
+    await assertQueryAccess(
+      policy({ allowTables: [], allowFunctions: ['public.lower'] }),
+      connection('postgres'),
+      'SELECT public.lower(1)',
+      true,
+      async () => ({
+        truncated: false,
+        rows: [[0, 'public', 'lower', 1, 0]],
+      })
+    );
+  });
+  it('keeps PostgreSQL grammar expressions usable and applies qualified denials', async () => {
+    const p = policy({ schemas: ['public'], allowTables: [] });
+    await assertQueryAccess(
+      p,
+      connection('postgres'),
+      'SELECT coalesce(NULL,1),nullif(1,2),greatest(1,2),least(1,2),CURRENT_DATE,CURRENT_TIMESTAMP',
+      true,
+      async (sql) => {
+        expect(sql).not.toContain('pg_proc');
+        return {
+          truncated: false,
+          rows: [
+            'current_date',
+            'current_timestamp',
+            'coalesce',
+            'greatest',
+            'least',
+            'nullif',
+          ].map((name, i) => [i, 'pg_catalog', name, 1, 1]),
+        };
+      }
+    );
+    await expect(
+      assertQueryAccess(
+        policy({ allowTables: [], denyFunctions: ['pg_catalog.coalesce'] }),
+        connection('postgres'),
+        'SELECT coalesce(NULL,1)',
+        true,
+        async () => ({
+          truncated: false,
+          rows: [[0, 'pg_catalog', 'coalesce', 1, 1]],
+        })
+      )
+    ).rejects.toThrow(/Function is not allowed/);
+  });
+  it.each(['duckdb', 'sqlite', 'clickhouse'])(
+    'does not skip native provenance checks on %s',
+    async (driver) => {
+      const lookups: string[] = [];
+      await expect(
+        assertQueryAccess(
+          policy({ allowTables: [] }),
+          connection(driver),
+          "SELECT lower('x')",
+          true,
+          async (sql) => {
+            lookups.push(sql);
+            return { truncated: false, rows: [] };
+          }
+        )
+      ).rejects.toThrow(/Object not found/);
+      expect(lookups).toHaveLength(1);
+      expect(lookups[0]).toContain('native_builtin');
+      if (driver === 'duckdb') {
+        expect(lookups[0]).toContain('system.main.duckdb_functions()');
+        expect(lookups[0]).toContain('system.main.current_schemas(true)');
+      } else if (driver === 'sqlite') expect(lookups[0]).toContain('pragma_function_list()');
+      else expect(lookups[0]).toContain("origin='System'");
+    }
+  );
+  it('distinguishes DuckDB native and macro candidates in the same schema', async () => {
+    await expect(
+      assertQueryAccess(
+        policy({ allowTables: [] }),
+        connection('duckdb'),
+        "SELECT lower('x')",
+        true,
+        async () => ({
+          truncated: false,
+          rows: [
+            [0, 'main', 'lower', 1, 1],
+            [0, 'main', 'lower', 0, 0],
+          ],
+        })
+      )
+    ).rejects.toThrow(/ambiguous/);
+  });
+  it('matches database-qualified ClickHouse function rules without an empty schema component', async () => {
+    const { identityPredicate } = await import('../src/policy/identities.js');
+    const rule = { denyFunctions: ['reports.count'] };
+    const p = policy(rule);
+    expect(
+      p.allowsResolvedBuiltin(
+        connection('clickhouse'),
+        [{ value: 'count', quoted: false }],
+        '',
+        'count',
+        true
+      )
+    ).toBe(false);
+    const predicate = identityPredicate(
+      connection('clickhouse'),
+      [rule],
+      { schema: "''", name: 'name', database: 'currentDatabase()' },
+      'function',
+      true,
+      true
+    );
+    expect(predicate).toContain('currentDatabase()');
+    expect(predicate).not.toContain("('' LIKE");
+    expect(predicate).not.toContain('1=0');
+  });
+});

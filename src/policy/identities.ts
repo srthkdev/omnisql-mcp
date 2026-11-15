@@ -4,6 +4,19 @@ import type { SqlNamePart } from './analyzer.js';
 import { sqlDialect } from './analyzer.js';
 import { AccessPolicy, type AccessRule } from './access.js';
 
+// These are grammar expressions, not shadowable routine names in these engines.
+const GRAMMAR_EXPRESSIONS: Record<string, ReadonlySet<string>> = {
+  postgres: new Set([
+    'coalesce',
+    'nullif',
+    'greatest',
+    'least',
+    'current_date',
+    'current_timestamp',
+  ]),
+  duckdb: new Set(['coalesce', 'if', 'ifnull', 'current_timestamp']),
+};
+
 export type IdentityKind = 'table' | 'function';
 export type IdentityQuery = (sql: string) => Promise<QueryResult>;
 interface IdentityColumns {
@@ -73,20 +86,24 @@ export function identityPredicate(
   rules: readonly AccessRule[],
   columns: IdentityColumns,
   kind: IdentityKind,
-  allowBare: boolean
+  allowBare: boolean,
+  builtin = false
 ): string {
   const dialect = sqlDialect(c.driver);
   const qualified = [columns.schema, columns.name];
-  const all = [[columns.name], qualified, [columns.database, ...qualified]];
+  const all =
+    dialect === 'clickhouse' && kind === 'function'
+      ? [[columns.name], [columns.database, columns.name]]
+      : [[columns.name], qualified, [columns.database, ...qualified]];
   const allowed = allowBare ? all : all.slice(1);
   const checks: string[] = [];
-  if (kind === 'function' && !rules.some((r) => r.allowFunctions)) return '1=0';
+  if (kind === 'function' && !builtin && !rules.some((r) => r.allowFunctions)) return '1=0';
   for (const rule of rules) {
-    if (rule.schemas && (kind === 'table' || dialect !== 'sqlite'))
+    if (!builtin && rule.schemas && (kind === 'table' || dialect !== 'sqlite'))
       checks.push(anyPattern(dialect, rule.schemas, [[columns.schema]], kind));
     const allow = kind === 'table' ? rule.allowTables : rule.allowFunctions;
     const deny = kind === 'table' ? rule.denyTables : rule.denyFunctions;
-    if (allow) checks.push(anyPattern(dialect, allow, allowed, kind));
+    if (allow && !builtin) checks.push(anyPattern(dialect, allow, allowed, kind));
     if (deny) checks.push('NOT ' + anyPattern(dialect, deny, all, kind));
   }
   return checks.length ? checks.map((c) => '(' + c + ')').join(' AND ') : '1=1';
@@ -107,7 +124,33 @@ function queryFor(
     )
   )
     throw new Error('Unsupported identifier in access policy lookup');
-  const nativeMatch = ['mysql', 'mssql', 'sqlite', 'duckdb'].includes(d);
+  if (
+    kind === 'function' &&
+    parts.length === 1 &&
+    !last.quoted &&
+    GRAMMAR_EXPRESSIONS[d]?.has(last.value.toLowerCase())
+  ) {
+    const schema = literal(d, d === 'postgres' ? 'pg_catalog' : 'main');
+    const name = literal(d, last.value.toLowerCase());
+    const permission = identityPredicate(
+      c,
+      policy.rulesFor(c),
+      {
+        schema,
+        name,
+        database:
+          d === 'duckdb' ? 'system.main.current_database()' : 'pg_catalog.current_database()',
+      },
+      kind,
+      true,
+      policy.isBuiltin(parts, c.driver)
+    );
+    return `SELECT ${schema} AS resolved_schema,${name} AS resolved_name,CASE WHEN ${permission} THEN 1 ELSE 0 END AS permitted,1 AS native_builtin`;
+  }
+  const nativeMatch =
+    ['mysql', 'mssql', 'sqlite', 'duckdb'].includes(d) ||
+    (d === 'clickhouse' && kind === 'function');
+  let nativeBuiltin = '0';
   let schema: string, name: string, database: string, from: string, where: string;
   if (d === 'mysql') {
     schema = kind === 'table' ? 'TABLE_SCHEMA' : 'ROUTINE_SCHEMA';
@@ -126,6 +169,7 @@ function queryFor(
     name = 'name';
     database = 'currentDatabase()';
     from = kind === 'table' ? 'system.tables' : 'system.functions';
+    if (kind === 'function') nativeBuiltin = `CASE WHEN origin='System' THEN 1 ELSE 0 END`;
     where =
       kind === 'table'
         ? `database=currentDatabase() AND name=${literal(d, last.value)}`
@@ -133,12 +177,23 @@ function queryFor(
   } else if (d === 'duckdb') {
     schema = 'schema_name';
     name = kind === 'table' ? 'table_name' : 'function_name';
-    database = 'current_database()';
+    database = kind === 'table' ? 'system.main.current_database()' : 'database_name';
     from =
       kind === 'table'
-        ? '(SELECT database_name,schema_name,table_name FROM duckdb_tables() UNION ALL SELECT database_name,schema_name,view_name AS table_name FROM duckdb_views()) objects'
-        : 'duckdb_functions()';
-    where = `${kind === 'table' ? 'database_name=current_database() AND ' : ''}${duckdbNameEquals(schema, parts.length > 1 ? literal(d, parts.at(-2)!.value) : 'current_schema()')} AND ${duckdbNameEquals(name, literal(d, last.value))}`;
+        ? '(SELECT database_name,schema_name,table_name FROM system.main.duckdb_tables() UNION ALL SELECT database_name,schema_name,view_name AS table_name FROM system.main.duckdb_views()) objects'
+        : 'system.main.duckdb_functions()';
+    const match = duckdbNameEquals(name, literal(d, last.value));
+    if (kind === 'function') {
+      nativeBuiltin = 'CASE WHEN internal THEN 1 ELSE 0 END';
+      // Include every active namespace, without guessing which overload will bind.
+      // An untrusted same-name candidate makes implicit native use ambiguous.
+      where =
+        parts.length === 1
+          ? `${match} AND database_name IN (system.main.current_database(),'system','temp') AND system.main.list_contains(system.main.current_schemas(true),schema_name)`
+          : `${match} AND database_name=system.main.current_database() AND ${duckdbNameEquals(schema, literal(d, parts.at(-2)!.value))}`;
+    } else {
+      where = `database_name=system.main.current_database() AND ${duckdbNameEquals(schema, parts.length > 1 ? literal(d, parts.at(-2)!.value) : 'system.main.current_schema()')} AND ${match}`;
+    }
   } else if (d === 'mssql') {
     schema = 's.name';
     name = 'o.name';
@@ -149,28 +204,30 @@ function queryFor(
     schema = "'main'";
     name = 'name';
     database = literal(d, c.database ?? '');
-    from = kind === 'table' ? 'sqlite_schema' : 'pragma_function_list';
+    from = kind === 'table' ? 'sqlite_schema' : 'pragma_function_list()';
+    if (kind === 'function') nativeBuiltin = 'CASE WHEN builtin=1 THEN 1 ELSE 0 END';
     where =
       `name=${literal(d, last.value)} COLLATE NOCASE` +
       (kind === 'table' ? " AND type IN ('table','view')" : '');
   } else if (d === 'postgres') {
     schema = 'n.nspname';
-    database = 'current_database()';
+    database = 'pg_catalog.current_database()';
     if (kind === 'table') {
       name = 'o.relname';
-      from = 'pg_class o JOIN pg_namespace n ON n.oid=o.relnamespace';
-      where = `o.oid=to_regclass(${literal(d, sqlName(d, parts))}) AND o.relkind IN ('r','p','v','m','f')`;
+      from = 'pg_catalog.pg_class o JOIN pg_catalog.pg_namespace n ON n.oid=o.relnamespace';
+      where = `o.oid=pg_catalog.to_regclass(${literal(d, sqlName(d, parts))}) AND o.relkind IN ('r','p','v','m','f')`;
     } else {
       name = 'o.proname';
-      from = 'pg_proc o JOIN pg_namespace n ON n.oid=o.pronamespace';
+      nativeBuiltin = `CASE WHEN n.nspname='pg_catalog' THEN 1 ELSE 0 END`;
+      from = 'pg_catalog.pg_proc o JOIN pg_catalog.pg_namespace n ON n.oid=o.pronamespace';
       const nameValue = last.quoted
         ? last.value
         : last.value.replace(/[A-Z]/g, (c) => c.toLowerCase());
       where =
-        `o.proname=${literal(d, nameValue)} AND ` +
+        `o.prokind IN ('f','a','w') AND o.proname=${literal(d, nameValue)} AND ` +
         (parts.length > 1
           ? `n.nspname=${literal(d, parts.at(-2)!.quoted ? parts.at(-2)!.value : parts.at(-2)!.value.replace(/[A-Z]/g, (c) => c.toLowerCase()))}`
-          : 'pg_function_is_visible(o.oid)');
+          : 'pg_catalog.pg_function_is_visible(o.oid)');
     }
   } else if (d === 'oracle') {
     if (parts.some((p) => /[^\x20-\x7e]/.test(p.value)))
@@ -181,11 +238,11 @@ function queryFor(
     database = literal(d, c.database ?? '');
     if (kind === 'table') {
       name = 'object_name';
-      from = 'all_objects';
+      from = 'SYS.ALL_OBJECTS';
       where = `owner=${parts.length > 1 ? value(parts[0]) : "SYS_CONTEXT('USERENV','CURRENT_SCHEMA')"} AND object_name=${value(last)} AND object_type IN ('TABLE','VIEW','MATERIALIZED VIEW')`;
     } else {
       name = "object_name || CASE WHEN procedure_name IS NOT NULL THEN '.' || procedure_name END";
-      from = 'all_procedures';
+      from = 'SYS.ALL_PROCEDURES';
       if (parts.length === 3)
         where = `owner=${value(parts[0])} AND object_name=${value(parts[1])} AND procedure_name=${value(parts[2])}`;
       else if (parts.length === 2)
@@ -194,10 +251,28 @@ function queryFor(
         where = `owner=SYS_CONTEXT('USERENV','CURRENT_SCHEMA') AND object_name=${value(last)} AND procedure_name IS NULL`;
     }
   } else throw new Error('Database-aware access policies are not available for this driver');
-  const permitted = nativeMatch
-    ? `CASE WHEN ${identityPredicate(c, policy.rulesFor(c), { schema, name, database }, kind, parts.length === 1)} THEN 1 ELSE 0 END`
-    : '1';
-  return `SELECT DISTINCT ${schema} AS resolved_schema,${name} AS resolved_name,${permitted} AS permitted FROM ${from} WHERE ${where}`;
+  let permission = identityPredicate(
+    c,
+    policy.rulesFor(c),
+    { schema, name, database },
+    kind,
+    parts.length === 1
+  );
+  if (d === 'duckdb' && kind === 'function')
+    permission = `(database_name=system.main.current_database() AND (${permission}))`;
+  if (kind === 'function' && policy.isBuiltin(parts, c.driver)) {
+    const builtinPermission = identityPredicate(
+      c,
+      policy.rulesFor(c),
+      { schema, name, database },
+      kind,
+      true,
+      true
+    );
+    permission = `((${permission}) OR (${nativeBuiltin}=1 AND (${builtinPermission})))`;
+  }
+  const permitted = nativeMatch ? `CASE WHEN ${permission} THEN 1 ELSE 0 END` : '1';
+  return `SELECT DISTINCT ${schema} AS resolved_schema,${name} AS resolved_name,${permitted} AS permitted,${nativeBuiltin} AS native_builtin FROM ${from} WHERE ${where}`;
 }
 export async function assertIdentityAccess(
   policy: AccessPolicy,
@@ -220,10 +295,20 @@ function assertResolved(
   kind: IdentityKind,
   row: unknown[]
 ): void {
-  const [schema, name, allowed] = row;
+  const [schema, name, allowed, nativeBuiltin] = row;
   if (
     Number(allowed) !== 1 ||
     (!['mysql', 'mssql', 'sqlite', 'duckdb'].includes(sqlDialect(c.driver)) &&
+      !(
+        kind === 'function' &&
+        policy.allowsResolvedBuiltin(
+          c,
+          parts,
+          String(schema),
+          String(name),
+          Number(nativeBuiltin) === 1
+        )
+      ) &&
       !policy.allowsResolved(
         c,
         String(schema),
@@ -250,7 +335,10 @@ export async function assertQueryAccess(
   for (const parts of analysis.relations)
     identities.set('table:' + JSON.stringify(parts), { parts, kind: 'table' });
   for (const parts of analysis.functions)
-    if (!policy.isBuiltin(parts, c.driver))
+    if (
+      ['postgres', 'duckdb', 'sqlite', 'clickhouse'].includes(sqlDialect(c.driver)) ||
+      !policy.isBuiltin(parts, c.driver)
+    )
       identities.set('function:' + JSON.stringify(parts), { parts, kind: 'function' });
   if (identities.size > 64)
     throw new Error('Queries under access policies support at most 64 distinct object references');
